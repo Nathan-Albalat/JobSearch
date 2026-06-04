@@ -1,0 +1,85 @@
+formation:
+  ecole: "Polytech"
+  niveau: "Ingénieur 5ème année (INFO5)"
+  specialite: "Informatique"
+  diplome_prevu: "2027"
+
+stage:
+  duree_min_semaines: 22
+  disponibilite_debut: "2027-02-01"
+  type_contrat: "Convention de stage"
+
+preferences_geo:
+  priorite:
+    - "Pays-Bas"
+    - "Belgique"
+    - "Suisse"
+    - "Allemagne"
+    - "Italie"
+  secondaire:
+    - "Europe (hors pays frontaliers)"
+  dernier_recours:
+    - "Hors Europe"
+  notes: "Stage à l'étranger obligatoire. France possible seulement si aucune option étrangère viable."
+
+domaines_recherches:
+  liste:
+    - "Développement logiciel (backend, fullstack)"
+    - "Data Engineering"
+    - "Intelligence Artificielle / Machine Learning"
+    - "Informatique générale"
+  ouverture: "Ouvert à d'autres domaines informatique si le projet est intéressant"
+
+competences_techniques:
+  langages_maitrise:
+    - Python
+    - Java
+    - C
+  langages_pratiques:
+    - JavaScript
+    - TypeScript
+    - C++
+    - Assembly
+    - OCaml
+    - SQL
+    - HTML
+    - CSS
+    - Rocq
+  langages_mise_en_forme:
+    - LaTeX
+    - Markdown
+  frameworks:
+    - Spring
+  outils:
+    - Git
+    - Docker
+    - PostgreSQL
+    - VS Code
+    - Eclipse IDE
+    - Linux
+    - macOS
+    - Windows
+  domaines_ml:
+    - "Q-Learning"
+    - "Value Iteration"
+    - "Bandit Algorithm"
+  niveau_anglais: "Courant (travail en environnement international)"
+  niveau_neerlandais: "Débutant / aucun (Pays-Bas prioritaire, apprentissage en cours)"
+
+langues:
+  - langue: "Français"
+    niveau: "Natif"
+  - langue: "Anglais"
+    niveau: "Courant (B2/C1)"
+
+criteres_pertinence:
+  score_minimum: 6
+  bonus:
+    - "Stack Python ou JS/TS"
+    - "Domaine IA/ML ou Data"
+    - "Pays-Bas"
+    - "Entreprise internationale"
+  malus:
+    - "Exige expérience professionnelle > 1 an"
+    - "Uniquement présentiel hors Europe"
+    - "Stage < 22 semaines"

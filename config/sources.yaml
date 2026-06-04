@@ -1,0 +1,50 @@
+sources:
+  # --- Stages / Internships (international & remote) ---
+  - name: "RemoteOK - Internships"
+    url: "https://remoteok.com/remote-intern-jobs.rss"
+    type: rss
+    country: "INTL"
+
+  - name: "RemoteOK - Python Jobs"
+    url: "https://remoteok.com/remote-python-jobs.rss"
+    type: rss
+    country: "INTL"
+
+  - name: "RemoteOK - Backend Jobs"
+    url: "https://remoteok.com/remote-backend-jobs.rss"
+    type: rss
+    country: "INTL"
+
+  - name: "RemoteOK - JavaScript Jobs"
+    url: "https://remoteok.com/remote-javascript-jobs.rss"
+    type: rss
+    country: "INTL"
+
+  - name: "RemoteOK - Java Jobs"
+    url: "https://remoteok.com/remote-java-jobs.rss"
+    type: rss
+    country: "INTL"
+
+  - name: "Himalayas - Remote Jobs"
+    url: "https://himalayas.app/jobs/rss"
+    type: rss
+    country: "INTL"
+
+  - name: "Jobicy - Internships"
+    url: "https://jobicy.com/?feed=job_feed&job_types=internship"
+    type: rss
+    country: "INTL"
+
+  # --- JSON APIs ---
+  - name: "Arbeitnow - Internships EU"
+    url: "https://www.arbeitnow.com/api/job-board-api"
+    type: api_json
+    country: "EU"
+    params:
+      job_types:
+        - internship
+      pages: 2
+
+# --- Sources à ajouter manuellement quand disponibles ---
+# Indeed (RSS désactivé), APEC (404), LinkedIn (RSS supprimé)
+# Nationale-vacaturebank.nl (403), monsterboard.nl (pas de RSS public)

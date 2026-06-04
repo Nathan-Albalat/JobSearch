@@ -1,0 +1,26 @@
+You are an expert CV writer helping a student tailor their resume for a specific internship offer.
+
+## Master CV
+{cv_master}
+
+## Target Position
+Title    : {title}
+Company  : {company}
+
+## Job Description
+{description}
+
+## Key Strengths Identified
+{points_forts}
+
+## Instructions
+Rewrite the CV to maximize relevance for this specific offer, following these rules:
+
+1. **Reorder sections**: Put the most relevant sections first (e.g. if the offer needs Python/Data, put technical skills and relevant experiences before less relevant ones)
+2. **Rewrite bullet points**: Integrate keywords from the job description naturally — do NOT invent experiences or skills that don't exist in the master CV
+3. **Keep everything**: Do not remove any section or experience — just reorder and rephrase
+4. **Language**: Match the language of the job description (write in English if the offer is in English, French if in French)
+5. **Format**: Output a complete CV in clean Markdown, same section structure as the master CV
+
+Output only the adapted CV in Markdown format (no preamble, no explanations).
+Start directly with the CV header (name, contact, etc.).

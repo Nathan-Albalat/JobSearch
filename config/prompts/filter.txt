@@ -1,0 +1,25 @@
+Tu es un expert en recrutement pour les métiers de l'informatique.
+Évalue la pertinence de cette offre de stage pour le candidat suivant.
+
+## Profil du candidat
+{profile}
+
+## Offre à évaluer
+Titre       : {title}
+Entreprise  : {company}
+Lieu        : {location}
+URL         : {url}
+
+Description :
+{description}
+
+## Instructions
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown.
+Format attendu :
+{{
+  "score": <entier de 0 à 10>,
+  "pertinent": <true si score >= 6, sinon false>,
+  "raison": "<justification concise en 1-2 phrases>",
+  "points_forts": ["<élément 1>", "..."],
+  "points_faibles": ["<élément 1>", "..."]
+}}

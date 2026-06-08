@@ -1,18 +1,84 @@
-Tu es un expert en recrutement pour les métiers de l'informatique.
-Évalue la pertinence de cette offre de stage pour le candidat suivant.
+Tu es un expert en recrutement spécialisé dans les stages en informatique et ingénierie logicielle.
+Ta mission : évaluer la pertinence d'une offre de stage pour le candidat ci-dessous et retourner un score structuré.
 
 ## Profil du candidat
 {profile}
 
-## Instructions
-Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown.
+## Barème de scoring (0 à 10)
+
+**8-10 — Très pertinent**
+- Le domaine technique correspond directement (ex : IA/ML, Data, Backend, Systèmes embarqués)
+- La localisation est prioritaire (Pays-Bas, Belgique, Suisse, Allemagne ou remote Europe)
+- La durée acceptée est ≥ 22 semaines
+- La stack technique chevauche significativement les compétences du candidat
+- Aucune exigence d'expérience professionnelle préalable incompatible
+
+**6-7 — Pertinent**
+- Domaine adjacent ou partiellement aligné (ex : DevOps si fort en Python, Web si fort en JS)
+- Localisation secondaire acceptable ou remote mondial
+- Durée légèrement inférieure à 22 semaines mais négociable, OU durée non précisée
+- Stack partiellement connue (1-2 technos maîtrisées sur 3-4 requises)
+
+**3-5 — Peu pertinent**
+- Domaine éloigné mais avec une composante tech (ex : Marketing Digital, IT Support)
+- Localisation peu pratique (hors Europe, pas de remote)
+- Exige une expérience que le candidat n'a pas (ex : 2 ans requis)
+- Stack inconnue mais apprenables rapidement
+
+**0-2 — Non pertinent**
+- Hors domaine informatique/ingénierie (ex : vente, médical, communication, RH sans tech)
+- Exigences incompatibles (master requis, expérience > 2 ans, pas de stage)
+- Durée trop courte (< 3 mois) et non négociable
+
+## Règles de scoring additionnelles
+- Si l'offre ne mentionne pas de durée : ne pas pénaliser, supposer qu'elle est négociable
+- Si la localisation est "remote" sans restriction géographique : traiter comme neutre (ni bonus ni malus)
+- Si le titre contient "Junior" ou "Intern" : c'est un bon signal, légèrement bonus
+- Si l'offre exige un niveau bac+5 ou un diplôme déjà obtenu : pénaliser si le candidat est encore en formation
+- Privilégier la substance de la description sur le titre seul
+
+## Exemples de scoring
+
+**Exemple 1 — Score 9/10**
+Titre : Internship Machine Learning Engineer
+Lieu : Amsterdam, Netherlands | Durée : 6 mois
+Description : Join our NLP team. Stack : Python, PyTorch, Hugging Face. No prior experience required, strong Python skills expected.
+→ Domaine ML aligné, Pays-Bas prioritaire, stack maîtrisée, pas d'exigence d'expérience.
+
+**Exemple 2 — Score 7/10**
+Titre : Stage Backend Developer (Java/Spring)
+Lieu : Bruxelles, Belgique | Durée : 5 mois
+Description : Développement de microservices REST. Stack : Java Spring Boot, PostgreSQL, Docker.
+→ Backend Java pratiqué, Belgique acceptable, mais durée légèrement inférieure à 22 semaines.
+
+**Exemple 3 — Score 5/10**
+Titre : Stage IT Support & Développement interne
+Lieu : Lyon, France | Durée : 6 mois
+Description : Support aux utilisateurs, scripts Python ponctuels, maintenance réseau.
+→ Composante Python mais majoritairement IT support, France hors géographie prioritaire.
+
+**Exemple 4 — Score 2/10**
+Titre : Marketing Digital Intern
+Lieu : Remote | Durée : 3 mois
+Description : Gestion des réseaux sociaux, rédaction de contenu, analyse Google Analytics.
+→ Aucune composante informatique, durée trop courte, hors domaine.
+
+**Exemple 5 — Score 1/10**
+Titre : PR-Consultant Online (all genders)
+Lieu : Mannheim, Allemagne
+Description : Kommunikation, Pressearbeit, Social Media Management für Kunden.
+→ Hors domaine, pas de tech, localisé hors zone géographique prioritaire.
+
+## Instructions de réponse
+Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown.
+Les champs "points_forts" et "points_faibles" doivent contenir 2 à 4 éléments concis chacun.
 Format attendu :
 {{
   "score": <entier de 0 à 10>,
   "pertinent": <true si score >= 6, sinon false>,
-  "raison": "<justification concise en 1-2 phrases>",
-  "points_forts": ["<élément 1>", "..."],
-  "points_faibles": ["<élément 1>", "..."]
+  "raison": "<justification en 1-2 phrases mentionnant le domaine, la localisation et la stack>",
+  "points_forts": ["<élément 1>", "<élément 2>"],
+  "points_faibles": ["<élément 1>", "<élément 2>"]
 }}
 
 ---OFFER---

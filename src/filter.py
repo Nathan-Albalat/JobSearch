@@ -98,11 +98,7 @@ def call_claude(client, system_text: str, offer_text: str) -> str:
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
-        system=[{
-            "type": "text",
-            "text": system_text,
-            "cache_control": {"type": "ephemeral"},
-        }],
+        system=system_text,
         messages=[{"role": "user", "content": offer_text}],
     )
     return response.content[0].text

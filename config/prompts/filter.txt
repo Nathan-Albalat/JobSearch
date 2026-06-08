@@ -4,15 +4,6 @@ Tu es un expert en recrutement pour les métiers de l'informatique.
 ## Profil du candidat
 {profile}
 
-## Offre à évaluer
-Titre       : {title}
-Entreprise  : {company}
-Lieu        : {location}
-URL         : {url}
-
-Description :
-{description}
-
 ## Instructions
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour ni balises markdown.
 Format attendu :
@@ -23,3 +14,13 @@ Format attendu :
   "points_forts": ["<élément 1>", "..."],
   "points_faibles": ["<élément 1>", "..."]
 }}
+
+---OFFER---
+## Offre à évaluer
+Titre       : {title}
+Entreprise  : {company}
+Lieu        : {location}
+URL         : {url}
+
+Description :
+{description}

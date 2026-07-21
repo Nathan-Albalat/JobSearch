@@ -45,6 +45,36 @@ sources:
         - internship
       pages: 2
 
+  # --- JobSpy (LinkedIn + Indeed via python-jobspy) ---
+  - name: "JobSpy - Software intern NL"
+    type: jobspy
+    country: "NL"
+    params:
+      sites: [linkedin, indeed]
+      search_term: "software intern"
+      location: "Netherlands"
+      country_indeed: "netherlands"
+      hours_old: 72
+      results_wanted: 50
+
+  - name: "JobSpy - Software intern Europe"
+    type: jobspy
+    country: "EU"
+    params:
+      sites: [linkedin]
+      search_term: "software engineering internship"
+      location: "European Union"
+      hours_old: 72
+      results_wanted: 40
+
+  # --- Adzuna (requiert ADZUNA_APP_ID / ADZUNA_APP_KEY dans .env) ---
+  - name: "Adzuna NL - Software internships"
+    type: adzuna
+    country: "NL"
+    params:
+      country: nl
+      what: "software intern"
+      pages: 2
+
 # --- Sources à ajouter manuellement quand disponibles ---
-# Indeed (RSS désactivé), APEC (404), LinkedIn (RSS supprimé)
-# Nationale-vacaturebank.nl (403), monsterboard.nl (pas de RSS public)
+# APEC (404), Nationale-vacaturebank.nl (403), monsterboard.nl (pas de RSS public)

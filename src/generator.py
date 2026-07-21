@@ -8,6 +8,10 @@ from datetime import date
 from dotenv import load_dotenv
 
 from src.filter import load_profile_text, strip_html
+from src.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_pdf
+from src.cv_sync import sync_cv_master
+from src.letter_pdf import render_letter_html, write_letter_pdf
+from src.tracker import record_generated
 
 
 def load_offer(offer_id: str, data_dir: str) -> dict:
@@ -19,10 +23,15 @@ def load_offer(offer_id: str, data_dir: str) -> dict:
         return json.load(f)
 
 
-def load_cv_master(cv_dir: str) -> str:
-    path = os.path.join(cv_dir, "cv_master.md")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+def fill_template(template: str, values: dict) -> str:
+    """Remplace {clé} par sa valeur sans interpréter les autres accolades.
+
+    Contrairement à str.format(), les accolades littérales du template
+    (ex: exemples JSON dans les prompts) ne posent aucun problème.
+    """
+    for key, value in values.items():
+        template = template.replace("{" + key + "}", str(value))
+    return template
 
 
 def call_sonnet(client, prompt: str) -> str:
@@ -55,43 +64,51 @@ def generate_cover_letter(
     client,
     offer: dict,
     profile_text: str,
-    cv_text: str,
+    cv_summary: str,
     template: str,
 ) -> str:
     fr = offer.get("filter_result", {})
     points_forts = ", ".join(fr.get("points_forts", [])) or "Voir profil"
 
-    cv_summary = "\n".join(cv_text.split("\n")[:60])
-
-    prompt = template.format(
-        profile=profile_text,
-        cv_summary=cv_summary,
-        title=offer.get("title", ""),
-        company=offer.get("company", "") or "l'entreprise",
-        location=offer.get("location", ""),
-        description=strip_html(offer.get("description", ""), max_chars=2500),
-        points_forts=points_forts,
-    )
+    prompt = fill_template(template, {
+        "profile": profile_text,
+        "cv_summary": cv_summary,
+        "title": offer.get("title", ""),
+        "company": offer.get("company", "") or "l'entreprise",
+        "location": offer.get("location", ""),
+        "description": strip_html(offer.get("description", ""), max_chars=2500),
+        "points_forts": points_forts,
+    })
     return call_sonnet(client, prompt)
 
 
 def generate_cv_adapt(
     client,
     offer: dict,
-    cv_text: str,
+    cv_data: dict,
     template: str,
-) -> str:
-    fr = offer.get("filter_result", {})
-    points_forts = ", ".join(fr.get("points_forts", [])) or "Voir profil"
+) -> dict:
+    """Asks Claude to return an adapted JSON structure for the CV template."""
+    import yaml as _yaml
 
-    prompt = template.format(
-        cv_master=cv_text,
-        title=offer.get("title", ""),
-        company=offer.get("company", "") or "l'entreprise",
-        description=strip_html(offer.get("description", ""), max_chars=2500),
-        points_forts=points_forts,
-    )
-    return call_sonnet(client, prompt)
+    fr = offer.get("filter_result", {})
+    points_forts = ", ".join(fr.get("points_forts", [])) or "See profile"
+
+    prompt = fill_template(template, {
+        "cv_data": _yaml.dump(cv_data, allow_unicode=True, sort_keys=False),
+        "title": offer.get("title", ""),
+        "company": offer.get("company", "") or "the company",
+        "description": strip_html(offer.get("description", ""), max_chars=2500),
+        "points_forts": points_forts,
+    })
+    raw = call_sonnet(client, prompt)
+
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw)
 
 
 def generate(
@@ -100,6 +117,7 @@ def generate(
     data_dir: str = "data",
     cv_dir: str = "cv_master",
     output_dir: str = "output",
+    letter_only: bool = False,
 ) -> str:
     load_dotenv()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -118,17 +136,17 @@ def generate(
         )
 
     profile_text = load_profile_text(config_dir)
-    cv_text = load_cv_master(cv_dir)
+    sync_cv_master(cv_dir)  # cv_master.md toujours aligné sur cv_data.yaml
+    cv_data = load_cv_data(cv_dir)
+    cv_summary = cv_data_to_text(cv_data)
 
     with open(os.path.join(config_dir, "prompts", "cover_letter.txt"), "r", encoding="utf-8") as f:
         cover_template = f.read()
-    with open(os.path.join(config_dir, "prompts", "cv_adapt.txt"), "r", encoding="utf-8") as f:
-        cv_template = f.read()
 
     folder = make_output_dir(offer, output_dir)
 
     print(f"Génération de la lettre de motivation...")
-    lettre = generate_cover_letter(client, offer, profile_text, cv_text, cover_template)
+    lettre = generate_cover_letter(client, offer, profile_text, cv_summary, cover_template)
     lettre_path = os.path.join(folder, "lettre.md")
     with open(lettre_path, "w", encoding="utf-8") as f:
         f.write(f"<!-- Offre : {offer.get('title', '')} — {offer.get('company', '')} -->\n")
@@ -136,11 +154,46 @@ def generate(
         f.write(f"<!-- Généré le : {date.today()} -->\n\n")
         f.write(lettre)
 
-    print(f"Génération du CV adapté...")
-    cv_adapte = generate_cv_adapt(client, offer, cv_text, cv_template)
-    cv_path = os.path.join(folder, "cv_adapte.md")
-    with open(cv_path, "w", encoding="utf-8") as f:
-        f.write(cv_adapte)
+    lettre_html = render_letter_html(
+        os.path.join(config_dir, "templates", "cover_letter.html"),
+        cv_data,
+        lettre,
+        company_name=offer.get("company", ""),
+        company_location=offer.get("location", ""),
+        position_title=offer.get("title", ""),
+    )
+    lettre_pdf_path = os.path.join(folder, "lettre.pdf")
+    try:
+        write_letter_pdf(lettre_html, lettre_pdf_path)
+        print(f"Lettre PDF générée : {lettre_pdf_path}")
+    except ImportError as e:
+        print(f"Avertissement : {e}", file=sys.stderr)
+
+    if letter_only:
+        print("Mode lettre seule : CV adapté non généré (économie d'un appel API).")
+    else:
+        print(f"Génération du CV adapté...")
+        with open(os.path.join(config_dir, "prompts", "cv_adapt.txt"), "r", encoding="utf-8") as f:
+            cv_template = f.read()
+        template_path = os.path.join(config_dir, "templates", "cv_en.html")
+        adapted = generate_cv_adapt(client, offer, cv_data, cv_template)
+
+        html_content = render_cv_html(template_path, cv_data, adapted)
+
+        html_path = os.path.join(folder, "cv_adapte.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        pdf_path = os.path.join(folder, "cv_adapte.pdf")
+        try:
+            write_cv_pdf(html_content, pdf_path)
+            print(f"PDF généré : {pdf_path}")
+        except ImportError as e:
+            print(f"Avertissement : {e}", file=sys.stderr)
+            print(f"HTML de prévisualisation disponible : {html_path}", file=sys.stderr)
+
+    record_generated(offer, data_dir)
+    print(f"Candidature enregistrée dans le suivi (data/applications.json).")
 
     return folder
 
@@ -152,9 +205,14 @@ if __name__ == "__main__":
     parser.add_argument("--data", default="data")
     parser.add_argument("--cv", default="cv_master")
     parser.add_argument("--output", default="output")
+    parser.add_argument("--letter-only", action="store_true",
+                        help="Génère uniquement la lettre (pas de CV adapté — économie d'un appel API)")
     args = parser.parse_args()
 
-    folder = generate(args.offer_id, args.config, args.data, args.cv, args.output)
+    folder = generate(args.offer_id, args.config, args.data, args.cv, args.output, args.letter_only)
     print(f"\nCandidature générée dans : {folder}")
     print(f"  - {folder}/lettre.md")
-    print(f"  - {folder}/cv_adapte.md")
+    print(f"  - {folder}/lettre.pdf")
+    if not args.letter_only:
+        print(f"  - {folder}/cv_adapte.html")
+        print(f"  - {folder}/cv_adapte.pdf")

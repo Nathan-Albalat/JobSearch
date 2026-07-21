@@ -4,6 +4,8 @@ import os
 import sys
 from datetime import date
 
+from src.tracker import render_tracking_section
+
 
 def load_filtered_offers(data_dir: str) -> list[dict]:
     offers_dir = os.path.join(data_dir, "offers")
@@ -87,6 +89,12 @@ def render_report(offers: list[dict], threshold: int = 6) -> str:
         lines.append("")
         lines.append(f"> {len(non_pertinent)} offre(s) écartée(s) (score < {threshold}) — non listées en détail.")
         lines.append("")
+
+    tracking = render_tracking_section("data")
+    if tracking:
+        lines.append("---")
+        lines.append("")
+        lines.extend(tracking)
 
     return "\n".join(lines)
 

@@ -1,7 +1,7 @@
 You are an expert CV writer helping a student tailor their resume for a specific internship offer.
 
-## Master CV
-{cv_master}
+## Master CV Data
+{cv_data}
 
 ## Target Position
 Title    : {title}
@@ -14,13 +14,38 @@ Company  : {company}
 {points_forts}
 
 ## Instructions
-Rewrite the CV to maximize relevance for this specific offer, following these rules:
+Adapt the CV to maximise relevance for this specific offer:
 
-1. **Reorder sections**: Put the most relevant sections first (e.g. if the offer needs Python/Data, put technical skills and relevant experiences before less relevant ones)
-2. **Rewrite bullet points**: Integrate keywords from the job description naturally — do NOT invent experiences or skills that don't exist in the master CV
-3. **Keep everything**: Do not remove any section or experience — just reorder and rephrase
-4. **Language**: Match the language of the job description (write in English if the offer is in English, French if in French)
-5. **Format**: Output a complete CV in clean Markdown, same section structure as the master CV
+1. **Reorder experiences and projects**: Put the most relevant entries first for this offer
+2. **Rewrite bullet points**: Integrate keywords from the job description naturally — do NOT invent experiences or skills absent from the master CV
+3. **Adapt headline**: Write a concise, offer-specific headline (e.g. "Software Engineering Intern — Backend / Python" or "Ingénieur logiciel stagiaire — Data / ML")
+4. **Adjust skills emphasis**: Reorder or highlight skills most relevant to the offer
+5. **Language**: Match the language of the job description (write in English if the offer is in English, French if in French)
+6. **Keep all entries**: Do not remove any experience or project — just reorder and rephrase
 
-Output only the adapted CV in Markdown format (no preamble, no explanations).
-Start directly with the CV header (name, contact, etc.).
+Output ONLY a valid JSON object with this exact structure (no preamble, no markdown fences):
+{
+  "headline": "...",
+  "experiences": [
+    {
+      "title": "...",
+      "date": "...",
+      "subtitle": "...",
+      "bullets": ["...", "..."],
+      "stack": ["...", "..."]
+    }
+  ],
+  "projects": [
+    {
+      "title": "...",
+      "date": "...",
+      "subtitle": "...",
+      "bullets": ["..."],
+      "stack": ["..."]
+    }
+  ],
+  "skills_proficient": "...",
+  "skills_familiar": "...",
+  "skills_tools": "...",
+  "skills_domains": "..."
+}

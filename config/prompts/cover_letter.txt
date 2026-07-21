@@ -24,9 +24,9 @@ Write a professional yet genuine cover letter (~350 words) with this structure:
 1. **Hook** — An engaging opening that references something specific about the company or role (not generic)
 2. **Why them** — Why this company/role is specifically interesting to the candidate
 3. **Why me** — Highlight 2-3 concrete skills/experiences from the CV that match the offer's requirements
-4. **Closing** — Availability (from February 2027, minimum 22 weeks), enthusiasm, call to action
+4. **Closing** — Availability (from March 15th 2027, minimum 22 weeks), enthusiasm, call to action
 
 Tone: professional but not stiff — natural, direct, confident without being arrogant.
 
 Output only the cover letter text in Markdown format (no preamble, no explanations, no "Here is your cover letter:").
-Start directly with the opening paragraph.
+Start directly with the opening paragraph. Do not use "—", prioritize the use of commas. 

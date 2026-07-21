@@ -1,5 +1,5 @@
 formation:
-  ecole: "Polytech"
+  ecole: "Votre École d'Ingénieurs"
   niveau: "Ingénieur 5ème année (INFO5)"
   specialite: "Informatique"
   diplome_prevu: "2027"
@@ -8,6 +8,7 @@ stage:
   duree_min_semaines: 22
   disponibilite_debut: "2027-02-01"
   type_contrat: "Convention de stage"
+  type_travail: "Présentiel / Hybride"
 
 preferences_geo:
   priorite:
@@ -15,7 +16,6 @@ preferences_geo:
     - "Belgique"
     - "Suisse"
     - "Allemagne"
-    - "Italie"
   secondaire:
     - "Europe (hors pays frontaliers)"
   dernier_recours:
@@ -38,13 +38,9 @@ competences_techniques:
   langages_pratiques:
     - JavaScript
     - TypeScript
-    - C++
-    - Assembly
-    - OCaml
     - SQL
     - HTML
     - CSS
-    - Rocq
   langages_mise_en_forme:
     - LaTeX
     - Markdown
@@ -54,17 +50,12 @@ competences_techniques:
     - Git
     - Docker
     - PostgreSQL
-    - VS Code
-    - Eclipse IDE
     - Linux
-    - macOS
-    - Windows
   domaines_ml:
     - "Q-Learning"
     - "Value Iteration"
     - "Bandit Algorithm"
   niveau_anglais: "Courant (travail en environnement international)"
-  niveau_neerlandais: "Débutant / aucun (Pays-Bas prioritaire, apprentissage en cours)"
 
 langues:
   - langue: "Français"
@@ -81,5 +72,5 @@ criteres_pertinence:
     - "Entreprise internationale"
   malus:
     - "Exige expérience professionnelle > 1 an"
-    - "Uniquement présentiel hors Europe"
+    - "Uniquement distanciel"
     - "Stage < 22 semaines"

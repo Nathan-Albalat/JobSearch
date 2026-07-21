@@ -1,11 +1,14 @@
+import difflib
 import hashlib
 import json
 import os
+import re
 from datetime import date, datetime
 
 import feedparser
 import requests
 import yaml
+from dotenv import load_dotenv
 
 
 def load_sources(config_dir: str) -> list[dict]:
@@ -85,6 +88,103 @@ def normalize_api_json(job: dict, source: dict) -> dict:
     }
 
 
+def fetch_adzuna(source: dict) -> list[dict]:
+    """Interroge l'API Adzuna (clés ADZUNA_APP_ID / ADZUNA_APP_KEY dans .env)."""
+    load_dotenv()
+    app_id = os.environ.get("ADZUNA_APP_ID", "")
+    app_key = os.environ.get("ADZUNA_APP_KEY", "")
+    if not app_id or not app_key:
+        print("    ADZUNA_APP_ID / ADZUNA_APP_KEY manquants dans .env — source ignorée.")
+        return []
+
+    params = dict(source.get("params", {}) or {})
+    country = params.pop("country", "nl")
+    pages = params.pop("pages", 1)
+    results = []
+    for page in range(1, pages + 1):
+        query = {
+            "app_id": app_id,
+            "app_key": app_key,
+            "results_per_page": params.get("results_per_page", 50),
+            "what": params.get("what", "internship software"),
+            "content-type": "application/json",
+        }
+        if params.get("contract_type"):
+            query[params["contract_type"]] = "1"  # ex: contract_type: full_time
+        resp = requests.get(
+            f"https://api.adzuna.com/v1/api/jobs/{country}/search/{page}",
+            params=query,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        jobs = resp.json().get("results", [])
+        if not jobs:
+            break
+        results.extend(jobs)
+    return results
+
+
+def normalize_adzuna(job: dict, source: dict) -> dict:
+    url = job.get("redirect_url", "")
+    return {
+        "id": make_offer_id(url),
+        "title": job.get("title", "").strip(),
+        "company": (job.get("company") or {}).get("display_name", ""),
+        "location": (job.get("location") or {}).get("display_name", "") or source.get("country", ""),
+        "description": job.get("description", ""),
+        "url": url,
+        "date_published": str(job.get("created", ""))[:10] or str(date.today()),
+        "date_scraped": str(date.today()),
+        "source": source.get("name", ""),
+        "country": source.get("country", ""),
+        "tags": [],
+        "remote": False,
+    }
+
+
+# Mots parasites retirés des titres avant comparaison fuzzy inter-sources
+_TITLE_NOISE = re.compile(
+    r"\b(stage|internship|intern|h/f|f/h|m/f|f/m|m/w/d|w/m/d|cdi|cdd|20\d\d)\b|[^\w\s]",
+    re.IGNORECASE,
+)
+
+
+def _normalize_for_dedup(text: str) -> str:
+    return " ".join(_TITLE_NOISE.sub(" ", text.lower()).split())
+
+
+def load_existing_dedup_keys(data_dir: str) -> list[tuple[str, str]]:
+    """Retourne les clés (entreprise, titre) normalisées des offres déjà stockées."""
+    offers_dir = os.path.join(data_dir, "offers")
+    keys = []
+    if not os.path.isdir(offers_dir):
+        return keys
+    for filename in os.listdir(offers_dir):
+        if not filename.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(offers_dir, filename), encoding="utf-8") as f:
+                o = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        keys.append((_normalize_for_dedup(o.get("company", "")), _normalize_for_dedup(o.get("title", ""))))
+    return keys
+
+
+def is_cross_source_duplicate(offer: dict, keys: list[tuple[str, str]]) -> bool:
+    """Détecte la même offre arrivée via deux boards (entreprise identique + titre ~identique)."""
+    company = _normalize_for_dedup(offer.get("company", ""))
+    title = _normalize_for_dedup(offer.get("title", ""))
+    if not company or not title:
+        return False
+    for k_company, k_title in keys:
+        if k_company != company or not k_title:
+            continue
+        if difflib.SequenceMatcher(None, title, k_title).ratio() >= 0.9:
+            return True
+    return False
+
+
 def normalize_offer(entry, source: dict) -> dict:
     url = entry.get("link", "")
     title = entry.get("title", "").strip()
@@ -134,6 +234,7 @@ def save_offer(offer: dict, data_dir: str) -> None:
 def scrape_all(config_dir: str = "config", data_dir: str = "data") -> list[dict]:
     sources = load_sources(config_dir)
     seen = load_seen_offers(data_dir)
+    dedup_keys = load_existing_dedup_keys(data_dir)
     new_offers = []
 
     for source in sources:
@@ -144,6 +245,15 @@ def scrape_all(config_dir: str = "config", data_dir: str = "data") -> list[dict]
                 raw_jobs = fetch_api_json(source)
                 candidates = [
                     (normalize_api_json(j, source), j.get("url", ""))
+                    for j in raw_jobs
+                ]
+            elif source_type == "jobspy":
+                from src.scraper_jobspy import fetch_jobspy
+                candidates = [(o, o["url"]) for o in fetch_jobspy(source)]
+            elif source_type == "adzuna":
+                raw_jobs = fetch_adzuna(source)
+                candidates = [
+                    (normalize_adzuna(j, source), j.get("redirect_url", ""))
                     for j in raw_jobs
                 ]
             else:
@@ -162,9 +272,16 @@ def scrape_all(config_dir: str = "config", data_dir: str = "data") -> list[dict]
             offer_id = make_offer_id(url)
             if offer_id in seen:
                 continue
+            if is_cross_source_duplicate(offer, dedup_keys):
+                print(f"    Doublon inter-sources ignoré : {offer.get('title', '')[:60]} — {offer.get('company', '')}")
+                seen[offer_id] = offer["date_scraped"]
+                continue
 
             save_offer(offer, data_dir)
             seen[offer_id] = offer["date_scraped"]
+            dedup_keys.append(
+                (_normalize_for_dedup(offer.get("company", "")), _normalize_for_dedup(offer.get("title", "")))
+            )
             new_offers.append(offer)
 
     save_seen_offers(data_dir, seen)

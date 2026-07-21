@@ -75,33 +75,40 @@ def is_tech_offer(offer: dict) -> bool:
     return any(kw in text for kw in _TECH_KEYWORDS)
 
 
+def _fill(template: str, values: dict) -> str:
+    """Remplace {clé} sans interpréter les accolades littérales (exemples JSON)."""
+    for key, value in values.items():
+        template = template.replace("{" + key + "}", str(value))
+    return template
+
+
 def build_system_prompt(template: str, profile_text: str) -> str:
     """Returns the static part of the prompt (before ---OFFER---)."""
     static_part = template.split("---OFFER---")[0]
-    return static_part.format(profile=profile_text)
+    return _fill(static_part, {"profile": profile_text})
 
 
 def build_offer_prompt(template: str, offer: dict) -> str:
     """Returns the offer-specific part of the prompt (after ---OFFER---)."""
     parts = template.split("---OFFER---")
     offer_part = parts[1] if len(parts) > 1 else template
-    return offer_part.format(
-        title=offer.get("title", ""),
-        company=offer.get("company", ""),
-        location=offer.get("location", ""),
-        url=offer.get("url", ""),
-        description=strip_html(offer.get("description", ""), max_chars=1500),
-    )
+    return _fill(offer_part, {
+        "title": offer.get("title", ""),
+        "company": offer.get("company", ""),
+        "location": offer.get("location", ""),
+        "url": offer.get("url", ""),
+        "description": strip_html(offer.get("description", ""), max_chars=1500),
+    })
 
 
-def call_claude(client, system_text: str, offer_text: str) -> str:
+def call_claude(client, system_text: str, offer_text: str) -> tuple[str, object]:
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=512,
-        system=system_text,
+        system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": offer_text}],
     )
-    return response.content[0].text
+    return response.content[0].text, response.usage
 
 
 def parse_filter_response(text: str) -> dict:
@@ -114,18 +121,115 @@ def parse_filter_response(text: str) -> dict:
     return json.loads(text)
 
 
-def score_offer(client, offer: dict, system_text: str, template: str) -> dict:
+def score_offer(client, offer: dict, system_text: str, template: str) -> tuple[dict, object]:
     offer_text = build_offer_prompt(template, offer)
-    raw = call_claude(client, system_text, offer_text)
+    raw, usage = call_claude(client, system_text, offer_text)
     result = parse_filter_response(raw)
     result["filtered_at"] = str(date.today())
-    return result
+    return result, usage
+
+
+_MODEL = "claude-haiku-4-5-20251001"
+_BATCH_MIN_OFFERS = 6  # en dessous, le mode séquentiel suffit
+
+
+def _save_offer_file(filepath: str, offer: dict) -> None:
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(offer, f, ensure_ascii=False, indent=2)
+
+
+def _prefilter_result() -> dict:
+    return {
+        "score": 0,
+        "pertinent": False,
+        "raison": "Hors domaine (pré-filtre mots-clés, pas d'appel API)",
+        "points_forts": [],
+        "points_faibles": [],
+        "filtered_at": str(date.today()),
+        "prefiltered": True,
+    }
+
+
+def filter_batch(
+    client,
+    to_score: list[tuple[str, dict]],
+    system_text: str,
+    template: str,
+    threshold: int,
+) -> tuple[int, int]:
+    """Score les offres via l'API Message Batches (-50% de coût, asynchrone)."""
+    import time
+
+    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+    from anthropic.types.messages.batch_create_params import Request
+
+    requests_list = [
+        Request(
+            custom_id=offer["id"],
+            params=MessageCreateParamsNonStreaming(
+                model=_MODEL,
+                max_tokens=512,
+                system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
+                messages=[{"role": "user", "content": build_offer_prompt(template, offer)}],
+            ),
+        )
+        for _, offer in to_score
+    ]
+
+    batch = client.messages.batches.create(requests=requests_list)
+    print(f"  Batch créé : {batch.id} ({len(requests_list)} requêtes). Attente des résultats...")
+
+    while True:
+        batch = client.messages.batches.retrieve(batch.id)
+        if batch.processing_status == "ended":
+            break
+        counts = batch.request_counts
+        print(
+            f"  ... en cours : {counts.succeeded + counts.errored}/{len(requests_list)} traitée(s)",
+            end="\r",
+            flush=True,
+        )
+        time.sleep(30)
+
+    files_by_id = {offer["id"]: (filepath, offer) for filepath, offer in to_score}
+    total_filtered = 0
+    total_pertinent = 0
+    total_errored = 0
+
+    for result in client.messages.batches.results(batch.id):
+        entry = files_by_id.get(result.custom_id)
+        if entry is None:
+            continue
+        filepath, offer = entry
+        if result.result.type != "succeeded":
+            total_errored += 1
+            print(f"  Erreur batch sur {result.custom_id} ({result.result.type}) — sera retentée au prochain run.", file=sys.stderr)
+            continue
+        msg = result.result.message
+        raw = next((b.text for b in msg.content if b.type == "text"), "")
+        try:
+            parsed = parse_filter_response(raw)
+        except (json.JSONDecodeError, IndexError) as e:
+            total_errored += 1
+            print(f"  Réponse illisible pour {result.custom_id} : {e}", file=sys.stderr)
+            continue
+        parsed["filtered_at"] = str(date.today())
+        offer["filter_result"] = parsed
+        _save_offer_file(filepath, offer)
+        total_filtered += 1
+        if parsed.get("score", 0) >= threshold:
+            total_pertinent += 1
+            print(f"  [{parsed['score']}/10] {offer.get('title', '?')} — {offer.get('company', '?')}")
+
+    print(f"\n  → Batch terminé : {total_filtered} réussie(s), {total_errored} en erreur.")
+    return total_filtered, total_pertinent
 
 
 def filter_all(
     config_dir: str = "config",
     data_dir: str = "data",
     threshold: int = 6,
+    use_batch: bool = True,
 ) -> tuple[int, int]:
     load_dotenv()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -148,6 +252,8 @@ def filter_all(
     total_filtered = 0
     total_pertinent = 0
     total_prefiltered = 0
+    total_cache_creation = 0
+    total_cache_read = 0
 
     all_files = sorted(f for f in os.listdir(offers_dir) if f.endswith(".json"))
     pending = [
@@ -157,32 +263,35 @@ def filter_all(
     total_pending = len(pending)
     print(f"  {total_pending} offre(s) à analyser ({len(all_files) - total_pending} déjà filtrée(s)).")
 
-    for idx, filename in enumerate(pending, 1):
+    # Pré-filtre mots-clés : écarte les offres hors domaine sans appel API
+    to_score: list[tuple[str, dict]] = []
+    for filename in pending:
         filepath = os.path.join(offers_dir, filename)
         with open(filepath, "r", encoding="utf-8") as f:
             offer = json.load(f)
-
-        # Pré-filtre : ignore les offres manifestement hors domaine tech
         if not is_tech_offer(offer):
-            offer["filter_result"] = {
-                "score": 0,
-                "pertinent": False,
-                "raison": "Hors domaine (pré-filtre mots-clés, pas d'appel API)",
-                "points_forts": [],
-                "points_faibles": [],
-                "filtered_at": str(date.today()),
-                "prefiltered": True,
-            }
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(offer, f, ensure_ascii=False, indent=2)
+            offer["filter_result"] = _prefilter_result()
+            _save_offer_file(filepath, offer)
             total_prefiltered += 1
-            print(f"  [{idx}/{total_pending}] ✗ {offer.get('title', '?')[:55]}", end="\r", flush=True)
-            continue
+        else:
+            to_score.append((filepath, offer))
 
+    print(f"  → {total_prefiltered} offre(s) écartée(s) par pré-filtre, {len(to_score)} à scorer via API.")
+
+    # Mode batch (-50% de coût) dès qu'il y a assez d'offres
+    if use_batch and len(to_score) >= _BATCH_MIN_OFFERS:
+        total_filtered, total_pertinent = filter_batch(
+            client, to_score, system_text, template, threshold
+        )
+        return total_filtered, total_pertinent
+
+    # Mode séquentiel (petits volumes ou --no-batch)
+    for idx, (filepath, offer) in enumerate(to_score, 1):
+        total_pending = len(to_score)
         print(f"  [{idx}/{total_pending}] ⏳ {offer.get('title', '?')[:55]}", end="\r", flush=True)
 
         try:
-            result = score_offer(client, offer, system_text, template)
+            result, usage = score_offer(client, offer, system_text, template)
         except Exception as e:
             err_str = str(e).lower()
             if "credit" in err_str or "balance" in err_str or "billing" in err_str:
@@ -195,12 +304,14 @@ def filter_all(
                     file=sys.stderr,
                 )
                 break
-            print(f"  Erreur sur {offer.get('id', filename)} : {e}", file=sys.stderr)
+            print(f"  Erreur sur {offer.get('id', '?')} : {e}", file=sys.stderr)
             continue
 
+        total_cache_creation += getattr(usage, "cache_creation_input_tokens", 0) or 0
+        total_cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
+
         offer["filter_result"] = result
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(offer, f, ensure_ascii=False, indent=2)
+        _save_offer_file(filepath, offer)
 
         total_filtered += 1
         if result.get("score", 0) >= threshold:
@@ -209,15 +320,18 @@ def filter_all(
                 f"\n  [{result['score']}/10] {offer.get('title', '?')} — {offer.get('company', '?')}"
             )
 
-    print(f"\n  → {total_prefiltered} offre(s) écartée(s) par pré-filtre (hors domaine, 0 appel API).")
+    if total_cache_creation or total_cache_read:
+        cache_hit_rate = (total_cache_read / (total_cache_creation + total_cache_read) * 100) if (total_cache_creation + total_cache_read) else 0
+        print(f"  → Cache : {total_cache_creation} tokens écrits, {total_cache_read} tokens lus ({cache_hit_rate:.0f}% de hits).")
     return total_filtered, total_pertinent
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Filtre les offres via Claude API")
     parser.add_argument("--threshold", type=int, default=6, help="Score minimum (défaut: 6)")
+    parser.add_argument("--no-batch", action="store_true", help="Force le mode séquentiel (sans Message Batches)")
     args = parser.parse_args()
 
     print(f"Filtrage des offres (seuil : {args.threshold}/10)...")
-    filtered, pertinent = filter_all(threshold=args.threshold)
+    filtered, pertinent = filter_all(threshold=args.threshold, use_batch=not args.no_batch)
     print(f"\n{filtered} offre(s) filtrée(s), {pertinent} pertinente(s) (score >= {args.threshold}).")

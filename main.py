@@ -1,5 +1,34 @@
 import argparse
+import os
 import sys
+
+
+def _check_setup() -> None:
+    """Détecte les fichiers de config manquants et propose de lancer setup.sh."""
+    required = {
+        ".env": ".env.example",
+        "config/profile.yaml": "config/profile.example.yaml",
+        "cv_master/cv_data.yaml": "cv_master/cv_data.example.yaml",
+        "cv_master/cv_master.md": "cv_master/cv_master.example.md",
+    }
+    missing = [f for f in required if not os.path.exists(f)]
+    if not missing:
+        return
+
+    print("⚠️  Première utilisation détectée — fichiers de configuration manquants :")
+    for f in missing:
+        print(f"   • {f}  (exemple : {required[f]})")
+    print()
+    answer = input("Lancer setup.sh pour les créer automatiquement ? [O/n] ").strip().lower()
+    if answer in ("", "o", "oui", "y", "yes"):
+        os.system("bash setup.sh")
+        print()
+        print("✓ Fichiers créés. Édite-les avant de relancer.")
+        sys.exit(0)
+    else:
+        print("Abandon. Lance 'bash setup.sh' manuellement ou crée les fichiers à la main.")
+        sys.exit(1)
+
 
 from src.scraper import scrape_all
 from src.filter import filter_all
@@ -7,9 +36,10 @@ from src.report import generate_report, load_filtered_offers
 from src.generator import generate
 from src.notifier import send_notification
 from src.manual import from_file, from_url
+from src.tracker import load_applications, mark_status, render_applications_table, STATUSES
 
 
-def cmd_scrape(threshold: int) -> None:
+def cmd_scrape(threshold: int, use_batch: bool = True) -> None:
     print("=" * 50)
     print("ÉTAPE 1/3 — Collecte des offres")
     print("=" * 50)
@@ -19,7 +49,7 @@ def cmd_scrape(threshold: int) -> None:
     print("=" * 50)
     print("ÉTAPE 2/3 — Filtrage par pertinence (Claude API)")
     print("=" * 50)
-    filtered, pertinent = filter_all(threshold=threshold)
+    filtered, pertinent = filter_all(threshold=threshold, use_batch=use_batch)
     print(f"→ {filtered} offre(s) analysée(s), {pertinent} pertinente(s) (score ≥ {threshold}).\n")
 
     print("=" * 50)
@@ -40,14 +70,18 @@ def cmd_scrape(threshold: int) -> None:
     print("  python main.py --generate <offer_id>")
 
 
-def cmd_generate(offer_id: str) -> None:
+def cmd_generate(offer_id: str, letter_only: bool = False) -> None:
     print("=" * 50)
-    print(f"Génération de candidature pour l'offre : {offer_id}")
+    mode = " (lettre seule)" if letter_only else ""
+    print(f"Génération de candidature pour l'offre : {offer_id}{mode}")
     print("=" * 50)
-    folder = generate(offer_id)
+    folder = generate(offer_id, letter_only=letter_only)
     print(f"\nCandidature prête dans : {folder}")
     print(f"  - {folder}/lettre.md")
-    print(f"  - {folder}/cv_adapte.md")
+    print(f"  - {folder}/lettre.pdf")
+    if not letter_only:
+        print(f"  - {folder}/cv_adapte.html")
+        print(f"  - {folder}/cv_adapte.pdf")
 
 
 def cmd_from_file(args) -> None:
@@ -79,7 +113,51 @@ def cmd_from_url(args) -> None:
     print(f"  - {folder}/cv_adapte.md")
 
 
+def cmd_letter_pdf(args) -> None:
+    import json
+    import os
+
+    from src.cv_pdf import load_cv_data
+    from src.letter_pdf import render_letter_html, write_letter_pdf
+
+    path = args.letter_pdf
+    if not os.path.exists(path):
+        sys.exit(f"Erreur : fichier introuvable : {path}")
+
+    if path.endswith(".json"):
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        body = data.get("body_markdown", "")
+        company = data.get("company_name", "")
+        location = data.get("company_location", "")
+        dept = data.get("company_dept", "")
+        title = data.get("position_title", "")
+    else:
+        with open(path, encoding="utf-8") as f:
+            body = f.read()
+        company = args.company
+        location = args.location
+        dept = args.dept
+        title = args.title
+
+    cv_data = load_cv_data("cv_master")
+    html = render_letter_html(
+        os.path.join("config", "templates", "cover_letter.html"),
+        cv_data,
+        body,
+        company_name=company,
+        company_location=location,
+        company_dept=dept,
+        position_title=title,
+    )
+    output = args.output or os.path.splitext(path)[0] + ".pdf"
+    write_letter_pdf(html, output)
+    print(f"Lettre PDF générée : {output}")
+
+
 def main() -> None:
+    _check_setup()
+
     parser = argparse.ArgumentParser(
         description="Pipeline automatisé de recherche de stage",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -114,6 +192,57 @@ Exemples :
         metavar="URL",
         help="Télécharge une page d'offre et génère la candidature",
     )
+    group.add_argument(
+        "--letter-pdf",
+        metavar="PATH",
+        help="Rend une lettre en PDF : fichier .md/.txt (corps de lettre, avec --company/--title/--location/--dept) ou .json (format files/letter/)",
+    )
+    group.add_argument(
+        "--tui",
+        action="store_true",
+        help="Ouvre l'interface interactive (revue des offres, génération, suivi)",
+    )
+    group.add_argument(
+        "--applications",
+        action="store_true",
+        help="Affiche le tableau de suivi des candidatures",
+    )
+    group.add_argument(
+        "--mark",
+        nargs=2,
+        metavar=("OFFER_ID", "STATUS"),
+        help=f"Met à jour le statut d'une candidature ({', '.join(STATUSES)})",
+    )
+    parser.add_argument(
+        "--location",
+        default="",
+        help="Lieu de l'entreprise (utilisé avec --letter-pdf)",
+    )
+    parser.add_argument(
+        "--dept",
+        default="",
+        help="Département / équipe de l'entreprise (utilisé avec --letter-pdf)",
+    )
+    parser.add_argument(
+        "--output",
+        default="",
+        help="Chemin du PDF de sortie (utilisé avec --letter-pdf)",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="Note libre ajoutée avec --mark",
+    )
+    parser.add_argument(
+        "--no-batch",
+        action="store_true",
+        help="Force le filtrage séquentiel (sans l'API Message Batches)",
+    )
+    parser.add_argument(
+        "--letter-only",
+        action="store_true",
+        help="Avec --generate : produit uniquement la lettre (pas de CV adapté — économie d'un appel API)",
+    )
     parser.add_argument(
         "--threshold",
         type=int,
@@ -139,14 +268,28 @@ Exemples :
 
     args = parser.parse_args()
 
-    if args.scrape:
-        cmd_scrape(args.threshold)
+    if args.letter_pdf:
+        cmd_letter_pdf(args)
+    elif args.tui:
+        from src.tui import run_tui  # import paresseux : textual requis seulement ici
+        run_tui()
+    elif args.scrape:
+        cmd_scrape(args.threshold, use_batch=not args.no_batch)
     elif args.generate:
-        cmd_generate(args.generate)
+        cmd_generate(args.generate, letter_only=args.letter_only)
     elif args.from_file:
         cmd_from_file(args)
     elif args.from_url:
         cmd_from_url(args)
+    elif args.applications:
+        print(render_applications_table(load_applications()))
+    elif args.mark:
+        offer_id, status = args.mark
+        try:
+            app = mark_status(offer_id, status, note=args.note)
+        except (KeyError, ValueError) as e:
+            sys.exit(f"Erreur : {e}")
+        print(f"Candidature {offer_id} ({app['company']}) → statut : {status}")
 
 
 if __name__ == "__main__":

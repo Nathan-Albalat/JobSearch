@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{FULL_NAME}} — CV</title>
+<style>
+  /* Polices locales (config/templates/fonts/) — plus de dépendance réseau */
+  @font-face {
+    font-family: 'DM Sans';
+    font-weight: 300;
+    src: url('fonts/DMSans-Light.ttf');
+  }
+  @font-face {
+    font-family: 'DM Sans';
+    font-weight: 400;
+    src: url('fonts/DMSans-Regular.ttf');
+  }
+  @font-face {
+    font-family: 'DM Sans';
+    font-weight: 500;
+    src: url('fonts/DMSans-Medium.ttf');
+  }
+  @font-face {
+    font-family: 'DM Serif Display';
+    font-weight: 400;
+    src: url('fonts/DMSerifDisplay-Regular.ttf');
+  }
+
+  @page {
+    size: A4;
+    margin: 11mm 16mm;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  :root {
+    /* ---- ACCENT COLOR SWITCH ----
+       Set both vars to neutral gray values to disable the accent entirely.
+       Active (green):  --accent: #2C5F4A;  --accent-light: #E8EFE9;
+       Disabled (gray): --accent: #5F5E5A;  --accent-light: #F1EFE8;
+    */
+    --accent: {{ACCENT_COLOR}};
+    --accent-light: {{ACCENT_LIGHT}};
+    --text-primary: #1A1A1A;
+    --text-secondary: #5A5A58;
+    --border-subtle: #E3E1D9;
+  }
+
+  .cv-wrap {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 400;
+    font-size: 10.5pt;
+    line-height: 1.42;
+    color: var(--text-primary);
+  }
+
+  .cv-header {
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 7px;
+    margin-bottom: 12px;
+  }
+
+  .cv-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26pt;
+    font-weight: 400;
+    letter-spacing: -0.3px;
+    margin: 0 0 3px;
+    color: var(--text-primary);
+  }
+
+  .cv-title {
+    font-size: 10.5pt;
+    color: var(--accent);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+  }
+
+  .cv-contact {
+    font-size: 9.5pt;
+    color: var(--text-secondary);
+  }
+
+  .cv-contact span {
+    margin-right: 14px;
+  }
+
+  .cv-body {
+    width: 100%;
+  }
+
+  .cv-body::after {
+    content: "";
+    display: block;
+    clear: both;
+  }
+
+  .cv-main {
+    float: left;
+    width: 67%;
+    box-sizing: border-box;
+    padding-right: 20px;
+  }
+
+  .cv-sidebar {
+    float: right;
+    width: 33%;
+    box-sizing: border-box;
+  }
+
+  .section {
+    margin-bottom: 10px;
+  }
+
+  .section-title {
+    font-size: 8.5pt;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    border-bottom: 0.5px solid var(--border-subtle);
+    padding-bottom: 3px;
+    margin-bottom: 7px;
+  }
+
+  .entry {
+    margin-bottom: 7px;
+  }
+
+  .entry:last-child {
+    margin-bottom: 0;
+  }
+
+  .entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 1px;
+  }
+
+  .entry-title {
+    font-size: 10.5pt;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .entry-date {
+    font-size: 9pt;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .entry-sub {
+    font-size: 9.5pt;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+  }
+
+  .entry-desc {
+    font-size: 9.8pt;
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+
+  .entry-desc ul {
+    margin: 2px 0 0;
+    padding-left: 13px;
+  }
+
+  .entry-desc li {
+    margin-bottom: 0px;
+  }
+
+  .entry-desc li::marker {
+    color: var(--accent);
+  }
+
+  .stack-tag {
+    display: inline-block;
+    font-size: 8pt;
+    background: #F4F3EE;
+    border: 0.5px solid var(--border-subtle);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin: 4px 3px 0 0;
+    color: var(--text-secondary);
+  }
+
+  .skill-group {
+    margin-bottom: 8px;
+  }
+
+  .skill-label {
+    font-size: 8.5pt;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+  }
+
+  .skill-items {
+    font-size: 9.3pt;
+    color: var(--text-primary);
+    line-height: 1.5;
+  }
+
+  .lang-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9.5pt;
+    margin-bottom: 3px;
+  }
+
+  .lang-level {
+    color: var(--text-secondary);
+    font-size: 8.7pt;
+  }
+
+  .avail-box {
+    background: var(--accent-light);
+    border-radius: 5px;
+    border: 0.5px solid var(--border-subtle);
+    padding: 8px 10px;
+    font-size: 9.5pt;
+    margin-bottom: 6px;
+  }
+
+  .avail-label {
+    font-size: 7.8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 2px;
+    font-weight: 500;
+  }
+
+  .other-text {
+    font-size: 9.3pt;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div class="cv-wrap">
+  <div class="cv-header">
+    <p class="cv-name">{{FULL_NAME}}</p>
+    <p class="cv-title">{{HEADLINE}}</p>
+    <div class="cv-contact">
+      <span>{{LOCATION}}</span>
+      <span>{{EMAIL}}</span>
+      <span>{{GITHUB}}</span>
+    </div>
+  </div>
+
+  <div class="cv-body">
+    <div class="cv-main">
+
+      <div class="section">
+        <p class="section-title">Experience</p>
+        {{EXPERIENCE_ENTRIES}}
+      </div>
+
+      <div class="section">
+        <p class="section-title">Academic projects</p>
+        {{PROJECT_ENTRIES}}
+      </div>
+
+      <div class="section">
+        <p class="section-title">Education</p>
+        <div class="entry">
+          <div class="entry-header">
+            <span class="entry-title">{{EDU_SCHOOL}}</span>
+            <span class="entry-date">{{EDU_DATES}}</span>
+          </div>
+          <p class="entry-sub">{{EDU_DETAIL}}</p>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="cv-sidebar">
+
+      <div class="section">
+        <p class="section-title">Availability</p>
+        <div class="avail-box">
+          <p class="avail-label">Start date</p>
+          <p style="font-weight:500; font-size:10pt; margin:0 0 5px;">{{START_DATE}}</p>
+          <p class="avail-label">Duration</p>
+          <p style="font-size:9.5pt; margin:0 0 5px;">{{DURATION}}</p>
+          <p class="avail-label">Location</p>
+          <p style="font-size:9.5pt; margin:0;">{{MOBILITY}}</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Technical skills</p>
+        <div class="skill-group">
+          <p class="skill-label">Proficient</p>
+          <p class="skill-items">{{SKILLS_PROFICIENT}}</p>
+        </div>
+        <div class="skill-group">
+          <p class="skill-label">Familiar</p>
+          <p class="skill-items">{{SKILLS_FAMILIAR}}</p>
+        </div>
+        <div class="skill-group">
+          <p class="skill-label">Tools</p>
+          <p class="skill-items">{{SKILLS_TOOLS}}</p>
+        </div>
+        <div class="skill-group">
+          <p class="skill-label">Domains</p>
+          <p class="skill-items">{{SKILLS_DOMAINS}}</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Languages</p>
+        <div class="lang-row">
+          <span>{{LANG1_NAME}}</span>
+          <span class="lang-level">{{LANG1_LEVEL}}</span>
+        </div>
+        <div class="lang-row">
+          <span>{{LANG2_NAME}}</span>
+          <span class="lang-level">{{LANG2_LEVEL}}</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <p class="section-title">Other</p>
+        <p class="other-text">{{OTHER_INFO}}</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

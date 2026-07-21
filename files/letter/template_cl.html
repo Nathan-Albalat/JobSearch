@@ -1,0 +1,211 @@
+<!-- OBSOLÈTE : remplacé par config/templates/cover_letter.html (utilisé par le pipeline et --letter-pdf) -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Cover Letter — {{FULL_NAME}}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Serif+Display&display=swap');
+
+        @page {
+            size: A4;
+            margin: 16mm 18mm;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        :root {
+
+            /* ---- ACCENT COLOR SWITCH ----
+       Active (green):  --accent: #2C5F4A;  --accent-light: #E8EFE9;
+       Disabled (gray): --accent: #5F5E5A;  --accent-light: #F1EFE8;
+    */
+            --accent: {
+                    {
+                    ACCENT_COLOR
+                }
+            }
+
+            ;
+
+            --accent-light: {
+                    {
+                    ACCENT_LIGHT
+                }
+            }
+
+            ;
+            --text-primary: #1A1A1A;
+            --text-secondary: #5A5A58;
+            --border-subtle: #E3E1D9;
+        }
+
+        .cl-wrap {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 10.5pt;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        /* ---- HEADER ---- */
+        .cl-header {
+            display: table;
+            width: 100%;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--accent);
+            margin-bottom: 16px;
+        }
+
+        .cl-sender {
+            display: table-cell;
+            width: 55%;
+            vertical-align: bottom;
+        }
+
+        .cl-recipient {
+            display: table-cell;
+            width: 45%;
+            vertical-align: bottom;
+            text-align: right;
+        }
+
+        .cl-name {
+            font-family: 'DM Serif Display', serif;
+            font-size: 20pt;
+            font-weight: 400;
+            letter-spacing: -0.3px;
+            margin: 0 0 3px;
+            color: var(--text-primary);
+        }
+
+        .cl-sender-details {
+            font-size: 8.5pt;
+            color: var(--text-secondary);
+            line-height: 1.65;
+        }
+
+        .cl-recipient-company {
+            font-size: 9.5pt;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin: 0 0 1px;
+        }
+
+        .cl-recipient-details {
+            font-size: 8.5pt;
+            color: var(--text-secondary);
+            line-height: 1.65;
+        }
+
+        /* ---- META LINE ---- */
+        .cl-meta {
+            display: table;
+            width: 100%;
+            margin-bottom: 20pt;
+        }
+
+        .cl-position {
+            display: table-cell;
+            font-size: 8.5pt;
+            font-weight: 500;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            vertical-align: baseline;
+        }
+
+        .cl-date {
+            display: table-cell;
+            font-size: 8.5pt;
+            color: var(--text-secondary);
+            text-align: right;
+            vertical-align: baseline;
+        }
+
+        /* ---- BODY ---- */
+        .cl-salutation {
+            font-size: 10.5pt;
+            margin: 0 0 14pt;
+            color: var(--text-primary);
+        }
+
+        .cl-body {
+            font-size: 10.5pt;
+            line-height: 1.72;
+            color: var(--text-primary);
+        }
+
+        .cl-body p {
+            margin: 0 0 10pt;
+        }
+
+        .cl-body p:last-of-type {
+            margin-bottom: 0;
+        }
+
+        /* ---- CLOSING ---- */
+        .cl-closing {
+            margin-top: 18pt;
+            font-size: 10.5pt;
+            color: var(--text-primary);
+        }
+
+        .cl-closing-name {
+            font-family: 'DM Serif Display', serif;
+            font-size: 14pt;
+            font-weight: 400;
+            margin: 4pt 0 0;
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="cl-wrap">
+
+        <div class="cl-header">
+            <div class="cl-sender">
+                <p class="cl-name">{{FULL_NAME}}</p>
+                <div class="cl-sender-details">
+                    {{SENDER_LOCATION}}<br>
+                    {{EMAIL}}{{GITHUB_LINE}}
+                </div>
+            </div>
+            <div class="cl-recipient">
+                <p class="cl-recipient-company">{{COMPANY_NAME}}</p>
+                <div class="cl-recipient-details">
+                    {{COMPANY_LOCATION}}<br>
+                    {{COMPANY_DEPT}}
+                </div>
+            </div>
+        </div>
+
+        <div class="cl-meta">
+            <span class="cl-position">{{POSITION_TITLE}}</span>
+            <span class="cl-date">{{DATE}}</span>
+        </div>
+
+        <p class="cl-salutation">{{SALUTATION}}</p>
+
+        <div class="cl-body">
+            {{BODY}}
+        </div>
+
+        <div class="cl-closing">
+            {{CLOSING_WORD}},
+            <p class="cl-closing-name">{{FULL_NAME}}</p>
+        </div>
+
+    </div>
+
+</body>
+
+</html>

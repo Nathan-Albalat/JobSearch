@@ -5,3 +5,20 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+output/
+
+# Données personnelles du candidat (copier les .example et les renommer)
+config/profile.yaml
+cv_master/cv_data.yaml
+cv_master/cv_master.md
+
+# Fichiers générés dans files/ (PDFs et HTMLs produits par generate_cv.py)
+files/*.html
+files/*.pdf
+files/cv/
+files/letter/letter/
+files/letter/signature.png
+
+# Claude Code settings (chemins spécifiques à la machine)
+.claude/

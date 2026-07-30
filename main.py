@@ -8,6 +8,7 @@ def _check_setup() -> None:
     required = {
         ".env": ".env.example",
         "config/profile.yaml": "config/profile.example.yaml",
+        "config/search.yaml": "config/search.example.yaml",
         "cv_master/cv_data.yaml": "cv_master/cv_data.example.yaml",
         "cv_master/cv_master.md": "cv_master/cv_master.example.md",
     }
@@ -39,7 +40,11 @@ from src.manual import from_file, from_url
 from src.tracker import load_applications, mark_status, render_applications_table, STATUSES
 
 
-def cmd_scrape(threshold: int, use_batch: bool = True) -> None:
+def cmd_scrape(threshold: int | None, use_batch: bool = True) -> None:
+    from src.config import get_search
+
+    if threshold is None:
+        threshold = get_search().threshold
     print("=" * 50)
     print("ÉTAPE 1/3 — Collecte des offres")
     print("=" * 50)
@@ -246,8 +251,8 @@ Exemples :
     parser.add_argument(
         "--threshold",
         type=int,
-        default=6,
-        help="Score minimum de pertinence (défaut: 6, utilisé avec --scrape)",
+        default=None,
+        help="Score minimum de pertinence (défaut: config/search.yaml, utilisé avec --scrape)",
     )
     parser.add_argument(
         "--url-source",

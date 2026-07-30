@@ -171,10 +171,17 @@ What it does: every 2 days at 8:00 AM, the pipeline runs and results are appende
 
 ## Customization
 
-### Change Your Search Profile
-Edit `config/profile.yaml`:
-- Change domains of interest, geographic preferences, score threshold
-- Modify bonus/penalty criteria used by Claude to score offers
+### Change Your Search Subject
+Edit `config/search.yaml` (see the commented `config/search.example.yaml`):
+- Contract type (internship, permanent, etc.), minimum duration, availability date
+- Geographic preferences, domains, score threshold, scoring bonus/malus
+- Pre-filter keywords (the fastest lever to pivot to a different contract type — e.g. swap `intern`/`internship` for `permanent`/`full-time`)
+- Claude models/tokens and default scraping parameters
+
+To fully change subject (e.g. from internship search to full-time job search), also rewrite the 14 few-shot scoring examples in `config/prompts/filter.txt` and start from an empty `data/` folder — see "Changer de sujet de recherche" in `CLAUDE.md` for the full 5-step process.
+
+### Change Your Candidate Profile
+Edit `config/profile.yaml` — this only holds your identity (education, technical skills, languages), independent of the search subject.
 
 ### Add RSS Sources
 Edit `config/sources.yaml` — add a block:
@@ -218,7 +225,7 @@ PDF appearance is controlled by two HTML templates in `config/templates/`:
 
 **Test a template change** (without consuming API):
 - Letter: `python main.py --letter-pdf <a letter.md> --company "Test"` — or press `p` in the TUI on an existing application.
-- Master CV: `python files/generate_cv.py` → `files/cv_nathan_albala_en.pdf`.
+- Master CV: `python files/cv/generate_cv.py` → `files/cv/cv_nathan_albalat_en.pdf`.
 - Adapted CV of an existing application: press `u` in the TUI.
 
 ---

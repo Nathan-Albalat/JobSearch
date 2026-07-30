@@ -171,10 +171,17 @@ Ce que ça fait : tous les 2 jours à 8h00, le pipeline tourne et les résultats
 
 ## Personnalisation
 
-### Modifier ton profil de recherche
-Édite `config/profile.yaml` :
-- Changer les domaines recherchés, les préférences géographiques, le seuil de score
-- Modifier les critères de bonus/malus utilisés par Claude pour scorer les offres
+### Modifier ton sujet de recherche
+Édite `config/search.yaml` (voir `config/search.example.yaml`, commenté) :
+- Type de contrat (stage, CDI…), durée minimum, date de disponibilité
+- Préférences géographiques, domaines, seuil de score, bonus/malus de scoring
+- Mots-clés du pré-filtre (le levier le plus rapide pour pivoter vers un autre type de contrat — ex. remplacer `intern`/`internship` par `cdi`/`permanent`)
+- Modèles/tokens Claude et paramètres par défaut du scraping
+
+Pour un vrai changement de sujet (ex. passer d'une recherche de stage à une recherche de CDI), il faut aussi réécrire les 14 exemples few-shot de scoring dans `config/prompts/filter.txt` et repartir d'un dossier `data/` vierge — voir la section « Changer de sujet de recherche » dans `CLAUDE.md` pour la procédure complète en 5 étapes.
+
+### Modifier ton profil de candidat
+Édite `config/profile.yaml` — ce fichier ne contient que ton identité (formation, compétences techniques, langues), indépendante du sujet de recherche.
 
 ### Ajouter des sources RSS
 Édite `config/sources.yaml` — ajoute un bloc :
@@ -218,7 +225,7 @@ L'apparence des PDF est contrôlée par deux templates HTML dans `config/templat
 
 **Tester une modif de template** (sans consommer d'API) :
 - Lettre : `python main.py --letter-pdf <une lettre.md> --company "Test"` — ou touche `p` dans la TUI sur une candidature existante.
-- CV master : `python files/generate_cv.py` → `files/cv_nathan_albala_en.pdf`.
+- CV master : `python files/cv/generate_cv.py` → `files/cv/cv_nathan_albalat_en.pdf`.
 - CV adapté d'une candidature existante : touche `u` dans la TUI.
 
 ---

@@ -37,6 +37,7 @@ from textual.widgets.option_list import Option
 from src.filter import strip_html
 from src.report import load_filtered_offers
 from src.tracker import compute_stats, load_applications, mark_status
+from src.config import get_search
 
 
 def _cells(values):
@@ -357,7 +358,7 @@ class StageTUI(App):
         super().__init__()
         self.offers: dict[str, dict] = {}
         self.selected: set[str] = set()
-        self.threshold = 6
+        self.threshold = get_search().threshold
         self.hide_done = False
         self.period = "all"  # "all" | "session" | "7d" | "30d"
         self.session_date: str | None = None

@@ -1,4 +1,5 @@
 import difflib
+import functools
 import hashlib
 import json
 import os
@@ -9,6 +10,8 @@ import feedparser
 import requests
 import yaml
 from dotenv import load_dotenv
+
+from src.config import get_search
 
 
 def load_sources(config_dir: str) -> list[dict]:
@@ -97,7 +100,8 @@ def fetch_adzuna(source: dict) -> list[dict]:
         print("    ADZUNA_APP_ID / ADZUNA_APP_KEY manquants dans .env — source ignorée.")
         return []
 
-    params = dict(source.get("params", {}) or {})
+    defaults = get_search().source_defaults("adzuna")
+    params = {**defaults, **(source.get("params", {}) or {})}
     country = params.pop("country", "nl")
     pages = params.pop("pages", 1)
     results = []
@@ -143,14 +147,18 @@ def normalize_adzuna(job: dict, source: dict) -> dict:
 
 
 # Mots parasites retirés des titres avant comparaison fuzzy inter-sources
-_TITLE_NOISE = re.compile(
-    r"\b(stage|internship|intern|h/f|f/h|m/f|f/m|m/w/d|w/m/d|cdi|cdd|20\d\d)\b|[^\w\s]",
-    re.IGNORECASE,
-)
+@functools.lru_cache(maxsize=4)
+def _title_noise_re(noise_words: tuple, extra_regex: str) -> re.Pattern:
+    alternation = "|".join(re.escape(w) for w in noise_words)
+    if extra_regex:
+        alternation = f"{alternation}|{extra_regex}" if alternation else extra_regex
+    return re.compile(rf"\b({alternation})\b|[^\w\s]", re.IGNORECASE)
 
 
 def _normalize_for_dedup(text: str) -> str:
-    return " ".join(_TITLE_NOISE.sub(" ", text.lower()).split())
+    search = get_search()
+    pattern = _title_noise_re(search.dedup_title_noise, search.dedup_extra_regex)
+    return " ".join(pattern.sub(" ", text.lower()).split())
 
 
 def load_existing_dedup_keys(data_dir: str) -> list[tuple[str, str]]:
@@ -177,10 +185,11 @@ def is_cross_source_duplicate(offer: dict, keys: list[tuple[str, str]]) -> bool:
     title = _normalize_for_dedup(offer.get("title", ""))
     if not company or not title:
         return False
+    similarity = get_search().dedup_similarity
     for k_company, k_title in keys:
         if k_company != company or not k_title:
             continue
-        if difflib.SequenceMatcher(None, title, k_title).ratio() >= 0.9:
+        if difflib.SequenceMatcher(None, title, k_title).ratio() >= similarity:
             return True
     return False
 

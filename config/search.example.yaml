@@ -1,0 +1,209 @@
+# search.yaml — Le SUJET de recherche (par opposition à profile.yaml, qui est
+# l'identité du candidat). Toutes les sections sont optionnelles : les clés
+# absentes retombent sur les valeurs par défaut de src/config.py (DEFAULTS),
+# qui correspondent au comportement actuel (stage tech, Pays-Bas en priorité).
+#
+# Pour changer de sujet de recherche (ex: passer d'un stage à un CDI, ou
+# changer de pays), voir la section « Changer de sujet de recherche » de
+# CLAUDE.md — dans l'ordre : ce fichier, puis les 3 prompts (config/prompts/),
+# puis profile.yaml, puis cv_data.yaml, puis repartir d'un data/ vierge.
+
+sujet:
+  label: "stage en informatique et ingénierie logicielle"
+  type_contrat: "stage"                       # ex: "CDI", "alternance"
+  type_contrat_negatif: "une offre d'emploi"   # ce que ce N'EST PAS
+  expertise_recruteur: "spécialisé dans les stages en informatique et ingénierie logicielle"
+
+duree:
+  min_semaines: 22
+  texte: "22 semaines minimum"
+  applicable: true   # false pour un CDI : neutralise les règles de durée
+
+disponibilite:
+  debut_iso: "2027-03-15"
+  texte_fr: "15 mars 2027"
+  texte_en: "March 15th 2027"
+
+geo:
+  priorite:
+    - "Pays-Bas"
+    - "Belgique"
+    - "Suisse"
+    - "Allemagne"
+    - "Italie"
+  secondaire:
+    - "Europe (hors pays frontaliers)"
+  dernier_recours:
+    - "Hors Europe"
+  notes: "Stage à l'étranger obligatoire. France possible seulement si aucune option étrangère viable."
+  # ⚠️ `details` doit rester cohérent avec `priorite`/`secondaire` ci-dessus : c'est ce bloc
+  # qui est réellement injecté dans le barème du prompt ({geo_details}). Changer `priorite`
+  # sans réécrire `details` laisse l'ancienne géographie piloter le scoring — c'était
+  # précisément l'incohérence de l'ancienne version (l'Italie était absente du prompt).
+  details:
+    - "**Pays-Bas** : priorité absolue — Amsterdam, Eindhoven, Delft, Rotterdam, Utrecht sont toutes des villes tech majeures avec de nombreuses entreprises internationales"
+    - "**Italie** : Milan, Turin, Bologne — marché tech en croissance"
+    - "**Belgique** : Bruxelles, Gand, Louvain — bonne densité tech, proche géographiquement, stage facilité par la francophonie partielle"
+    - "**Suisse** : Zurich, Lausanne, Bâle — excellent niveau technique, salaires de stage élevés, mais coût de la vie important"
+    - "**Allemagne** : Berlin, Munich, Hambourg, Francfort — vaste marché, nombreuses offres tech, langue souvent pas requise pour les postes internationaux"
+    - "**Remote Europe** : acceptable, mais préférer les offres avec un ancrage géographique européen (pas uniquement \"global remote\" sans fuseau horaire spécifié)"
+    - "**France** : acceptable mais pas prioritaire — à scorer normalement sur le contenu technique sans bonus géographique"
+    - "**Hors Europe** : pénaliser légèrement, sauf si le contenu technique est exceptionnel"
+
+domaines:
+  liste:
+    - "Développement logiciel (backend, fullstack)"
+    - "Data Engineering"
+    - "Intelligence Artificielle / Machine Learning"
+    - "Informatique générale"
+  ouverture: "Ouvert à d'autres domaines informatique si le projet est intéressant"
+
+scoring:
+  seuil: 6
+  bonus:
+    - "Stack Python ou JS/TS"
+    - "Domaine IA/ML ou Data"
+    - "Pays-Bas"
+    - "Entreprise internationale"
+  malus:
+    - "Exige expérience professionnelle > 1 an"
+    - "Uniquement présentiel hors Europe"
+    - "Stage < 22 semaines"
+  titre_bonus:
+    - "Junior"
+    - "Intern"
+  penalite_diplome: true   # false en recherche d'emploi : inverse le sens de la règle diplôme
+
+prefilter:
+  enabled: true
+  desc_chars: 400
+  keywords:
+    langages:
+      - python
+      - java
+      - javascript
+      - typescript
+      - golang
+      - rust
+      - scala
+      - kotlin
+      - swift
+      - php
+      - ruby
+      - "c++"
+      - "c#"
+      - matlab
+    frameworks_outils:
+      - django
+      - flask
+      - fastapi
+      - spring
+      - react
+      - vue
+      - angular
+      - node
+      - tensorflow
+      - pytorch
+      - scikit
+      - docker
+      - kubernetes
+      - git
+      - sql
+      - nosql
+      - mongodb
+      - postgresql
+      - aws
+      - azure
+      - gcp
+      - linux
+      - api
+    roles:
+      - software
+      - developer
+      - engineer
+      - backend
+      - frontend
+      - fullstack
+      - devops
+      - data
+      - "data science"
+      - "machine learning"
+      - "deep learning"
+      - nlp
+      - "computer vision"
+      - embedded
+      - firmware
+      - robotics
+      - cybersecurity
+      - cloud
+      - sre
+      - mlops
+      - analyst
+      - tech
+      - it
+      - ict
+      - digital
+      - coding
+      - programming
+    termes_fr_nl_de:
+      - développeur
+      - ingénieur
+      - informatique
+      - logiciel
+      - données
+      - "apprentissage automatique"
+      - "intelligence artificielle"
+      - programmation
+      - "systèmes embarqués"
+      - réseaux
+      - cybersécurité
+      - digitaal
+      - coderen
+      - informatica
+      - datenexperte
+    contrat:   # levier n°1 du pivot vers un autre type de contrat
+      - intern
+      - internship
+      - stage
+      - werkstudent
+  exclude_keywords: []
+
+dedup:
+  title_noise:
+    - stage
+    - internship
+    - intern
+    - "h/f"
+    - "f/h"
+    - "m/f"
+    - "f/m"
+    - "m/w/d"
+    - "w/m/d"
+    - cdi
+    - cdd
+  title_noise_extra_regex: '20\d\d'
+  similarity: 0.9
+
+models:
+  filter:
+    model: "claude-haiku-4-5-20251001"
+    max_tokens: 512
+    batch_min_offers: 6
+    batch_poll_seconds: 30
+  generate:
+    model: "claude-sonnet-4-6"
+    max_tokens: 2048
+
+source_defaults:
+  jobspy:
+    sites: [linkedin, indeed]
+    search_term: "software intern"
+    results_wanted: 30
+    hours_old: 72
+    country_indeed: "netherlands"
+    fetch_description: true
+  adzuna:
+    country: "nl"
+    what: "internship software"
+    results_per_page: 50
+    pages: 1

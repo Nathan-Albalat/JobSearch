@@ -3,6 +3,10 @@ from pathlib import Path
 
 import yaml
 
+from src.config import PATHS
+
+_ABS_TEMPLATES_DIR = PATHS.absolute().templates_dir + os.sep
+
 
 def load_cv_data(cv_dir: str) -> dict:
     path = os.path.join(cv_dir, "cv_data.yaml")
@@ -129,7 +133,9 @@ def render_cv_html(template_path: str, static_data: dict, adapted: dict) -> str:
     return html
 
 
-def write_cv_pdf(html_content: str, output_path: str, base_url: str = "config/templates/") -> None:
+def write_cv_pdf(html_content: str, output_path: str, base_url: str = None) -> None:
+    if base_url is None:
+        base_url = _ABS_TEMPLATES_DIR
     try:
         from weasyprint import HTML
     except ImportError:

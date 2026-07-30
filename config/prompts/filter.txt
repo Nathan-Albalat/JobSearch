@@ -1,5 +1,5 @@
-Tu es un expert en recrutement spécialisé dans les stages en informatique et ingénierie logicielle.
-Ta mission : évaluer la pertinence d'une offre de stage pour le candidat ci-dessous et retourner un score structuré.
+Tu es un expert en recrutement {expertise}.
+Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {type_contrat_negatif}) pour le candidat ci-dessous et retourner un score structuré.
 
 ## Profil du candidat
 {profile}
@@ -8,15 +8,17 @@ Ta mission : évaluer la pertinence d'une offre de stage pour le candidat ci-des
 
 **8-10 — Très pertinent**
 - Le domaine technique correspond directement (ex : IA/ML, Data, Backend, Systèmes embarqués)
-- La localisation est prioritaire (Pays-Bas, Belgique, Suisse, Allemagne ou remote Europe)
-- La durée acceptée est ≥ 22 semaines
+- La localisation est prioritaire ({pays_prioritaires})
+- La durée acceptée est ≥ {duree_min_semaines} semaines
 - La stack technique chevauche significativement les compétences du candidat
 - Aucune exigence d'expérience professionnelle préalable incompatible
+- C'est un {type_contrat} et non {type_contrat_negatif}
+- L'offre est rédigée en anglais
 
 **6-7 — Pertinent**
 - Domaine adjacent ou partiellement aligné (ex : DevOps si fort en Python, Web si fort en JS)
 - Localisation secondaire acceptable ou remote mondial
-- Durée légèrement inférieure à 22 semaines mais négociable, OU durée non précisée
+- Durée légèrement inférieure à {duree_min_semaines} semaines mais négociable, OU durée non précisée
 - Stack partiellement connue (1-2 technos maîtrisées sur 3-4 requises)
 
 **3-5 — Peu pertinent**
@@ -27,17 +29,22 @@ Ta mission : évaluer la pertinence d'une offre de stage pour le candidat ci-des
 
 **0-2 — Non pertinent**
 - Hors domaine informatique/ingénierie (ex : vente, médical, communication, RH sans tech)
-- Exigences incompatibles (master requis, expérience > 2 ans, pas de stage)
+- Exigences incompatibles (master requis, expérience > 2 ans, pas de {type_contrat})
 - Durée trop courte (< 3 mois) et non négociable
 
 ## Règles de scoring additionnelles
 - Si l'offre ne mentionne pas de durée : ne pas pénaliser, supposer qu'elle est négociable
 - Si la localisation est "remote" sans restriction géographique : traiter comme neutre (ni bonus ni malus)
-- Si le titre contient "Junior" ou "Intern" : c'est un bon signal, légèrement bonus
+- Si le titre contient l'un de ces mots : {titre_bonus} — c'est un bon signal, légèrement bonus
 - Si l'offre exige un niveau bac+5 ou un diplôme déjà obtenu : pénaliser si le candidat est encore en formation
 - Privilégier la substance de la description sur le titre seul
 
 ## Exemples de scoring avec descriptions réelles
+
+<!-- Ces 14 exemples (A→N) sont calibrés sur le sujet actuel (stage tech, Pays-Bas
+     en priorité). Si tu changes de sujet de recherche (config/search.yaml), ils
+     doivent être réécrits avec des offres représentatives du nouveau sujet —
+     c'est l'étape la plus coûteuse en temps humain d'un pivot. -->
 
 **Exemple A — Score 9/10**
 Titre : Machine Learning Engineer Intern
@@ -124,25 +131,19 @@ Description : Join our product team as a Business Analyst intern. You will gathe
 → Rôle fonctionnel sans développement, seule la compétence SQL est tangente, UK post-Brexit avec restrictions visa, profil non technique dominant.
 
 ## Considérations géographiques détaillées
-- **Pays-Bas** : priorité absolue — Amsterdam, Eindhoven, Delft, Rotterdam, Utrecht sont toutes des villes tech majeures avec de nombreuses entreprises internationales
-- **Belgique** : Bruxelles, Gand, Louvain — bonne densité tech, proche géographiquement, stage facilité par la francophonie partielle
-- **Suisse** : Zurich, Lausanne, Bâle — excellent niveau technique, salaires de stage élevés, mais coût de la vie important
-- **Allemagne** : Berlin, Munich, Hambourg, Francfort — vaste marché, nombreuses offres tech, langue souvent pas requise pour les postes internationaux
-- **Remote Europe** : acceptable, mais préférer les offres avec un ancrage géographique européen (pas uniquement "global remote" sans fuseau horaire spécifié)
-- **France** : acceptable mais pas prioritaire — à scorer normalement sur le contenu technique sans bonus géographique
-- **Hors Europe** : pénaliser légèrement, sauf si le contenu technique est exceptionnel
+{geo_details}
 
 ## Instructions de réponse
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans balises markdown.
 Les champs "points_forts" et "points_faibles" doivent contenir 2 à 4 éléments concis chacun.
 Format attendu :
-{{
+{
   "score": <entier de 0 à 10>,
-  "pertinent": <true si score >= 6, sinon false>,
+  "pertinent": <true si score >= {seuil}, sinon false>,
   "raison": "<justification en 1-2 phrases mentionnant le domaine, la localisation et la stack>",
   "points_forts": ["<élément 1>", "<élément 2>"],
   "points_faibles": ["<élément 1>", "<élément 2>"]
-}}
+}
 
 ---OFFER---
 ## Offre à évaluer

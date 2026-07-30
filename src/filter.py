@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import os
 import re
@@ -9,32 +10,45 @@ import yaml
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+from src.config import Search, fill_template, get_search
 
-def load_profile_text(config_dir: str) -> str:
+
+def load_profile_text(config_dir: str, search: Search | None = None) -> str:
     path = os.path.join(config_dir, "profile.yaml")
     with open(path, "r", encoding="utf-8") as f:
         profile = yaml.safe_load(f)
 
+    if "stage" in profile or "criteres_pertinence" in profile:
+        raise ValueError(
+            "config/profile.yaml contient encore une clé 'stage:' ou 'criteres_pertinence:' — "
+            "ce format est obsolète. Ces clés dépendent du sujet de recherche et ont migré vers "
+            "config/search.yaml. Regarde config/profile.example.yaml pour le nouveau format attendu."
+        )
+
+    if search is None:
+        search = get_search(config_dir)
+
     formation = profile.get("formation", {})
-    stage = profile.get("stage", {})
-    geo = profile.get("preferences_geo", {})
-    domaines = profile.get("domaines_recherches", [])
     competences = profile.get("competences_techniques", {})
     langues = profile.get("langues", [])
-    criteres = profile.get("criteres_pertinence", {})
 
     lines = [
-        f"Formation : {formation.get('niveau', '')} — {formation.get('ecole', '')} ({formation.get('specialite', '')})",
-        f"Stage recherché : {stage.get('duree_min_semaines', '')} semaines minimum, disponible à partir du {stage.get('disponibilite_debut', '')}",
-        f"Géographie : priorité {', '.join(geo.get('priorite', []))} ; ensuite {', '.join(geo.get('secondaire', []))}",
-        f"Domaines : {', '.join(domaines.get('liste', [])) if isinstance(domaines, dict) else ', '.join(domaines)}",
+        f"Formation : {formation.get('niveau', '')} — {formation.get('ecole', '')} "
+        f"({formation.get('specialite', '')}), diplôme prévu {formation.get('diplome_prevu', '')}",
+        search.render_criteria_text(),
+        f"Géographie : priorité {', '.join(search.get('geo', 'priorite', default=[]))} ; "
+        f"ensuite {', '.join(search.get('geo', 'secondaire', default=[]))}",
+        f"Domaines : {', '.join(search.get('domaines', 'liste', default=[]))} "
+        f"— {search.get('domaines', 'ouverture', default='')}",
         f"Langages maîtrisés : {', '.join(competences.get('langages_maitrise', []))}",
         f"Langages pratiqués : {', '.join(competences.get('langages_pratiques', []))}",
+        f"Frameworks : {', '.join(competences.get('frameworks', []))}",
         f"Outils : {', '.join(competences.get('outils', []))}",
-        f"Langues : {', '.join(l['langue'] + ' (' + l['niveau'] + ')' for l in langues)}",
-        f"Score minimum requis : {criteres.get('score_minimum', 6)}/10",
-        f"Bonus si : {', '.join(criteres.get('bonus', []))}",
-        f"Pénalité si : {', '.join(criteres.get('malus', []))}",
+        f"Domaines ML pratiqués : {', '.join(competences.get('domaines_ml', []))}",
+        f"Langues : {', '.join(l['langue'] + ' (' + l.get('niveau', '') + ')' for l in langues)}",
+        f"Score minimum requis : {search.threshold}/10",
+        f"Bonus si : {', '.join(search.get('scoring', 'bonus', default=[]))}",
+        f"Pénalité si : {', '.join(search.get('scoring', 'malus', default=[]))}",
     ]
     return "\n".join(lines)
 
@@ -46,83 +60,78 @@ def strip_html(html: str, max_chars: int = 2000) -> str:
     return text
 
 
-_TECH_KEYWORDS = {
-    # Langages
-    "python", "java", "javascript", "typescript", "golang", "rust", "scala",
-    "kotlin", "swift", "php", "ruby", "c++", "c#", "matlab",
-    # NB : le langage R n'est pas listé — trop court pour être cherché sans
-    # bruit ("R&D", initiales…). Ces offres sont captées par "data"/"analyst".
-    # Frameworks / outils
-    "django", "flask", "fastapi", "spring", "react", "vue", "angular",
-    "node", "tensorflow", "pytorch", "scikit", "docker", "kubernetes",
-    "git", "sql", "nosql", "mongodb", "postgresql", "aws", "azure", "gcp",
-    "linux", "api",
-    # Rôles tech
-    "software", "developer", "engineer", "backend", "frontend", "fullstack",
-    "devops", "data", "data science", "machine learning", "deep learning", "nlp",
-    "computer vision", "embedded", "firmware", "robotics", "cybersecurity",
-    "cloud", "sre", "mlops", "analyst", "tech", "it", "ict", "digital",
-    "coding", "programming",
-    # Termes français / néerlandais / allemands
-    "développeur", "ingénieur", "informatique", "logiciel", "données",
-    "apprentissage automatique", "intelligence artificielle", "programmation",
-    "systèmes embarqués", "réseaux", "cybersécurité",
-    "digitaal", "coderen", "informatica", "datenexperte",
-    # Termes génériques stage tech
-    "intern", "internship", "stage", "werkstudent",
-}
-
 # Recherche par mot entier : un simple `kw in text` provoquait des faux positifs
 # massifs ("git" dans "digital", "rust" dans "trust", "intern" dans "international",
 # et surtout l'ancien "r " qui matchait "manager ", "senior "…). Sur l'historique,
 # ~43 % des offres envoyées à l'API l'étaient pour rien, sans qu'aucune offre
 # pertinente (score >= 6) ne dépende de ces correspondances partielles.
-_TECH_KEYWORDS_RE = re.compile(
-    "|".join(
-        r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])"
-        for kw in sorted(_TECH_KEYWORDS)
+#
+# `sorted()` + `re.escape` sont conservés à l'identique : c'est ce qui garantit
+# une regex identique à l'ancienne version pour une liste de mots-clés
+# identique — condition de la preuve de non-régression.
+@functools.lru_cache(maxsize=8)
+def _keywords_re(keywords: tuple) -> "re.Pattern | None":
+    if not keywords:
+        return None
+    return re.compile(
+        "|".join(
+            r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])"
+            for kw in sorted(keywords)
+        )
     )
-)
 
 
-def is_tech_offer(offer: dict) -> bool:
+def is_tech_offer(offer: dict, search: Search | None = None) -> bool:
     """Returns True if the offer appears tech-related based on title + start of description."""
+    if search is None:
+        search = get_search()
+
+    if not search.prefilter_enabled:
+        return True
+
+    desc_chars = search.prefilter_desc_chars
     title = offer.get("title", "").lower()
-    desc_start = strip_html(offer.get("description", ""), max_chars=400).lower()
+    desc_start = strip_html(offer.get("description", ""), max_chars=desc_chars).lower()
     text = title + " " + desc_start
-    return bool(_TECH_KEYWORDS_RE.search(text))
+
+    exclude_re = _keywords_re(search.prefilter_exclude_keywords)
+    if exclude_re is not None and exclude_re.search(text):
+        return False
+
+    keywords_re = _keywords_re(search.prefilter_keywords)
+    if keywords_re is None:
+        # Pas de mots-clés configurés : équivalent à "pas de pré-filtre", pas à
+        # "tout écarter" — une liste vide par faute de frappe YAML ne doit pas
+        # faire scorer 0 offre en silence.
+        return True
+    return bool(keywords_re.search(text))
 
 
-def _fill(template: str, values: dict) -> str:
-    """Remplace {clé} sans interpréter les accolades littérales (exemples JSON)."""
-    for key, value in values.items():
-        template = template.replace("{" + key + "}", str(value))
-    return template
-
-
-def build_system_prompt(template: str, profile_text: str) -> str:
+def build_system_prompt(template: str, profile_text: str, search: Search | None = None) -> str:
     """Returns the static part of the prompt (before ---OFFER---)."""
+    if search is None:
+        search = get_search()
     static_part = template.split("---OFFER---")[0]
-    return _fill(static_part, {"profile": profile_text})
+    return fill_template(static_part, {**search.placeholders(), "profile": profile_text})
 
 
 def build_offer_prompt(template: str, offer: dict) -> str:
     """Returns the offer-specific part of the prompt (after ---OFFER---)."""
     parts = template.split("---OFFER---")
     offer_part = parts[1] if len(parts) > 1 else template
-    return _fill(offer_part, {
+    return fill_template(offer_part, {
         "title": offer.get("title", ""),
         "company": offer.get("company", ""),
         "location": offer.get("location", ""),
         "url": offer.get("url", ""),
         "description": strip_html(offer.get("description", ""), max_chars=1500),
-    })
+    }, warn=False)
 
 
-def call_claude(client, system_text: str, offer_text: str) -> tuple[str, object]:
+def call_claude(client, system_text: str, offer_text: str, search: Search) -> tuple[str, object]:
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=512,
+        model=search.filter_model,
+        max_tokens=search.filter_max_tokens,
         system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": offer_text}],
     )
@@ -139,16 +148,12 @@ def parse_filter_response(text: str) -> dict:
     return json.loads(text)
 
 
-def score_offer(client, offer: dict, system_text: str, template: str) -> tuple[dict, object]:
+def score_offer(client, offer: dict, system_text: str, template: str, search: Search) -> tuple[dict, object]:
     offer_text = build_offer_prompt(template, offer)
-    raw, usage = call_claude(client, system_text, offer_text)
+    raw, usage = call_claude(client, system_text, offer_text, search)
     result = parse_filter_response(raw)
     result["filtered_at"] = str(date.today())
     return result, usage
-
-
-_MODEL = "claude-haiku-4-5-20251001"
-_BATCH_MIN_OFFERS = 6  # en dessous, le mode séquentiel suffit
 
 
 def _save_offer_file(filepath: str, offer: dict) -> None:
@@ -174,6 +179,7 @@ def filter_batch(
     system_text: str,
     template: str,
     threshold: int,
+    search: Search,
 ) -> tuple[int, int]:
     """Score les offres via l'API Message Batches (-50% de coût, asynchrone)."""
     import time
@@ -185,8 +191,8 @@ def filter_batch(
         Request(
             custom_id=offer["id"],
             params=MessageCreateParamsNonStreaming(
-                model=_MODEL,
-                max_tokens=512,
+                model=search.filter_model,
+                max_tokens=search.filter_max_tokens,
                 system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": build_offer_prompt(template, offer)}],
             ),
@@ -207,7 +213,7 @@ def filter_batch(
             end="\r",
             flush=True,
         )
-        time.sleep(30)
+        time.sleep(search.batch_poll_seconds)
 
     files_by_id = {offer["id"]: (filepath, offer) for filepath, offer in to_score}
     total_filtered = 0
@@ -246,7 +252,7 @@ def filter_batch(
 def filter_all(
     config_dir: str = "config",
     data_dir: str = "data",
-    threshold: int = 6,
+    threshold: int | None = None,
     use_batch: bool = True,
 ) -> tuple[int, int]:
     load_dotenv()
@@ -259,12 +265,16 @@ def filter_all(
 
     client = Anthropic(api_key=api_key)
 
+    search = get_search(config_dir)
+    if threshold is None:
+        threshold = search.threshold
+
     template_path = os.path.join(config_dir, "prompts", "filter.txt")
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    profile_text = load_profile_text(config_dir)
-    system_text = build_system_prompt(template, profile_text)
+    profile_text = load_profile_text(config_dir, search=search)
+    system_text = build_system_prompt(template, profile_text, search=search)
     offers_dir = os.path.join(data_dir, "offers")
 
     total_filtered = 0
@@ -287,7 +297,7 @@ def filter_all(
         filepath = os.path.join(offers_dir, filename)
         with open(filepath, "r", encoding="utf-8") as f:
             offer = json.load(f)
-        if not is_tech_offer(offer):
+        if search.prefilter_enabled and not is_tech_offer(offer, search=search):
             offer["filter_result"] = _prefilter_result()
             _save_offer_file(filepath, offer)
             total_prefiltered += 1
@@ -297,9 +307,9 @@ def filter_all(
     print(f"  → {total_prefiltered} offre(s) écartée(s) par pré-filtre, {len(to_score)} à scorer via API.")
 
     # Mode batch (-50% de coût) dès qu'il y a assez d'offres
-    if use_batch and len(to_score) >= _BATCH_MIN_OFFERS:
+    if use_batch and len(to_score) >= search.batch_min_offers:
         total_filtered, total_pertinent = filter_batch(
-            client, to_score, system_text, template, threshold
+            client, to_score, system_text, template, threshold, search
         )
         return total_filtered, total_pertinent
 
@@ -309,7 +319,7 @@ def filter_all(
         print(f"  [{idx}/{total_pending}] ⏳ {offer.get('title', '?')[:55]}", end="\r", flush=True)
 
         try:
-            result, usage = score_offer(client, offer, system_text, template)
+            result, usage = score_offer(client, offer, system_text, template, search)
         except Exception as e:
             err_str = str(e).lower()
             if "credit" in err_str or "balance" in err_str or "billing" in err_str:
@@ -346,10 +356,11 @@ def filter_all(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Filtre les offres via Claude API")
-    parser.add_argument("--threshold", type=int, default=6, help="Score minimum (défaut: 6)")
+    parser.add_argument("--threshold", type=int, default=None, help="Score minimum (défaut: config/search.yaml)")
     parser.add_argument("--no-batch", action="store_true", help="Force le mode séquentiel (sans Message Batches)")
     args = parser.parse_args()
 
-    print(f"Filtrage des offres (seuil : {args.threshold}/10)...")
-    filtered, pertinent = filter_all(threshold=args.threshold, use_batch=not args.no_batch)
-    print(f"\n{filtered} offre(s) filtrée(s), {pertinent} pertinente(s) (score >= {args.threshold}).")
+    threshold = args.threshold if args.threshold is not None else get_search().threshold
+    print(f"Filtrage des offres (seuil : {threshold}/10)...")
+    filtered, pertinent = filter_all(threshold=threshold, use_batch=not args.no_batch)
+    print(f"\n{filtered} offre(s) filtrée(s), {pertinent} pertinente(s) (score >= {threshold}).")

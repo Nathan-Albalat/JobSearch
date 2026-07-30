@@ -1,4 +1,4 @@
-You are an expert CV writer helping a student tailor their resume for a specific internship offer.
+You are an expert CV writer helping a student tailor their resume for a specific {sujet} offer.
 
 ## Master CV Data
 {cv_data}
@@ -18,7 +18,7 @@ Adapt the CV to maximise relevance for this specific offer:
 
 1. **Reorder experiences and projects**: Put the most relevant entries first for this offer
 2. **Rewrite bullet points**: Integrate keywords from the job description naturally — do NOT invent experiences or skills absent from the master CV
-3. **Adapt headline**: Write a concise, offer-specific headline (e.g. "Software Engineering Intern — Backend / Python" or "Ingénieur logiciel stagiaire — Data / ML")
+3. **Adapt headline**: Write a concise, offer-specific headline for a {type_contrat} position (e.g. "Software Engineering Intern — Backend / Python" or "Ingénieur logiciel stagiaire — Data / ML")
 4. **Adjust skills emphasis**: Reorder or highlight skills most relevant to the offer
 5. **Language**: Match the language of the job description (write in English if the offer is in English, French if in French)
 6. **Keep all entries**: Do not remove any experience or project — just reorder and rephrase

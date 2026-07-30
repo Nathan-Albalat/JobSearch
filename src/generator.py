@@ -12,6 +12,7 @@ from src.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_p
 from src.cv_sync import sync_cv_master
 from src.letter_pdf import render_letter_pdf
 from src.tracker import record_generated
+from src.config import Search, fill_template, get_search  # noqa: F401 (fill_template ré-exporté)
 
 
 def load_offer(offer_id: str, data_dir: str) -> dict:
@@ -23,21 +24,12 @@ def load_offer(offer_id: str, data_dir: str) -> dict:
         return json.load(f)
 
 
-def fill_template(template: str, values: dict) -> str:
-    """Remplace {clé} par sa valeur sans interpréter les autres accolades.
-
-    Contrairement à str.format(), les accolades littérales du template
-    (ex: exemples JSON dans les prompts) ne posent aucun problème.
-    """
-    for key, value in values.items():
-        template = template.replace("{" + key + "}", str(value))
-    return template
-
-
-def call_sonnet(client, prompt: str) -> str:
+def call_sonnet(client, prompt: str, search: Search | None = None) -> str:
+    if search is None:
+        search = get_search()
     response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=2048,
+        model=search.generate_model,
+        max_tokens=search.generate_max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.content[0].text
@@ -66,11 +58,15 @@ def generate_cover_letter(
     profile_text: str,
     cv_summary: str,
     template: str,
+    search: Search | None = None,
 ) -> str:
+    if search is None:
+        search = get_search()
     fr = offer.get("filter_result", {})
     points_forts = ", ".join(fr.get("points_forts", [])) or "Voir profil"
 
     prompt = fill_template(template, {
+        **search.placeholders(),
         "profile": profile_text,
         "cv_summary": cv_summary,
         "title": offer.get("title", ""),
@@ -79,7 +75,7 @@ def generate_cover_letter(
         "description": strip_html(offer.get("description", ""), max_chars=2500),
         "points_forts": points_forts,
     })
-    return call_sonnet(client, prompt)
+    return call_sonnet(client, prompt, search=search)
 
 
 def generate_cv_adapt(
@@ -87,21 +83,25 @@ def generate_cv_adapt(
     offer: dict,
     cv_data: dict,
     template: str,
+    search: Search | None = None,
 ) -> dict:
     """Asks Claude to return an adapted JSON structure for the CV template."""
     import yaml as _yaml
 
+    if search is None:
+        search = get_search()
     fr = offer.get("filter_result", {})
     points_forts = ", ".join(fr.get("points_forts", [])) or "See profile"
 
     prompt = fill_template(template, {
+        **search.placeholders(),
         "cv_data": _yaml.dump(cv_data, allow_unicode=True, sort_keys=False),
         "title": offer.get("title", ""),
         "company": offer.get("company", "") or "the company",
         "description": strip_html(offer.get("description", ""), max_chars=2500),
         "points_forts": points_forts,
     })
-    raw = call_sonnet(client, prompt)
+    raw = call_sonnet(client, prompt, search=search)
 
     raw = raw.strip()
     if raw.startswith("```"):
@@ -128,6 +128,8 @@ def generate(
     from anthropic import Anthropic
     client = Anthropic(api_key=api_key)
 
+    search = get_search(config_dir)  # une seule résolution par run, passée vers le bas
+
     offer = load_offer(offer_id, data_dir)
     if not offer.get("filter_result"):
         print(
@@ -135,7 +137,7 @@ def generate(
             file=sys.stderr,
         )
 
-    profile_text = load_profile_text(config_dir)
+    profile_text = load_profile_text(config_dir, search=search)
     sync_cv_master(cv_dir)  # cv_master.md toujours aligné sur cv_data.yaml
     cv_data = load_cv_data(cv_dir)
     cv_summary = cv_data_to_text(cv_data)
@@ -146,7 +148,7 @@ def generate(
     folder = make_output_dir(offer, output_dir)
 
     print(f"Génération de la lettre de motivation...")
-    lettre = generate_cover_letter(client, offer, profile_text, cv_summary, cover_template)
+    lettre = generate_cover_letter(client, offer, profile_text, cv_summary, cover_template, search=search)
     lettre_path = os.path.join(folder, "lettre.md")
     with open(lettre_path, "w", encoding="utf-8") as f:
         f.write(f"<!-- Offre : {offer.get('title', '')} — {offer.get('company', '')} -->\n")
@@ -176,7 +178,7 @@ def generate(
         with open(os.path.join(config_dir, "prompts", "cv_adapt.txt"), "r", encoding="utf-8") as f:
             cv_template = f.read()
         template_path = os.path.join(config_dir, "templates", "cv_en.html")
-        adapted = generate_cv_adapt(client, offer, cv_data, cv_template)
+        adapted = generate_cv_adapt(client, offer, cv_data, cv_template, search=search)
 
         html_content = render_cv_html(template_path, cv_data, adapted)
 

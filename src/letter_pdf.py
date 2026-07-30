@@ -3,7 +3,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from src.cv_pdf import write_cv_pdf
+from src.cv_pdf import write_cv_pdf, _ABS_TEMPLATES_DIR
 
 _SALUTATION_RE = re.compile(r"^(dear|to whom|madame|monsieur|madame,|hi |hello )", re.IGNORECASE)
 _CLOSING_RE = re.compile(
@@ -214,9 +214,11 @@ def render_letter_pdf(
     cv_data: dict,
     body_markdown: str,
     output_path: str,
-    base_url: str = "config/templates/",
+    base_url: str = None,
     **render_kwargs,
 ) -> None:
+    if base_url is None:
+        base_url = _ABS_TEMPLATES_DIR
     """Rend la lettre en PDF en repliant automatiquement le layout de signature
     (empilé → en ligne → sans signature) pour ne jamais déborder sur une 2e page."""
     try:

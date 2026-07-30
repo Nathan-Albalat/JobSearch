@@ -10,6 +10,7 @@ output/
 
 # Données personnelles du candidat (copier les .example et les renommer)
 config/profile.yaml
+config/search.yaml
 cv_master/cv_data.yaml
 cv_master/cv_master.md
 

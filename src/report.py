@@ -4,6 +4,7 @@ import os
 import sys
 from datetime import date
 
+from src.config import get_search
 from src.tracker import render_tracking_section
 
 
@@ -20,12 +21,15 @@ def load_filtered_offers(data_dir: str) -> list[dict]:
     return offers
 
 
-def render_report(offers: list[dict], threshold: int = 6) -> str:
+def render_report(offers: list[dict], threshold: int | None = None, data_dir: str = "data") -> str:
+    if threshold is None:
+        threshold = get_search().threshold
+    offers_dir = os.path.join(data_dir, "offers")
     total_scraped = sum(
         1
-        for f in os.listdir(os.path.join("data", "offers"))
+        for f in os.listdir(offers_dir)
         if f.endswith(".json")
-    ) if os.path.isdir(os.path.join("data", "offers")) else len(offers)
+    ) if os.path.isdir(offers_dir) else len(offers)
 
     pertinent = [o for o in offers if o["filter_result"].get("score", 0) >= threshold]
     non_pertinent = [o for o in offers if o["filter_result"].get("score", 0) < threshold]
@@ -90,7 +94,7 @@ def render_report(offers: list[dict], threshold: int = 6) -> str:
         lines.append(f"> {len(non_pertinent)} offre(s) écartée(s) (score < {threshold}) — non listées en détail.")
         lines.append("")
 
-    tracking = render_tracking_section("data")
+    tracking = render_tracking_section(data_dir)
     if tracking:
         lines.append("---")
         lines.append("")
@@ -101,8 +105,12 @@ def render_report(offers: list[dict], threshold: int = 6) -> str:
 
 def generate_report(
     data_dir: str = "data",
-    threshold: int = 6,
+    threshold: int | None = None,
+    config_dir: str = "config",
 ) -> str:
+    if threshold is None:
+        threshold = get_search(config_dir).threshold
+
     offers = load_filtered_offers(data_dir)
     if not offers:
         print(
@@ -111,7 +119,7 @@ def generate_report(
         )
         sys.exit(1)
 
-    content = render_report(offers, threshold)
+    content = render_report(offers, threshold, data_dir=data_dir)
     filename = f"rapport_{date.today()}.md"
     output_path = os.path.join(data_dir, filename)
     with open(output_path, "w", encoding="utf-8") as f:
@@ -122,7 +130,7 @@ def generate_report(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Génère le rapport de validation des offres")
-    parser.add_argument("--threshold", type=int, default=6, help="Score minimum (défaut: 6)")
+    parser.add_argument("--threshold", type=int, default=None, help="Score minimum (défaut: config/search.yaml)")
     args = parser.parse_args()
 
     path = generate_report(threshold=args.threshold)

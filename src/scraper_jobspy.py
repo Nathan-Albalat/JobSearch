@@ -15,7 +15,10 @@ def fetch_jobspy(source: dict) -> list[dict]:
         print("    python-jobspy non installé (pip install python-jobspy) — source ignorée.")
         return []
 
-    params = dict(source.get("params", {}) or {})
+    from src.config import get_search
+
+    defaults = get_search().source_defaults("jobspy")
+    params = {**defaults, **(source.get("params", {}) or {})}
     df = scrape_jobs(
         site_name=params.get("sites", ["linkedin", "indeed"]),
         search_term=params.get("search_term", "software intern"),

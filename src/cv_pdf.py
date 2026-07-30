@@ -103,6 +103,7 @@ def render_cv_html(template_path: str, static_data: dict, adapted: dict) -> str:
         "LOCATION": personal.get("location", ""),
         "EMAIL": personal.get("email", ""),
         "GITHUB": personal.get("github", ""),
+        "PORTFOLIO": personal.get("portfolio", ""),
         "EXPERIENCE_ENTRIES": exp_html,
         "PROJECT_ENTRIES": proj_html,
         "EDU_SCHOOL": edu.get("school", ""),

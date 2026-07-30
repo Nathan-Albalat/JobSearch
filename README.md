@@ -76,14 +76,15 @@ python main.py --tui
 
 **Important principle:** the TUI is just a **view** on the pipeline's files. It creates no hidden state: reports, `data/offers/*.json` and `data/applications.json` remain readable and editable without it. So you can resume work anytime (scrape Monday, review Wednesday) — the TUI re-reads current state on startup and with the `r` key.
 
-### The 4 Tabs
+### The 5 Tabs
 
 | Tab | Role |
 |---|---|
-| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to process. |
+| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to process — checked rows are **highlighted in green**. Offers from the latest scrape session are **highlighted in dark blue**; the displayed period (all / latest session / last 7 days / last 30 days) can be filtered with `d`/`D`. |
 | **2 · Generation** | Launch generation (letter + CV, or letter only) of checked offers as a background task. |
 | **3 · Applications** | List of `output/candidatures/` directories, letter/CV preview, **PDF regeneration after manual editing**. |
-| **4 · Tracking** | Statuses and notes of applications (`applications.json`). |
+| **4 · Tracking** | Statuses and notes of applications (`applications.json`). Rejected applications are **highlighted in red**. |
+| **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. |
 
 ### Cover Letter Editing Workflow
 
@@ -100,9 +101,9 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 
 | Context | Key | Action |
 |---|---|---|
-| Global | `1`/`2`/`3`/`4` | Switch tab |
+| Global | `1`/`2`/`3`/`4`/`5` | Switch tab (Offers / Generation / Applications / Tracking / Stats) |
 | Global | `r` | Reload data from disk |
-| Global | `S` | Run scrape + filter + report |
+| Global | `S` / `s` / `Ctrl+S` | Run scrape + filter + report (spinner + current step + timer in the status bar). `s` only triggers the scrape outside the Tracking tab, where it means "sent" |
 | Global | `c` | Open Claude Console (reload API credits) |
 | Global | `?` | Show help (list of shortcuts) |
 | Global | `q` | Quit |
@@ -110,6 +111,8 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 | Offers | `o` | Open offer in browser |
 | Offers | `+`/`-` | Adjust displayed score threshold |
 | Offers | `h` | Hide/show already-applied offers |
+| Offers | `d` | Cycle displayed period (all · latest session · 7 days · 30 days) |
+| Offers | `D` | Pick a specific scrape session |
 | Offers | `g` | Go to Generation tab |
 | Generation | `g` | Generate letter + CV for checked offers |
 | Generation | `L` | Generate **letter only** (no CV — 1 Sonnet call instead of 2) |

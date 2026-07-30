@@ -1,9 +1,12 @@
 """Suivi des candidatures — data/applications.json."""
 import json
 import os
+from collections import Counter
 from datetime import date
 
 STATUSES = ["generated", "sent", "answered", "interview", "rejected", "accepted"]
+# Statuts indiquant qu'une réponse de l'entreprise a été reçue
+RESPONSE_STATUSES = {"answered", "interview", "rejected", "accepted"}
 
 _STATUS_LABELS = {
     "generated": "📝 générée",
@@ -65,6 +68,8 @@ def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = "dat
             app["status"] = status
             if status == "sent" and not app.get("sent_at"):
                 app["sent_at"] = str(date.today())
+            if status in RESPONSE_STATUSES and not app.get("responded_at"):
+                app["responded_at"] = str(date.today())
             if note:
                 app["notes"] = (app.get("notes", "") + " | " + note).strip(" |")
             save_applications(apps, data_dir)
@@ -86,6 +91,102 @@ def render_applications_table(apps: list[dict]) -> str:
             f"{app['title'][:44]:<45} {app.get('notes', '')}"
         )
     return "\n".join(lines)
+
+
+# Codes pays → noms lisibles, pour regrouper les localisations par pays.
+_COUNTRY_NAMES = {
+    "NL": "Netherlands", "FR": "France", "DE": "Germany", "BE": "Belgium",
+    "ES": "Spain", "IT": "Italy", "GB": "United Kingdom", "UK": "United Kingdom",
+    "IE": "Ireland", "CH": "Switzerland", "LU": "Luxembourg", "PT": "Portugal",
+    "SE": "Sweden", "DK": "Denmark", "NO": "Norway", "FI": "Finland",
+    "AT": "Austria", "PL": "Poland",
+}
+
+
+def _application_location(app: dict, data_dir: str) -> str:
+    """Localisation d'une candidature (regroupée par pays), via jointure avec l'offre JSON.
+
+    1) code pays connu (`country`) → nom lisible ; 2) sinon dernier segment d'une
+    `location` propre (ex. « Netherlands ») ; 3) sinon « Inconnu ». Les blobs
+    JSON-LD bruts et les candidatures manuelles sans offre → repli propre.
+    """
+    offer_path = os.path.join(data_dir, "offers", f"{app.get('offer_id', '')}.json")
+    if not os.path.exists(offer_path):
+        return "Inconnu"
+    try:
+        with open(offer_path, encoding="utf-8") as f:
+            offer = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return "Inconnu"
+
+    country = (offer.get("country") or "").strip()
+    if country.upper() in _COUNTRY_NAMES:
+        return _COUNTRY_NAMES[country.upper()]
+
+    location = (offer.get("location") or "").strip()
+    # Ignore les blobs JSON-LD bruts (ex. "[{'@type': 'Place', ...}]").
+    if location and "@type" not in location and not location.lstrip().startswith(("[{", "{")):
+        return location.split(",")[-1].strip() or "Inconnu"
+    if country:
+        return country
+    return "Inconnu"
+
+
+def compute_stats(data_dir: str = "data") -> dict:
+    """Statistiques des candidatures pour le panneau de stats de la TUI."""
+    apps = load_applications(data_dir)
+    by_status = Counter(a.get("status", "generated") for a in apps)
+
+    accepted = by_status.get("accepted", 0)
+    rejected = by_status.get("rejected", 0)
+    generated = by_status.get("generated", 0)
+    coarse = {
+        "Accepté": accepted,
+        "Refusé": rejected,
+        "En attente": len(apps) - accepted - rejected - generated,
+    }
+
+    by_location = Counter(_application_location(a, data_dir) for a in apps)
+
+    by_month: dict[str, int] = {}
+    for a in apps:
+        g = a.get("generated_at")
+        if g:
+            month = str(g)[:7]  # YYYY-MM
+            by_month[month] = by_month.get(month, 0) + 1
+    by_month = dict(sorted(by_month.items()))
+
+    # --- Métriques de retour de candidature ---
+    sent = sum(1 for a in apps if a.get("status") != "generated")
+    responded = sum(1 for a in apps if a.get("status") in RESPONSE_STATUSES)
+    decided = accepted + rejected
+
+    delays = []
+    for a in apps:
+        s, r = a.get("sent_at"), a.get("responded_at")
+        if s and r:
+            try:
+                delays.append((date.fromisoformat(r[:10]) - date.fromisoformat(s[:10])).days)
+            except ValueError:
+                pass
+
+    rates = {
+        "sent": sent,
+        "responded": responded,
+        "taux_reponse": (responded / sent) if sent else None,
+        "taux_acceptation": (accepted / decided) if decided else None,
+        "delai_moyen_jours": (sum(delays) / len(delays)) if delays else None,
+        "n_delai": len(delays),
+    }
+
+    return {
+        "total": len(apps),
+        "by_status": dict(by_status),
+        "coarse": coarse,
+        "by_location": dict(by_location.most_common()),
+        "by_month": by_month,
+        "rates": rates,
+    }
 
 
 def render_tracking_section(data_dir: str = "data") -> list[str]:

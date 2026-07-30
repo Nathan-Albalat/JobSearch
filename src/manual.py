@@ -91,6 +91,23 @@ def _extract_next_data(soup: BeautifulSoup) -> dict | None:
 
 # ── Stratégie 2 : JSON-LD JobPosting ───────────────────────────────────────
 
+def _extract_jsonld_location(job_location) -> str:
+    """Extrait un lieu propre depuis un jobLocation JSON-LD (dict OU liste de Place)."""
+    if isinstance(job_location, list):
+        job_location = job_location[0] if job_location else {}
+    if not isinstance(job_location, dict):
+        return ""
+    addr = job_location.get("address") or job_location
+    if not isinstance(addr, dict):
+        return ""
+    city = addr.get("addressLocality") or ""
+    country = addr.get("addressCountry") or ""
+    if isinstance(country, dict):
+        country = country.get("name") or ""
+    parts = [p.strip() for p in (city, country) if isinstance(p, str) and p.strip()]
+    return ", ".join(parts) or (addr.get("addressRegion") or "")
+
+
 def _extract_jsonld(soup: BeautifulSoup) -> dict | None:
     for script in soup.find_all("script", type="application/ld+json"):
         if not script.string:
@@ -114,17 +131,7 @@ def _extract_jsonld(soup: BeautifulSoup) -> dict | None:
             title = item.get("title") or item.get("name") or ""
             company_raw = item.get("hiringOrganization") or item.get("employer") or {}
             company = company_raw.get("name", "") if isinstance(company_raw, dict) else str(company_raw)
-            location_raw = item.get("jobLocation") or {}
-            if isinstance(location_raw, dict):
-                addr = location_raw.get("address") or location_raw
-                location = (
-                    addr.get("addressLocality")
-                    or addr.get("addressRegion")
-                    or addr.get("addressCountry")
-                    or ""
-                ) if isinstance(addr, dict) else ""
-            else:
-                location = str(location_raw)
+            location = _extract_jsonld_location(item.get("jobLocation"))
             description = item.get("description") or ""
 
             if title or description:
@@ -268,19 +275,16 @@ def _print_extraction_summary(offer: dict) -> None:
 
 # ── Points d'entrée ─────────────────────────────────────────────────────────
 
-def from_file(
+def create_stub_from_file(
     path: str,
     url_source: str = "",
     title_override: str = "",
     company_override: str = "",
     data_dir: str = "data",
-    config_dir: str = "config",
-    cv_dir: str = "cv_master",
-    output_dir: str = "output",
-) -> str:
+) -> dict:
+    """Extrait + sauvegarde le stub d'offre depuis un fichier HTML (sans générer la candidature)."""
     if not os.path.exists(path):
-        print(f"Erreur : fichier introuvable : {path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Fichier introuvable : {path}")
 
     print(f"Lecture du fichier : {path}")
     with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -294,6 +298,45 @@ def from_file(
 
     stub_path = save_offer_stub(offer, data_dir)
     print(f"Stub sauvegardé : {stub_path}\n")
+    return offer
+
+
+def create_stub_from_url(
+    url: str,
+    title_override: str = "",
+    company_override: str = "",
+    data_dir: str = "data",
+) -> dict:
+    """Télécharge + extrait + sauvegarde le stub d'offre depuis une URL (sans générer la candidature)."""
+    print(f"Téléchargement : {url}")
+    html = fetch_url(url)
+
+    data = extract_offer_data(html, url)
+    offer = build_offer_stub(data, url, title_override, company_override)
+
+    print("Informations extraites :")
+    _print_extraction_summary(offer)
+
+    stub_path = save_offer_stub(offer, data_dir)
+    print(f"Stub sauvegardé : {stub_path}\n")
+    return offer
+
+
+def from_file(
+    path: str,
+    url_source: str = "",
+    title_override: str = "",
+    company_override: str = "",
+    data_dir: str = "data",
+    config_dir: str = "config",
+    cv_dir: str = "cv_master",
+    output_dir: str = "output",
+) -> str:
+    try:
+        offer = create_stub_from_file(path, url_source, title_override, company_override, data_dir)
+    except FileNotFoundError as e:
+        print(f"Erreur : {e}", file=sys.stderr)
+        sys.exit(1)
 
     return generate(offer["id"], config_dir, data_dir, cv_dir, output_dir)
 
@@ -307,21 +350,11 @@ def from_url(
     cv_dir: str = "cv_master",
     output_dir: str = "output",
 ) -> str:
-    print(f"Téléchargement : {url}")
     try:
-        html = fetch_url(url)
+        offer = create_stub_from_url(url, title_override, company_override, data_dir)
     except Exception as e:
         print(f"Erreur lors du téléchargement : {e}", file=sys.stderr)
         sys.exit(1)
-
-    data = extract_offer_data(html, url)
-    offer = build_offer_stub(data, url, title_override, company_override)
-
-    print("Informations extraites :")
-    _print_extraction_summary(offer)
-
-    stub_path = save_offer_stub(offer, data_dir)
-    print(f"Stub sauvegardé : {stub_path}\n")
 
     return generate(offer["id"], config_dir, data_dir, cv_dir, output_dir)
 

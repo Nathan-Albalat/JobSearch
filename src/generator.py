@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from src.filter import load_profile_text, strip_html
 from src.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_pdf
 from src.cv_sync import sync_cv_master
-from src.letter_pdf import render_letter_html, write_letter_pdf
+from src.letter_pdf import render_letter_pdf
 from src.tracker import record_generated
 
 
@@ -154,17 +154,17 @@ def generate(
         f.write(f"<!-- Généré le : {date.today()} -->\n\n")
         f.write(lettre)
 
-    lettre_html = render_letter_html(
-        os.path.join(config_dir, "templates", "cover_letter.html"),
-        cv_data,
-        lettre,
-        company_name=offer.get("company", ""),
-        company_location=offer.get("location", ""),
-        position_title=offer.get("title", ""),
-    )
     lettre_pdf_path = os.path.join(folder, "lettre.pdf")
     try:
-        write_letter_pdf(lettre_html, lettre_pdf_path)
+        render_letter_pdf(
+            os.path.join(config_dir, "templates", "cover_letter.html"),
+            cv_data,
+            lettre,
+            output_path=lettre_pdf_path,
+            company_name=offer.get("company", ""),
+            company_location=offer.get("location", ""),
+            position_title=offer.get("title", ""),
+        )
         print(f"Lettre PDF générée : {lettre_pdf_path}")
     except ImportError as e:
         print(f"Avertissement : {e}", file=sys.stderr)

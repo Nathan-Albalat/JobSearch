@@ -118,7 +118,7 @@ def cmd_letter_pdf(args) -> None:
     import os
 
     from src.cv_pdf import load_cv_data
-    from src.letter_pdf import render_letter_html, write_letter_pdf
+    from src.letter_pdf import render_letter_pdf
 
     path = args.letter_pdf
     if not os.path.exists(path):
@@ -141,17 +141,17 @@ def cmd_letter_pdf(args) -> None:
         title = args.title
 
     cv_data = load_cv_data("cv_master")
-    html = render_letter_html(
+    output = args.output or os.path.splitext(path)[0] + ".pdf"
+    render_letter_pdf(
         os.path.join("config", "templates", "cover_letter.html"),
         cv_data,
         body,
+        output_path=output,
         company_name=company,
         company_location=location,
         company_dept=dept,
         position_title=title,
     )
-    output = args.output or os.path.splitext(path)[0] + ".pdf"
-    write_letter_pdf(html, output)
     print(f"Lettre PDF générée : {output}")
 
 

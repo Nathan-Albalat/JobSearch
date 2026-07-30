@@ -76,14 +76,15 @@ python main.py --tui
 
 **Principe important :** la TUI n'est qu'une **vue** sur les fichiers du pipeline. Elle ne crée aucun état caché : les rapports, `data/offers/*.json` et `data/applications.json` restent lisibles et modifiables sans elle. Tu peux donc reprendre le travail n'importe quand (scraper lundi, faire la revue mercredi) — la TUI relit l'état courant à l'ouverture et avec la touche `r`.
 
-### Les 4 onglets
+### Les 5 onglets
 
 | Onglet | Rôle |
 |---|---|
-| **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à traiter. |
+| **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à traiter — les lignes cochées sont **surlignées en vert**. Les offres de la dernière session de scrape sont **surlignées en bleu foncé** ; la période affichée (tout / dernière session / 7 derniers jours / 30 derniers jours) se filtre avec `d`/`D`. |
 | **2 · Génération** | Lance la génération (lettre + CV, ou lettre seule) des offres cochées, en tâche de fond. |
 | **3 · Candidatures** | Liste des dossiers `output/candidatures/`, aperçu de la lettre/CV, **régénération des PDF après retouche manuelle**. |
-| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). |
+| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Les candidatures **refusées sont surlignées en rouge**. |
+| **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. |
 
 ### Workflow de retouche d'une lettre
 
@@ -100,9 +101,9 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 
 | Contexte | Touche | Action |
 |---|---|---|
-| Global | `1`/`2`/`3`/`4` | Changer d'onglet |
+| Global | `1`/`2`/`3`/`4`/`5` | Changer d'onglet (Offres / Génération / Candidatures / Suivi / Stats) |
 | Global | `r` | Recharger les données depuis le disque |
-| Global | `S` | Lancer scrape + filtre + rapport |
+| Global | `S` / `s` / `Ctrl+S` | Lancer scrape + filtre + rapport (spinner + étape + chrono dans la barre de statut). `s` ne déclenche le scrape qu'en dehors de l'onglet Suivi, où il vaut « envoyée » |
 | Global | `c` | Ouvrir la Claude Console (recharger le crédit API) |
 | Global | `?` | Afficher l'aide (liste des raccourcis) |
 | Global | `q` | Quitter |
@@ -110,6 +111,8 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 | Offres | `o` | Ouvrir l'offre dans le navigateur |
 | Offres | `+`/`-` | Ajuster le seuil de score affiché |
 | Offres | `h` | Masquer/afficher les offres déjà candidatées |
+| Offres | `d` | Cycler la période affichée (tout · session · 7j · 30j) |
+| Offres | `D` | Choisir une session de scrape précise |
 | Offres | `g` | Aller à l'onglet Génération |
 | Génération | `g` | Générer lettre + CV des offres cochées |
 | Génération | `L` | Générer la **lettre seule** (sans CV — 1 appel Sonnet au lieu de 2) |

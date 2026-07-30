@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import date
 
@@ -48,23 +49,40 @@ def strip_html(html: str, max_chars: int = 2000) -> str:
 _TECH_KEYWORDS = {
     # Langages
     "python", "java", "javascript", "typescript", "golang", "rust", "scala",
-    "kotlin", "swift", "php", "ruby", "c++", "c#", "matlab", "r ",
+    "kotlin", "swift", "php", "ruby", "c++", "c#", "matlab",
+    # NB : le langage R n'est pas listé — trop court pour être cherché sans
+    # bruit ("R&D", initiales…). Ces offres sont captées par "data"/"analyst".
     # Frameworks / outils
     "django", "flask", "fastapi", "spring", "react", "vue", "angular",
     "node", "tensorflow", "pytorch", "scikit", "docker", "kubernetes",
     "git", "sql", "nosql", "mongodb", "postgresql", "aws", "azure", "gcp",
+    "linux", "api",
     # Rôles tech
     "software", "developer", "engineer", "backend", "frontend", "fullstack",
-    "devops", "data science", "machine learning", "deep learning", "nlp",
+    "devops", "data", "data science", "machine learning", "deep learning", "nlp",
     "computer vision", "embedded", "firmware", "robotics", "cybersecurity",
-    "cloud", "sre", "mlops",
-    # Termes français
+    "cloud", "sre", "mlops", "analyst", "tech", "it", "ict", "digital",
+    "coding", "programming",
+    # Termes français / néerlandais / allemands
     "développeur", "ingénieur", "informatique", "logiciel", "données",
     "apprentissage automatique", "intelligence artificielle", "programmation",
     "systèmes embarqués", "réseaux", "cybersécurité",
+    "digitaal", "coderen", "informatica", "datenexperte",
     # Termes génériques stage tech
     "intern", "internship", "stage", "werkstudent",
 }
+
+# Recherche par mot entier : un simple `kw in text` provoquait des faux positifs
+# massifs ("git" dans "digital", "rust" dans "trust", "intern" dans "international",
+# et surtout l'ancien "r " qui matchait "manager ", "senior "…). Sur l'historique,
+# ~43 % des offres envoyées à l'API l'étaient pour rien, sans qu'aucune offre
+# pertinente (score >= 6) ne dépende de ces correspondances partielles.
+_TECH_KEYWORDS_RE = re.compile(
+    "|".join(
+        r"(?<![a-z0-9])" + re.escape(kw) + r"(?![a-z0-9])"
+        for kw in sorted(_TECH_KEYWORDS)
+    )
+)
 
 
 def is_tech_offer(offer: dict) -> bool:
@@ -72,7 +90,7 @@ def is_tech_offer(offer: dict) -> bool:
     title = offer.get("title", "").lower()
     desc_start = strip_html(offer.get("description", ""), max_chars=400).lower()
     text = title + " " + desc_start
-    return any(kw in text for kw in _TECH_KEYWORDS)
+    return bool(_TECH_KEYWORDS_RE.search(text))
 
 
 def _fill(template: str, values: dict) -> str:

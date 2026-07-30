@@ -49,21 +49,8 @@
                Active (green):  --accent: #2C5F4A;  --accent-light: #E8EFE9;
                Disabled (gray): --accent: #5F5E5A;  --accent-light: #F1EFE8;
             */
-            --accent: {
-                    {
-                    ACCENT_COLOR
-                }
-            }
-
-            ;
-
-            --accent-light: {
-                    {
-                    ACCENT_LIGHT
-                }
-            }
-
-            ;
+            --accent: {{ACCENT_COLOR}};
+            --accent-light: {{ACCENT_LIGHT}};
             --text-primary: #1A1A1A;
             --text-secondary: #5A5A58;
             --border-subtle: #E3E1D9;
@@ -162,6 +149,7 @@
             font-size: 10.5pt;
             line-height: 1.72;
             color: var(--text-primary);
+            text-align: justify;
         }
 
         .cl-body p {
@@ -184,6 +172,18 @@
             height: 138px;
             /* marge négative en bas pour rapprocher le nom et éviter tout débordement */
             margin: 2pt 0 -6pt;
+        }
+
+        .cl-signoff {
+            /* par défaut : empilé, comportement actuel inchangé */
+        }
+        .cl-signoff.signoff-inline {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+        }
+        .cl-signoff.signoff-inline .cl-signature {
+            margin: 0;
         }
 
         .cl-closing-name {
@@ -229,8 +229,10 @@
 
         <div class="cl-closing">
             {{CLOSING_WORD}}
-            <p class="cl-closing-name">{{FULL_NAME}}</p>
-            {{SIGNATURE_IMG}}
+            <div class="cl-signoff {{SIGNOFF_LAYOUT_CLASS}}">
+                <p class="cl-closing-name">{{FULL_NAME}}</p>
+                {{SIGNATURE_IMG}}
+            </div>
         </div>
 
     </div>

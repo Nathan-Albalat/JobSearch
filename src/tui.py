@@ -9,20 +9,122 @@ import io
 import json
 import os
 import subprocess
+import time
 import webbrowser
+from datetime import date, timedelta
 
+from rich.style import Style
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label, Markdown, Static, TabbedContent, TabPane
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Markdown,
+    OptionList,
+    Static,
+    TabbedContent,
+    TabPane,
+)
+from textual.widgets.option_list import Option
 
 from src.filter import strip_html
 from src.report import load_filtered_offers
-from src.tracker import load_applications, mark_status
+from src.tracker import compute_stats, load_applications, mark_status
+
+
+def _cells(values):
+    return [str(v) for v in values]
+
+
+def _hbar(label, value, total, label_w, bar_w=22, style=None):
+    """Une ligne de barre horizontale : label aligné + barre proportionnelle + valeur + %."""
+    filled = round(bar_w * value / total) if total else 0
+    filled = min(bar_w, filled)
+    if value > 0:
+        filled = max(1, filled)  # une candidature reste visible
+    bar = "█" * filled + "░" * (bar_w - filled)
+    pct = round(100 * value / total) if total else 0
+    color = f"[{style}]" if style else ""
+    close = "[/]" if style else ""
+    return f"{label:<{label_w}} {color}{bar}{close} {value:>2} ({pct:>3}%)"
+
+
+def render_month_histogram(by_month, height=7, col_w=7):
+    """Histogramme vertical ASCII des candidatures par mois (inspiré d'AsciiStogram)."""
+    if not by_month:
+        return "[dim]Aucune donnée temporelle.[/dim]"
+    months = list(by_month.keys())
+    values = [by_month[m] for m in months]
+    top = max(values)
+    # labels d'axe Y (valeur max en haut, 0 en bas) alignés à droite
+    y_w = len(str(top))
+    lines = []
+    for level in range(height, 0, -1):
+        threshold = top * level / height
+        axis = f"{top:>{y_w}} " if level == height else " " * (y_w + 1)
+        cells = "".join(
+            ("█" * (col_w - 2)).center(col_w) if v >= threshold else " " * col_w
+            for v in values
+        )
+        lines.append(f"{axis}┤{cells}")
+    # axe X + labels de mois (MM/YY)
+    lines.append(f"{0:>{y_w}} └" + "─" * (col_w * len(months)))
+    labels = "".join(_short_month(m).center(col_w) for m in months)
+    lines.append(" " * (y_w + 2) + labels)
+    return "\n".join(lines)
+
+
+def _short_month(ym):
+    """'2026-07' -> '07/26'."""
+    try:
+        y, m = ym.split("-")[:2]
+        return f"{m}/{y[2:]}"
+    except (ValueError, IndexError):
+        return ym[:5]
+
+
+class HighlightDataTable(DataTable):
+    """DataTable dont les lignes peuvent être surlignées sur toute leur largeur.
+
+    `row_styles` associe une clé de ligne (celle passée à `add_row(key=...)`) à un
+    `rich.style.Style` utilisé comme fond de ligne complet — contrairement à un
+    style appliqué cellule par cellule, qui ne couvre pas le padding/l'espace résiduel.
+    """
+
+    row_styles: dict = {}
+
+    def _get_row_style(self, row_index, base_style):
+        if row_index >= 0 and self.row_styles:
+            try:
+                key = self._row_locations.get_key(row_index)
+                style = self.row_styles.get(key)
+                if style is not None:
+                    return style
+            except LookupError:
+                pass
+        return super()._get_row_style(row_index, base_style)
+
+
+# Surlignage des candidatures déjà envoyées (onglet Candidatures) — vert foncé, modifiable ici.
+SENT_HIGHLIGHT_COLOR = "#1e4620"
+# Surlignage des candidatures en attente de réponse (onglet Suivi) — jaune, modifiable ici.
+PENDING_HIGHLIGHT_COLOR = "#584b00"
+# Surlignage des offres de la dernière session de scrape (onglet Offres) — bleu foncé, modifiable ici.
+NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
+# Statuts considérés comme « en attente de réponse » (candidature envoyée, décision non tombée).
+PENDING_STATUSES = {"sent", "answered", "interview"}
 
 CONSOLE_URL = "https://console.anthropic.com/settings/billing"
+
+# Animation du spinner affiché dans la barre de statut pendant un scrape.
+SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 STATUS_KEYS = {
     "s": "sent",
@@ -34,9 +136,10 @@ STATUS_KEYS = {
 
 HELP_TEXT = """\
 [b]Raccourcis globaux[/b]
-  1 / 2 / 3 / 4   Onglets : Offres · Génération · Candidatures · Suivi
+  1 / 2 / 3 / 4 / 5   Onglets : Offres · Génération · Candidatures · Suivi · Stats
   r           Recharger les données depuis le disque
-  S           Lancer scrape + filtre + rapport
+  S / s / ^S  Lancer scrape + filtre + rapport (spinner dans la barre de statut)
+              (`s` = statut « envoyée » dans l'onglet Suivi uniquement)
   c           Ouvrir la Claude Console (recharge crédit API)
   ?           Cette aide
   q           Quitter
@@ -47,11 +150,15 @@ HELP_TEXT = """\
   o           Ouvrir l'offre dans le navigateur
   + / -       Augmenter / diminuer le seuil de score
   h           Masquer / afficher les offres déjà candidatées
+  d           Cycler la période affichée (tout · session · 7j · 30j)
+  D           Choisir une session de scrape précise
   g           Passer à l'onglet Génération
+  (les offres de la dernière session sont surlignées en bleu)
 
 [b]Onglet Génération[/b]
   g           Lancer la génération (lettre + CV) des offres cochées
   L           Générer la lettre seule (sans CV adapté — économie d'un appel API)
+  A           Ajouter une offre manuelle (fichier HTML ou URL) à la liste, puis g / L
   o           Ouvrir le dossier de la candidature générée
 
 [b]Onglet Candidatures[/b]
@@ -61,6 +168,8 @@ HELP_TEXT = """\
   p           Régénérer lettre.pdf depuis lettre.md (après retouche)
   u           Régénérer cv_adapte.pdf depuis cv_adapte.html
   o           Ouvrir le dossier de la candidature
+  O           Ouvrir l'offre dans le navigateur
+  (les candidatures envoyées ou plus sont surlignées en vert)
 
 [b]Onglet Suivi[/b]
   s           Statut → envoyée (sent)
@@ -70,6 +179,12 @@ HELP_TEXT = """\
   v           Statut → acceptée (accepted)
   n           Éditer la note de la candidature
   o           Ouvrir l'offre dans le navigateur
+  (en attente de réponse en jaune, refusées en rouge)
+
+[b]Onglet Stats[/b]
+  Retour de candidature (taux d'acceptation, taux de réponse,
+  délai moyen), localisation des stages, et histogramme des
+  candidatures au cours du temps (lecture seule).
 """
 
 
@@ -100,6 +215,58 @@ class NoteScreen(ModalScreen[str]):
         self.dismiss(event.value)
 
 
+class ManualEntryScreen(ModalScreen):
+    """Ajout manuel d'une candidature depuis un fichier HTML ou une URL directe."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Annuler")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="manual-box"):
+            yield Label("Ajouter une candidature manuelle — fichier HTML OU URL (entrée pour valider) :")
+            yield Input(placeholder="Chemin fichier HTML (ex: ~/Downloads/offre.html)", id="me-file")
+            yield Input(placeholder="… ou URL directe", id="me-url")
+            yield Input(placeholder="URL source (optionnel, référencée dans la lettre)", id="me-source")
+            yield Input(placeholder="Entreprise (optionnel, surcharge l'extraction)", id="me-company")
+            yield Input(placeholder="Titre (optionnel, surcharge l'extraction)", id="me-title")
+            yield Label("", id="me-error")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        file_val = self.query_one("#me-file", Input).value.strip()
+        url_val = self.query_one("#me-url", Input).value.strip()
+        error = self.query_one("#me-error", Label)
+        if bool(file_val) == bool(url_val):
+            error.update("[red]Renseigne soit un fichier, soit une URL (un seul des deux).[/red]")
+            return
+        self.dismiss({
+            "file": file_val,
+            "url": url_val,
+            "url_source": self.query_one("#me-source", Input).value.strip(),
+            "company": self.query_one("#me-company", Input).value.strip(),
+            "title": self.query_one("#me-title", Input).value.strip(),
+        })
+
+
+class SessionPickerScreen(ModalScreen[str]):
+    """Choix d'une session de scrape (une date) parmi celles présentes dans les offres."""
+
+    BINDINGS = [Binding("escape", "dismiss", "Annuler")]
+
+    def __init__(self, sessions: list[tuple[str, int]]) -> None:
+        super().__init__()
+        self._sessions = sessions
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="session-box"):
+            yield Label("Choisir une session de scrape (entrée pour valider, échap pour annuler) :")
+            option_list = OptionList(
+                *[Option(f"{d} — {n} offre(s)", id=d) for d, n in self._sessions]
+            )
+            yield option_list
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+
 class StageTUI(App):
     TITLE = "Pipeline de stage"
 
@@ -111,12 +278,22 @@ class StageTUI(App):
     }
     #offers-table { width: 55%; }
     #letters-table { width: 42%; }
+    #stats-header { padding: 1 1 0 1; height: auto; }
+    .stats-section {
+        border: round $accent;
+        height: auto;
+        padding: 0 1;
+        margin: 1 1 0 1;
+    }
+    .stats-left { width: 42%; height: auto; padding: 0 1; }
+    .stats-right { width: 1fr; height: auto; padding: 0 1; }
+    #stats-months { padding: 1 1; }
     #letter-detail {
         width: 58%;
         border-left: solid $accent;
         padding: 0 1;
     }
-    #help-box, #note-box {
+    #help-box, #note-box, #manual-box {
         background: $surface;
         border: round $accent;
         padding: 1 2;
@@ -125,8 +302,20 @@ class StageTUI(App):
         max-height: 90%;
         align: center middle;
     }
-    HelpScreen, NoteScreen { align: center middle; }
-    #status-bar { dock: bottom; height: 1; background: $panel; color: $text-muted; }
+    #manual-box Input { margin-bottom: 1; }
+    #me-error { color: $error; height: auto; }
+    #session-box {
+        background: $surface;
+        border: round $accent;
+        padding: 1 2;
+        width: 50;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    HelpScreen, NoteScreen, ManualEntryScreen, SessionPickerScreen { align: center middle; }
+    #bottom-bar { dock: bottom; height: 2; }
+    #status-bar { height: 1; background: $panel; color: $text-muted; }
     """
 
     BINDINGS = [
@@ -135,22 +324,29 @@ class StageTUI(App):
         Binding("r", "reload", "Recharger"),
         Binding("c", "open_console", "Console API"),
         Binding("S", "scrape", "Scrape"),
+        # Alias : certains terminaux ne transmettent pas shift+lettre à Textual.
+        Binding("ctrl+s", "scrape", show=False),
         Binding("1", "tab('offers')", show=False),
         Binding("2", "tab('gen')", show=False),
         Binding("3", "tab('letters')", show=False),
         Binding("4", "tab('track')", show=False),
+        Binding("5", "tab('stats')", show=False),
         Binding("e", "edit_letter", show=False),
         Binding("p", "render_letter_pdf", show=False),
         Binding("u", "render_cv_pdf", show=False),
         Binding("space", "toggle_select", "Cocher", show=False),
         Binding("o", "open_url", "Ouvrir", show=False),
+        Binding("O", "open_offer_url", "Ouvrir l'offre", show=False),
         Binding("g", "generate", "Générer", show=False),
         Binding("L", "generate_letter_only", "Lettre seule", show=False),
+        Binding("A", "add_manual", "Ajout manuel", show=False),
         Binding("plus,equals_sign", "threshold(1)", show=False),
         Binding("minus", "threshold(-1)", show=False),
         Binding("h", "toggle_hide_done", show=False),
+        Binding("d", "cycle_period", show=False),
+        Binding("D", "pick_session", show=False),
         Binding("n", "edit_note", show=False),
-        Binding("s", "set_status('sent')", show=False),
+        Binding("s", "sent_or_scrape", show=False),
         Binding("a", "set_status('answered')", show=False),
         Binding("i", "set_status('interview')", show=False),
         Binding("j", "set_status('rejected')", show=False),
@@ -163,7 +359,14 @@ class StageTUI(App):
         self.selected: set[str] = set()
         self.threshold = 6
         self.hide_done = False
+        self.period = "all"  # "all" | "session" | "7d" | "30d"
+        self.session_date: str | None = None
         self.gen_status: dict[str, tuple[str, str]] = {}  # id -> (icone, info/dossier)
+        # Indicateur de scrape en cours (spinner dans la barre de statut)
+        self._scrape_phase: str | None = None
+        self._scrape_started = 0.0
+        self._spinner_i = 0
+        self._spinner_timer = None
 
     # ---------- layout ----------
 
@@ -172,22 +375,35 @@ class StageTUI(App):
         with TabbedContent(initial="offers"):
             with TabPane("1 · Offres", id="offers"):
                 with Horizontal():
-                    yield DataTable(id="offers-table", cursor_type="row")
+                    yield HighlightDataTable(id="offers-table", cursor_type="row")
                     yield VerticalScroll(Static("", id="detail-text"), id="detail")
             with TabPane("2 · Génération", id="gen"):
                 yield DataTable(id="gen-table", cursor_type="row")
             with TabPane("3 · Candidatures", id="letters"):
                 with Horizontal():
-                    yield DataTable(id="letters-table", cursor_type="row")
+                    yield HighlightDataTable(id="letters-table", cursor_type="row")
                     yield VerticalScroll(Markdown("", id="letter-preview"), id="letter-detail")
             with TabPane("4 · Suivi", id="track"):
-                yield DataTable(id="track-table", cursor_type="row")
-        yield Static("", id="status-bar")
-        yield Footer()
+                yield HighlightDataTable(id="track-table", cursor_type="row")
+            with TabPane("5 · Stats", id="stats"):
+                with VerticalScroll(id="stats-scroll"):
+                    yield Static("", id="stats-header")
+                    with Horizontal(id="stats-return", classes="stats-section"):
+                        yield Static("", id="stats-return-text", classes="stats-left")
+                        yield Static("", id="stats-status-bars", classes="stats-right")
+                    with Horizontal(id="stats-loc", classes="stats-section"):
+                        yield Static("", id="stats-loc-text", classes="stats-left")
+                        yield Static("", id="stats-loc-bars", classes="stats-right")
+                    yield Static("", id="stats-months", classes="stats-section")
+        # Barre de statut + Footer regroupés dans un conteneur docké : deux widgets
+        # `dock: bottom` frères se superposent sur la même ligne (l'un masque l'autre).
+        with Vertical(id="bottom-bar"):
+            yield Static("", id="status-bar")
+            yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#offers-table", DataTable).add_columns(
-            "✓", "Score", "Titre", "Entreprise", "Lieu", "Pays", "Source"
+            "✓", "Score", "Titre", "Entreprise", "Lieu", "Pays", "Source", "Vu le"
         )
         self.query_one("#gen-table", DataTable).add_columns(
             "État", "Titre", "Entreprise", "Dossier / info"
@@ -198,6 +414,9 @@ class StageTUI(App):
         self.query_one("#track-table", DataTable).add_columns(
             "ID", "Statut", "Entreprise", "Titre", "Générée", "Envoyée", "Notes"
         )
+        self.query_one("#stats-return").border_title = "Retour de candidature"
+        self.query_one("#stats-loc").border_title = "Localisation des stages"
+        self.query_one("#stats-months").border_title = "Candidatures au cours du temps"
         self.action_reload()
 
     # ---------- data ----------
@@ -209,35 +428,85 @@ class StageTUI(App):
         self.refresh_gen()
         self.refresh_letters()
         self.refresh_track()
+        self.refresh_stats()
         self.notify_status(f"{len(self.offers)} offre(s) filtrée(s) chargée(s).")
 
     def _applied_ids(self) -> set[str]:
         return {a["offer_id"] for a in load_applications()}
 
+    def _scrape_sessions(self) -> list[str]:
+        """Dates `date_scraped` distinctes des offres chargées, triées décroissant."""
+        dates = set()
+        for o in self.offers.values():
+            d = o.get("date_scraped", "")
+            if d and len(d) == 10 and d[4] == "-" and d[7] == "-":
+                dates.add(d)
+        return sorted(dates, reverse=True)
+
+    def _latest_session(self) -> str | None:
+        sessions = self._scrape_sessions()
+        return sessions[0] if sessions else None
+
+    def _period_cutoff(self) -> tuple[str | None, str | None]:
+        """Retourne (exact_date, min_date) selon self.period. Comparaison de chaînes ISO."""
+        if self.period == "session":
+            return (self.session_date or self._latest_session(), None)
+        if self.period == "7d":
+            return (None, (date.today() - timedelta(days=7)).isoformat())
+        if self.period == "30d":
+            return (None, (date.today() - timedelta(days=30)).isoformat())
+        return (None, None)
+
     def refresh_offers(self) -> None:
-        table = self.query_one("#offers-table", DataTable)
-        table.clear()
+        table = self.query_one("#offers-table", HighlightDataTable)
         applied = self._applied_ids()
+        latest_session = self._latest_session()
+        exact_date, min_date = self._period_cutoff()
         rows = [
             o for o in self.offers.values()
             if o["filter_result"].get("score", 0) >= self.threshold
             and not (self.hide_done and o["id"] in applied)
+            and (exact_date is None or o.get("date_scraped", "") == exact_date)
+            and (min_date is None or o.get("date_scraped", "") >= min_date)
         ]
         rows.sort(key=lambda o: o["filter_result"].get("score", 0), reverse=True)
+        table.row_styles = {
+            o["id"]: Style(bgcolor=NEW_OFFER_HIGHLIGHT_COLOR)
+            for o in rows if latest_session and o.get("date_scraped", "") == latest_session
+        }
+        table.row_styles.update({
+            o["id"]: Style(color="black", bgcolor="green3")
+            for o in rows if o["id"] in self.selected
+        })
+        table.clear()
         for o in rows:
-            mark = "▶" if o["id"] in self.selected else ("✓" if o["id"] in applied else "")
+            selected = o["id"] in self.selected
+            mark = "▶" if selected else ("✓" if o["id"] in applied else "")
             table.add_row(
-                mark,
-                str(o["filter_result"].get("score", "?")),
-                o.get("title", "")[:50],
-                (o.get("company", "") or "?")[:24],
-                o.get("location", "")[:20],
-                o.get("country", ""),
-                o.get("source", "")[:28],
+                *_cells([
+                    mark,
+                    o["filter_result"].get("score", "?"),
+                    o.get("title", "")[:50],
+                    (o.get("company", "") or "?")[:24],
+                    o.get("location", "")[:20],
+                    o.get("country", ""),
+                    o.get("source", "")[:18],
+                    o.get("date_scraped", ""),
+                ]),
                 key=o["id"],
             )
         hidden = " · candidatées masquées" if self.hide_done else ""
-        self.sub_title = f"seuil ≥ {self.threshold} · {len(rows)} offre(s){hidden} · {len(self.selected)} cochée(s)"
+        if self.period == "session":
+            period_txt = f" · session {exact_date}" if exact_date else ""
+        elif self.period == "7d":
+            period_txt = " · 7 derniers jours"
+        elif self.period == "30d":
+            period_txt = " · 30 derniers jours"
+        else:
+            period_txt = ""
+        self.sub_title = (
+            f"seuil ≥ {self.threshold}{period_txt} · {len(rows)} offre(s){hidden} · {len(self.selected)} cochée(s)"
+        )
         self.update_detail()
 
     def refresh_gen(self) -> None:
@@ -258,12 +527,19 @@ class StageTUI(App):
     def refresh_letters(self) -> None:
         import datetime
 
-        table = self.query_one("#letters-table", DataTable)
+        table = self.query_one("#letters-table", HighlightDataTable)
         # Préserve le dossier sous le curseur pour le restaurer après reconstruction
         # (sinon `p`/`u` renvoient le curseur en haut → aperçu et surbrillance perdus).
         previous = self._current_row_key("letters-table")
+        status_by_offer = {a["offer_id"]: a["status"] for a in load_applications()}
+        dirs = self._candidature_dirs()
+        table.row_styles = {
+            folder: Style(color="white", bgcolor=SENT_HIGHLIGHT_COLOR)
+            for folder in dirs
+            if status_by_offer.get(os.path.basename(folder).rsplit("_", 1)[-1], "generated") != "generated"
+        }
         table.clear()
-        for folder in self._candidature_dirs():
+        for folder in dirs:
             md = os.path.join(folder, "lettre.md")
             pdf = os.path.join(folder, "lettre.pdf")
             cv_pdf = os.path.join(folder, "cv_adapte.pdf")
@@ -329,24 +605,128 @@ class StageTUI(App):
         return info
 
     def refresh_track(self) -> None:
-        table = self.query_one("#track-table", DataTable)
+        table = self.query_one("#track-table", HighlightDataTable)
+        apps = load_applications()
+        table.row_styles = {
+            **{
+                a["offer_id"]: Style(color="white", bgcolor=PENDING_HIGHLIGHT_COLOR)
+                for a in apps if a["status"] in PENDING_STATUSES
+            },
+            **{
+                a["offer_id"]: Style(color="white", bgcolor="dark_red")
+                for a in apps if a["status"] == "rejected"
+            },
+        }
         table.clear()
-        for app in load_applications():
+        for app in apps:
             table.add_row(
-                app["offer_id"],
-                app["status"],
-                app["company"][:22],
-                app["title"][:40],
-                app.get("generated_at", "") or "",
-                app.get("sent_at", "") or "",
-                (app.get("notes", "") or "")[:40],
+                *_cells([
+                    app["offer_id"],
+                    app["status"],
+                    app["company"][:22],
+                    app["title"][:40],
+                    app.get("generated_at", "") or "",
+                    app.get("sent_at", "") or "",
+                    (app.get("notes", "") or "")[:40],
+                ]),
                 key=app["offer_id"],
             )
+
+    def refresh_stats(self) -> None:
+        stats = compute_stats("data")
+        header = self.query_one("#stats-header", Static)
+        return_text = self.query_one("#stats-return-text", Static)
+        status_bars = self.query_one("#stats-status-bars", Static)
+        loc_text = self.query_one("#stats-loc-text", Static)
+        loc_bars = self.query_one("#stats-loc-bars", Static)
+        months_widget = self.query_one("#stats-months", Static)
+
+        if stats["total"] == 0:
+            header.update("[b]Statistiques[/b]  [dim]— aucune candidature enregistrée pour l'instant.[/dim]")
+            for w in (return_text, status_bars, loc_text, loc_bars, months_widget):
+                w.update("")
+            return
+
+        c = stats["coarse"]
+        total = stats["total"]
+        header.update(
+            f"[b]Statistiques — {total} candidature(s)[/b]   "
+            f"[green]Accepté {c['Accepté']}[/green] · [red]Refusé {c['Refusé']}[/red] · "
+            f"[yellow]En attente {c['En attente']}[/yellow]"
+        )
+
+        # --- Section 1 : retour de candidature ---
+        r = stats["rates"]
+        def _pct(v):
+            return f"{round(100 * v)} %" if v is not None else "—"
+        delai = f"{r['delai_moyen_jours']:.0f} j (sur {r['n_delai']})" if r["delai_moyen_jours"] is not None else "—"
+        return_text.update(
+            f"[b]Taux d'acceptation :[/b] {_pct(r['taux_acceptation'])}\n"
+            f"[dim](parmi les décisions finales)[/dim]\n\n"
+            f"[b]Taux de réponse :[/b] {_pct(r['taux_reponse'])}\n"
+            f"[dim]({r['responded']} réponse(s) / {r['sent']} envoyée(s))[/dim]\n\n"
+            f"[b]Délai moyen de réponse :[/b] {delai}"
+        )
+        lw = max(len("En attente"), 3)
+        status_bars.update("\n".join([
+            _hbar("Accepté", c["Accepté"], total, lw, style="green"),
+            _hbar("Refusé", c["Refusé"], total, lw, style="red"),
+            _hbar("En attente", c["En attente"], total, lw, style="yellow"),
+        ]))
+
+        # --- Section 2 : localisation ---
+        locs = list(stats["by_location"].items())
+        n_pays = len(locs)
+        top_pays = locs[0][0] if locs else "—"
+        loc_text.update(
+            f"Pays distincts : [b]{n_pays}[/b]\n\n"
+            f"Le plus fréquent :\n[b]{top_pays}[/b]"
+        )
+        loc_lw = min(18, max((len(l) for l, _ in locs[:8]), default=3))
+        loc_bars.update("\n".join(
+            _hbar(l[:loc_lw], v, total, loc_lw, style="cyan") for l, v in locs[:8]
+        ))
+
+        # --- Section 3 : histogramme temporel ---
+        months_widget.update(render_month_histogram(stats["by_month"]))
 
     # ---------- helpers ----------
 
     def notify_status(self, message: str) -> None:
-        self.query_one("#status-bar", Static).update(f" {message}")
+        try:
+            self.query_one("#status-bar", Static).update(f" {message}")
+        except NoMatches:
+            pass  # app en cours de fermeture (ex. tick de spinner résiduel)
+
+    # ---------- indicateur de scrape en cours ----------
+
+    def _start_spinner(self, phase: str) -> None:
+        """Démarre le spinner de la barre de statut (scrape en cours)."""
+        self._scrape_phase = phase
+        self._scrape_started = time.monotonic()
+        self._spinner_i = 0
+        if self._spinner_timer is None:
+            self._spinner_timer = self.set_interval(0.12, self._tick_spinner)
+        self._tick_spinner()
+
+    def _set_phase(self, phase: str) -> None:
+        """Change le libellé d'étape affiché à côté du spinner."""
+        self._scrape_phase = phase
+
+    def _stop_spinner(self) -> None:
+        if self._spinner_timer is not None:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        self._scrape_phase = None
+
+    def _tick_spinner(self) -> None:
+        if self._scrape_phase is None:
+            return
+        frame = SPINNER_FRAMES[self._spinner_i % len(SPINNER_FRAMES)]
+        self._spinner_i += 1
+        elapsed = int(time.monotonic() - self._scrape_started)
+        clock = f"{elapsed // 60}:{elapsed % 60:02d}"
+        self.notify_status(f"[cyan]{frame}[/cyan] {self._scrape_phase} — {clock} écoulé (la TUI reste utilisable)")
 
     def _active_tab(self) -> str:
         return self.query_one(TabbedContent).active
@@ -418,6 +798,39 @@ class StageTUI(App):
         self.hide_done = not self.hide_done
         self.refresh_offers()
 
+    def action_cycle_period(self) -> None:
+        if self._active_tab() != "offers":
+            return
+        order = ["all", "session", "7d", "30d"]
+        idx = order.index(self.period) if self.period in order else 0
+        self.period = order[(idx + 1) % len(order)]
+        if self.period == "all":
+            self.session_date = None
+        self.refresh_offers()
+
+    def action_pick_session(self) -> None:
+        if self._active_tab() != "offers":
+            return
+        sessions = self._scrape_sessions()
+        if not sessions:
+            self.notify_status("Aucune session de scrape disponible.")
+            return
+        counts = {}
+        for o in self.offers.values():
+            d = o.get("date_scraped", "")
+            if d:
+                counts[d] = counts.get(d, 0) + 1
+        session_list = [(d, counts.get(d, 0)) for d in sessions]
+
+        def _pick(session: str | None) -> None:
+            if not session:
+                return
+            self.session_date = session
+            self.period = "session"
+            self.refresh_offers()
+
+        self.push_screen(SessionPickerScreen(session_list), _pick)
+
     def action_toggle_select(self) -> None:
         if self._active_tab() != "offers":
             return
@@ -452,6 +865,18 @@ class StageTUI(App):
                 if app["offer_id"] == oid and app.get("url"):
                     webbrowser.open(app["url"])
                     break
+
+    def action_open_offer_url(self) -> None:
+        if self._active_tab() != "letters":
+            return
+        folder = self._current_row_key("letters-table")
+        if not folder:
+            return
+        offer_id = os.path.basename(folder).rsplit("_", 1)[-1]
+        for app in load_applications():
+            if app["offer_id"] == offer_id and app.get("url"):
+                webbrowser.open(app["url"])
+                break
 
     # ---------- onglet candidatures ----------
 
@@ -488,18 +913,18 @@ class StageTUI(App):
             return
         try:
             from src.cv_pdf import load_cv_data
-            from src.letter_pdf import render_letter_html, write_letter_pdf
+            from src.letter_pdf import render_letter_pdf
 
             info = self._letter_offer_info(folder)
-            html = render_letter_html(
+            render_letter_pdf(
                 os.path.join("config", "templates", "cover_letter.html"),
                 load_cv_data("cv_master"),
                 open(md, encoding="utf-8").read(),
+                output_path=os.path.join(folder, "lettre.pdf"),
                 company_name=info["company"],
                 company_location=info["location"],
                 position_title=info["title"],
             )
-            write_letter_pdf(html, os.path.join(folder, "lettre.pdf"))
         except Exception as e:
             self.notify_status(f"Erreur rendu PDF : {type(e).__name__}: {e}")
             return
@@ -525,6 +950,48 @@ class StageTUI(App):
             return
         self.refresh_letters()
         self.notify_status(f"cv_adapte.pdf régénéré dans {os.path.basename(folder)}.")
+
+    def action_add_manual(self) -> None:
+        if self._active_tab() != "gen":
+            return
+        self.push_screen(ManualEntryScreen(), self._submit_manual)
+
+    def _submit_manual(self, data: dict | None) -> None:
+        if not data:
+            return
+        self.notify_status("Extraction en cours...")
+        self.add_manual_entry(data)
+
+    @work(thread=True)
+    def add_manual_entry(self, data: dict) -> None:
+        from src.manual import create_stub_from_file, create_stub_from_url
+
+        try:
+            if data["file"]:
+                offer = create_stub_from_file(
+                    data["file"], data.get("url_source", ""), data.get("title", ""), data.get("company", "")
+                )
+            else:
+                offer = create_stub_from_url(
+                    data["url"], data.get("title", ""), data.get("company", "")
+                )
+        except Exception as e:
+            self.call_from_thread(self.notify_status, f"Erreur extraction : {type(e).__name__}: {e}")
+            return
+
+        offer = {**offer, "filter_result": {"score": 10, "reason": "Ajout manuel via TUI"}}
+
+        def _register() -> None:
+            self.offers[offer["id"]] = offer
+            self.selected.add(offer["id"])
+            self.gen_status.pop(offer["id"], None)  # état par défaut « en attente »
+            self.refresh_offers()
+            self.refresh_gen()
+            self.notify_status(
+                f"Offre « {offer['title']} » ajoutée — g (lettre + CV) ou L (lettre seule)."
+            )
+
+        self.call_from_thread(_register)
 
     def action_generate(self) -> None:
         self._start_generation(letter_only=False)
@@ -567,6 +1034,7 @@ class StageTUI(App):
                 self.gen_status[oid] = ("❌", f"{type(e).__name__}: {e}".replace("\n", " ")[:120])
             self.call_from_thread(self.refresh_gen)
             self.call_from_thread(self.refresh_track)
+            self.call_from_thread(self.refresh_stats)
         done = sum(1 for oid in offer_ids if self.gen_status[oid][0] == "✅")
         self.call_from_thread(
             self.notify_status,
@@ -575,27 +1043,42 @@ class StageTUI(App):
 
     @work(thread=True, exclusive=True, group="scrape")
     def run_scrape(self) -> None:
-        from src.filter import filter_all
-        from src.report import generate_report
-        from src.scraper import scrape_all
-
         buffer = io.StringIO()
         try:
+            from src.filter import filter_all
+            from src.report import generate_report
+            from src.scraper import scrape_all
+
             with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                 new = scrape_all()
+                self.call_from_thread(self._set_phase, f"Filtrage Claude ({len(new)} nouvelle(s))…")
                 filtered, pertinent = filter_all(threshold=self.threshold)
+                self.call_from_thread(self._set_phase, "Génération du rapport…")
                 report = generate_report(threshold=self.threshold)
             msg = f"Scrape terminé : {len(new)} nouvelle(s), {filtered} filtrée(s), {pertinent} pertinente(s). Rapport : {report}"
         except SystemExit:
             msg = "Scrape interrompu : " + (buffer.getvalue().strip().splitlines()[-1] if buffer.getvalue().strip() else "erreur")
-        except Exception as e:
-            msg = f"Erreur pendant le scrape : {e}"
+        except BaseException as e:
+            msg = f"Erreur pendant le scrape : {type(e).__name__}: {e}"
+        self.call_from_thread(self._stop_spinner)
         self.call_from_thread(self.action_reload)
         self.call_from_thread(self.notify_status, msg)
 
     def action_scrape(self) -> None:
-        self.notify_status("Scrape + filtre + rapport en cours (peut prendre plusieurs minutes)...")
+        if self._scrape_phase is not None:
+            # Toast et non barre de statut : celle-ci est réécrite par le spinner à chaque tick.
+            self.notify("Un scrape est déjà en cours.", title="Scrape", severity="warning")
+            return
+        self._start_spinner("Scrape des sources…")
+        self.notify("Scrape + filtre + rapport lancés (plusieurs minutes).", title="Scrape")
         self.run_scrape()
+
+    def action_sent_or_scrape(self) -> None:
+        """`s` : statut « envoyée » dans l'onglet Suivi, lancement du scrape ailleurs."""
+        if self._active_tab() == "track":
+            self.action_set_status("sent")
+        else:
+            self.action_scrape()
 
     def action_set_status(self, status: str) -> None:
         if self._active_tab() != "track":
@@ -609,6 +1092,7 @@ class StageTUI(App):
             self.notify_status(f"Erreur : {e}")
             return
         self.refresh_track()
+        self.refresh_stats()
         self.notify_status(f"{oid} → {status}")
 
     def action_edit_note(self) -> None:

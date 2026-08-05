@@ -11,16 +11,10 @@
 ## Installation
 
 ```bash
-# 1. Créer l'environnement virtuel (une seule fois)
-venvinit
-
-# 2. Activer l'environnement
-venvon
-
-# 3. Installer les dépendances
+# 1. Installer les dépendances
 pip install -r requirements.txt
 
-# 4. Créer les fichiers de configuration depuis les exemples
+# 2. Créer les fichiers de configuration depuis les exemples
 bash setup.sh
 # → Copie automatiquement les .example vers leurs noms définitifs
 # → Indique quels fichiers éditer ensuite

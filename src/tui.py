@@ -2,7 +2,10 @@
 
 La TUI est une simple vue sur les fichiers du pipeline : elle relit l'état
 courant depuis data/ à chaque lancement (et sur `r`), n'écrit que via les
-fonctions métier existantes, et ne persiste aucun état propre.
+fonctions métier existantes, et ne persiste aucun état propre — à une
+exception près : la file de génération de l'onglet 2 est persistée dans
+`data/gen_queue.json` (voir `load_queue`/`save_queue`), pour survivre à un
+redémarrage entre le scrape et la revue.
 """
 import contextlib
 import io
@@ -38,6 +41,27 @@ from src.filter import strip_html
 from src.report import load_filtered_offers
 from src.tracker import compute_stats, load_applications, mark_status
 from src.config import get_search
+
+
+QUEUE_PATH = os.path.join("data", "gen_queue.json")
+
+
+def load_queue(path: str = QUEUE_PATH) -> list[str]:
+    """Charge la file de génération persistée. Tolère absence de fichier / JSON corrompu."""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def save_queue(ids, path: str = QUEUE_PATH) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(sorted(ids), f, indent=2, ensure_ascii=False)
 
 
 def _cells(values):
@@ -119,6 +143,8 @@ SENT_HIGHLIGHT_COLOR = "#1e4620"
 PENDING_HIGHLIGHT_COLOR = "#584b00"
 # Surlignage des offres de la dernière session de scrape (onglet Offres) — bleu foncé, modifiable ici.
 NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
+# Surlignage des candidatures annulées (onglet Suivi) — gris foncé, modifiable ici.
+CANCELLED_HIGHLIGHT_COLOR = "#2b2b2b"
 # Statuts considérés comme « en attente de réponse » (candidature envoyée, décision non tombée).
 PENDING_STATUSES = {"sent", "answered", "interview"}
 
@@ -133,54 +159,59 @@ STATUS_KEYS = {
     "i": "interview",
     "j": "rejected",
     "v": "accepted",
+    "z": "cancelled",
 }
 
 HELP_TEXT = """\
 [b]Raccourcis globaux[/b]
-  1 / 2 / 3 / 4 / 5   Onglets : Offres · Génération · Candidatures · Suivi · Stats
-  r           Recharger les données depuis le disque
-  S / s / ^S  Lancer scrape + filtre + rapport (spinner dans la barre de statut)
-              (`s` = statut « envoyée » dans l'onglet Suivi uniquement)
-  c           Ouvrir la Claude Console (recharge crédit API)
-  ?           Cette aide
-  q           Quitter
+  [b #7aa2f7]1 / 2 / 3 / 4 / 5[/]  Onglets : Offres · Génération · Candidatures · Suivi · Stats
+  [b #7aa2f7]r[/]                  Recharger les données depuis le disque
+  [b #7aa2f7]S / s / ^S[/]         Lancer scrape + filtre + rapport (spinner dans la barre de statut)
+                     (`s` = statut « envoyée » dans l'onglet Suivi uniquement)
+  [b #7aa2f7]c[/]                  Ouvrir la Claude Console (recharge crédit API)
+  [b #7aa2f7]?[/]                  Cette aide
+  [b #7aa2f7]q[/]                  Quitter
 
 [b]Onglet Offres[/b]
-  ↑ / ↓       Naviguer
-  espace      Cocher / décocher l'offre pour génération
-  o           Ouvrir l'offre dans le navigateur
-  + / -       Augmenter / diminuer le seuil de score
-  h           Masquer / afficher les offres déjà candidatées
-  d           Cycler la période affichée (tout · session · 7j · 30j)
-  D           Choisir une session de scrape précise
-  g           Passer à l'onglet Génération
+  [b #7aa2f7]↑ / ↓[/]   Naviguer
+  [b #7aa2f7]espace[/]  Cocher / décocher l'offre pour génération
+  [b #7aa2f7]o[/]       Ouvrir l'offre dans le navigateur
+  [b #7aa2f7]+ / -[/]   Augmenter / diminuer le seuil de score
+  [b #7aa2f7]h[/]       Masquer / afficher les offres déjà candidatées
+  [b #7aa2f7]d[/]       Cycler la période affichée (tout · session · 7j · 30j)
+  [b #7aa2f7]D[/]       Choisir une session de scrape précise
+  [b #7aa2f7]g[/]       Passer à l'onglet Génération
   (les offres de la dernière session sont surlignées en bleu)
 
 [b]Onglet Génération[/b]
-  g           Lancer la génération (lettre + CV) des offres cochées
-  L           Générer la lettre seule (sans CV adapté — économie d'un appel API)
-  A           Ajouter une offre manuelle (fichier HTML ou URL) à la liste, puis g / L
-  o           Ouvrir le dossier de la candidature générée
+  [b #7aa2f7]espace[/]  Cocher / décocher une offre (filtre optionnel pour g / L, sinon traite tout)
+  [b #7aa2f7]g[/]       Lancer la génération (lettre + CV)
+  [b #7aa2f7]L[/]       Générer la lettre seule (sans CV adapté — économie d'un appel API)
+  [b #7aa2f7]A[/]       Ajouter une offre manuelle (fichier HTML ou URL) à la liste, puis g / L
+  [b #7aa2f7]x[/]       Retirer de la file (lignes cochées, sinon la ligne sous le curseur)
+  [b #7aa2f7]o[/]       Ouvrir le dossier de la candidature générée
+  (la file est conservée entre deux lancements de la TUI — data/gen_queue.json)
 
 [b]Onglet Candidatures[/b]
-  ↑ / ↓       Naviguer dans les candidatures générées
-  entrée      Basculer l'aperçu lettre ↔ CV (HTML brut)
-  e           Ouvrir lettre.md dans l'éditeur (retouches)
-  p           Régénérer lettre.pdf depuis lettre.md (après retouche)
-  u           Régénérer cv_adapte.pdf depuis cv_adapte.html
-  o           Ouvrir le dossier de la candidature
-  O           Ouvrir l'offre dans le navigateur
+  [b #7aa2f7]↑ / ↓[/]   Naviguer dans les candidatures générées
+  [b #7aa2f7]entrée[/]  Basculer l'aperçu lettre ↔ CV (HTML brut)
+  [b #7aa2f7]e[/]       Ouvrir lettre.md dans l'éditeur (retouches)
+  [b #7aa2f7]p[/]       Régénérer lettre.pdf depuis lettre.md (après retouche)
+  [b #7aa2f7]u[/]       Régénérer cv_adapte.pdf depuis cv_adapte.html
+  [b #7aa2f7]o[/]       Ouvrir le dossier de la candidature
+  [b #7aa2f7]O[/]       Ouvrir l'offre dans le navigateur
   (les candidatures envoyées ou plus sont surlignées en vert)
 
 [b]Onglet Suivi[/b]
-  s           Statut → envoyée (sent)
-  a           Statut → réponse reçue (answered)
-  i           Statut → entretien (interview)
-  j           Statut → refusée (rejected)
-  v           Statut → acceptée (accepted)
-  n           Éditer la note de la candidature
-  o           Ouvrir l'offre dans le navigateur
-  (en attente de réponse en jaune, refusées en rouge)
+  [b #7aa2f7]s[/]  Statut → envoyée (sent)
+  [b #7aa2f7]a[/]  Statut → réponse reçue (answered)
+  [b #7aa2f7]i[/]  Statut → entretien (interview)
+  [b #7aa2f7]j[/]  Statut → refusée (rejected)
+  [b #7aa2f7]v[/]  Statut → acceptée (accepted)
+  [b #7aa2f7]z[/]  Statut → annulée (offre qui n'existe plus)
+  [b #7aa2f7]n[/]  Éditer la note de la candidature
+  [b #7aa2f7]o[/]  Ouvrir l'offre dans le navigateur
+  (en attente de réponse en jaune, refusées en rouge, annulées en gris)
 
 [b]Onglet Stats[/b]
   Retour de candidature (taux d'acceptation, taux de réponse,
@@ -294,7 +325,17 @@ class StageTUI(App):
         border-left: solid $accent;
         padding: 0 1;
     }
-    #help-box, #note-box, #manual-box {
+    #help-box {
+        background: $surface;
+        border: round $accent;
+        padding: 1 2;
+        width: 96;
+        max-width: 95%;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    #note-box, #manual-box {
         background: $surface;
         border: round $accent;
         padding: 1 2;
@@ -341,6 +382,7 @@ class StageTUI(App):
         Binding("g", "generate", "Générer", show=False),
         Binding("L", "generate_letter_only", "Lettre seule", show=False),
         Binding("A", "add_manual", "Ajout manuel", show=False),
+        Binding("x", "remove_from_queue", "Retirer de la file", show=False),
         Binding("plus,equals_sign", "threshold(1)", show=False),
         Binding("minus", "threshold(-1)", show=False),
         Binding("h", "toggle_hide_done", show=False),
@@ -352,12 +394,14 @@ class StageTUI(App):
         Binding("i", "set_status('interview')", show=False),
         Binding("j", "set_status('rejected')", show=False),
         Binding("v", "set_status('accepted')", show=False),
+        Binding("z", "set_status('cancelled')", show=False),
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self.offers: dict[str, dict] = {}
-        self.selected: set[str] = set()
+        self.selected: set[str] = set(load_queue())
+        self.gen_checked: set[str] = set()  # coches de l'onglet Génération, filtre optionnel — non persisté
         self.threshold = get_search().threshold
         self.hide_done = False
         self.period = "all"  # "all" | "session" | "7d" | "30d"
@@ -379,7 +423,7 @@ class StageTUI(App):
                     yield HighlightDataTable(id="offers-table", cursor_type="row")
                     yield VerticalScroll(Static("", id="detail-text"), id="detail")
             with TabPane("2 · Génération", id="gen"):
-                yield DataTable(id="gen-table", cursor_type="row")
+                yield HighlightDataTable(id="gen-table", cursor_type="row")
             with TabPane("3 · Candidatures", id="letters"):
                 with Horizontal():
                     yield HighlightDataTable(id="letters-table", cursor_type="row")
@@ -407,7 +451,7 @@ class StageTUI(App):
             "✓", "Score", "Titre", "Entreprise", "Lieu", "Pays", "Source", "Vu le"
         )
         self.query_one("#gen-table", DataTable).add_columns(
-            "État", "Titre", "Entreprise", "Dossier / info"
+            "✓", "État", "Titre", "Entreprise", "Dossier / info"
         )
         self.query_one("#letters-table", DataTable).add_columns(
             "Dossier", "Lettre", "PDF", "CV PDF", "Modifiée"
@@ -425,12 +469,19 @@ class StageTUI(App):
     def action_reload(self) -> None:
         self.offers = {o["id"]: o for o in load_filtered_offers("data")}
         self.selected &= set(self.offers)
+        self._persist_queue()
         self.refresh_offers()
         self.refresh_gen()
         self.refresh_letters()
         self.refresh_track()
         self.refresh_stats()
         self.notify_status(f"{len(self.offers)} offre(s) filtrée(s) chargée(s).")
+
+    def _generated_ids(self) -> set[str]:
+        return {oid for oid, (icon, _) in self.gen_status.items() if icon == "✅"}
+
+    def _persist_queue(self) -> None:
+        save_queue(self.selected - self._generated_ids())
 
     def _applied_ids(self) -> set[str]:
         return {a["offer_id"] for a in load_applications()}
@@ -511,12 +562,19 @@ class StageTUI(App):
         self.update_detail()
 
     def refresh_gen(self) -> None:
-        table = self.query_one("#gen-table", DataTable)
+        table = self.query_one("#gen-table", HighlightDataTable)
+        table.row_styles = {
+            oid: Style(color="black", bgcolor="green3")
+            for oid in self.selected if oid in self.gen_checked
+        }
         table.clear()
         for oid in sorted(self.selected):
             o = self.offers.get(oid, {})
             icon, info = self.gen_status.get(oid, ("·", "en attente — g pour lancer"))
-            table.add_row(icon, o.get("title", "?")[:50], (o.get("company", "") or "?")[:24], info[:120], key=oid)
+            mark = "▶" if oid in self.gen_checked else ""
+            table.add_row(
+                mark, icon, o.get("title", "?")[:50], (o.get("company", "") or "?")[:24], info[:120], key=oid
+            )
 
     def _candidature_dirs(self) -> list[str]:
         base = os.path.join("output", "candidatures")
@@ -617,6 +675,10 @@ class StageTUI(App):
                 a["offer_id"]: Style(color="white", bgcolor="dark_red")
                 for a in apps if a["status"] == "rejected"
             },
+            **{
+                a["offer_id"]: Style(color="grey50", bgcolor=CANCELLED_HIGHLIGHT_COLOR)
+                for a in apps if a["status"] == "cancelled"
+            },
         }
         table.clear()
         for app in apps:
@@ -652,8 +714,8 @@ class StageTUI(App):
         total = stats["total"]
         header.update(
             f"[b]Statistiques — {total} candidature(s)[/b]   "
-            f"[green]Accepté {c['Accepté']}[/green] · [red]Refusé {c['Refusé']}[/red] · "
-            f"[yellow]En attente {c['En attente']}[/yellow]"
+            f"[green]Acceptée {c['Acceptée']}[/green] · [red]Refusée {c['Refusée']}[/red] · "
+            f"[yellow]En attente {c['En attente']}[/yellow] · [grey50]Annulée {c['Annulée']}[/grey50]"
         )
 
         # --- Section 1 : retour de candidature ---
@@ -670,9 +732,10 @@ class StageTUI(App):
         )
         lw = max(len("En attente"), 3)
         status_bars.update("\n".join([
-            _hbar("Accepté", c["Accepté"], total, lw, style="green"),
-            _hbar("Refusé", c["Refusé"], total, lw, style="red"),
+            _hbar("Acceptée", c["Acceptée"], total, lw, style="green"),
+            _hbar("Refusée", c["Refusée"], total, lw, style="red"),
             _hbar("En attente", c["En attente"], total, lw, style="yellow"),
+            _hbar("Annulée", c["Annulée"], total, lw, style="grey50"),
         ]))
 
         # --- Section 2 : localisation ---
@@ -833,17 +896,29 @@ class StageTUI(App):
         self.push_screen(SessionPickerScreen(session_list), _pick)
 
     def action_toggle_select(self) -> None:
-        if self._active_tab() != "offers":
-            return
-        oid = self._current_row_key("offers-table")
-        if not oid:
-            return
-        if oid in self.selected:
-            self.selected.discard(oid)
+        tab = self._active_tab()
+        if tab == "offers":
+            oid = self._current_row_key("offers-table")
+            if not oid:
+                return
+            if oid in self.selected:
+                self.selected.discard(oid)
+            else:
+                self.selected.add(oid)
+            self._persist_queue()
+            self.refresh_offers()
+            self.refresh_gen()
+        elif tab == "gen":
+            oid = self._current_row_key("gen-table")
+            if not oid:
+                return
+            if oid in self.gen_checked:
+                self.gen_checked.discard(oid)
+            else:
+                self.gen_checked.add(oid)
+            self.refresh_gen()
         else:
-            self.selected.add(oid)
-        self.refresh_offers()
-        self.refresh_gen()
+            return
 
     def action_open_url(self) -> None:
         tab = self._active_tab()
@@ -980,12 +1055,18 @@ class StageTUI(App):
             self.call_from_thread(self.notify_status, f"Erreur extraction : {type(e).__name__}: {e}")
             return
 
+        from src.scraper import save_offer
+
         offer = {**offer, "filter_result": {"score": 10, "reason": "Ajout manuel via TUI"}}
+        # Le stub sauvegardé par create_stub_from_file/url n'a pas filter_result :
+        # load_filtered_offers l'ignorerait sinon dès le prochain rechargement (r).
+        save_offer(offer, "data")
 
         def _register() -> None:
             self.offers[offer["id"]] = offer
             self.selected.add(offer["id"])
             self.gen_status.pop(offer["id"], None)  # état par défaut « en attente »
+            self._persist_queue()
             self.refresh_offers()
             self.refresh_gen()
             self.notify_status(
@@ -993,6 +1074,29 @@ class StageTUI(App):
             )
 
         self.call_from_thread(_register)
+
+    def action_remove_from_queue(self) -> None:
+        if self._active_tab() != "gen":
+            return
+        targets = self.gen_checked & self.selected
+        if not targets:
+            oid = self._current_row_key("gen-table")
+            targets = {oid} if oid else set()
+        if not targets:
+            return
+        in_progress = {oid for oid in targets if self.gen_status.get(oid, ("·",))[0] == "⏳"}
+        targets -= in_progress
+        for oid in targets:
+            self.selected.discard(oid)
+            self.gen_checked.discard(oid)
+            self.gen_status.pop(oid, None)
+        self._persist_queue()
+        self.refresh_gen()
+        self.refresh_offers()
+        msg = f"{len(targets)} offre(s) retirée(s) de la file."
+        if in_progress:
+            msg += f" ({len(in_progress)} en cours ignorée(s))"
+        self.notify_status(msg)
 
     def action_generate(self) -> None:
         self._start_generation(letter_only=False)
@@ -1008,7 +1112,8 @@ class StageTUI(App):
             return
         if tab != "gen":
             return
-        todo = [oid for oid in sorted(self.selected) if self.gen_status.get(oid, ("·",))[0] not in ("⏳", "✅")]
+        pool = (self.gen_checked & self.selected) or self.selected
+        todo = [oid for oid in sorted(pool) if self.gen_status.get(oid, ("·",))[0] not in ("⏳", "✅")]
         if not todo:
             self.notify_status("Rien à générer (tout est déjà fait ou en cours).")
             return
@@ -1028,6 +1133,7 @@ class StageTUI(App):
                 with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                     folder = generate(oid, letter_only=letter_only)
                 self.gen_status[oid] = ("✅", folder)
+                self.gen_checked.discard(oid)
             except SystemExit:
                 out = buffer.getvalue().strip()
                 self.gen_status[oid] = ("❌", out.splitlines()[-1] if out else "erreur (voir python -m src.generator " + oid + ")")
@@ -1037,6 +1143,7 @@ class StageTUI(App):
             self.call_from_thread(self.refresh_track)
             self.call_from_thread(self.refresh_stats)
         done = sum(1 for oid in offer_ids if self.gen_status[oid][0] == "✅")
+        self.call_from_thread(self._persist_queue)
         self.call_from_thread(
             self.notify_status,
             f"Génération terminée : {done}/{len(offer_ids)} réussie(s). (c = Claude Console si problème de crédit)",

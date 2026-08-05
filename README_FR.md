@@ -74,17 +74,17 @@ Plutôt que d'enchaîner les commandes, tu peux tout piloter depuis une interfac
 python main.py --tui
 ```
 
-**Principe important :** la TUI n'est qu'une **vue** sur les fichiers du pipeline. Elle ne crée aucun état caché : les rapports, `data/offers/*.json` et `data/applications.json` restent lisibles et modifiables sans elle. Tu peux donc reprendre le travail n'importe quand (scraper lundi, faire la revue mercredi) — la TUI relit l'état courant à l'ouverture et avec la touche `r`.
+**Principe important :** la TUI n'est qu'une **vue** sur les fichiers du pipeline. Elle ne crée quasiment aucun état caché : les rapports, `data/offers/*.json` et `data/applications.json` restent lisibles et modifiables sans elle. Tu peux donc reprendre le travail n'importe quand (scraper lundi, faire la revue mercredi) — la TUI relit l'état courant à l'ouverture et avec la touche `r`. Seule exception : la file de l'onglet Génération, persistée dans `data/gen_queue.json`.
 
 ### Les 5 onglets
 
 | Onglet | Rôle |
 |---|---|
-| **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à traiter — les lignes cochées sont **surlignées en vert**. Les offres de la dernière session de scrape sont **surlignées en bleu foncé** ; la période affichée (tout / dernière session / 7 derniers jours / 30 derniers jours) se filtre avec `d`/`D`. |
-| **2 · Génération** | Lance la génération (lettre + CV, ou lettre seule) des offres cochées, en tâche de fond. |
+| **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à ajouter à la file de génération — les lignes cochées sont **surlignées en vert**. Les offres de la dernière session de scrape sont **surlignées en bleu foncé** ; la période affichée (tout / dernière session / 7 derniers jours / 30 derniers jours) se filtre avec `d`/`D`. |
+| **2 · Génération** | La file de génération, persistée entre deux lancements de la TUI dans `data/gen_queue.json`. Coche des lignes avec `espace` pour restreindre `g`/`L` à ce sous-ensemble — sans rien coché, `g`/`L` traitent toutes les offres en attente. `x` retire des lignes de la file. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. |
 | **3 · Candidatures** | Liste des dossiers `output/candidatures/`, aperçu de la lettre/CV, **régénération des PDF après retouche manuelle**. |
-| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Les candidatures **refusées sont surlignées en rouge**. |
-| **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. |
+| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Les candidatures **en attente de réponse sont surlignées en jaune**, les **refusées en rouge**, les **annulées en gris foncé avec texte atténué**. |
+| **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. Les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé ». |
 
 ### Workflow de retouche d'une lettre
 
@@ -114,15 +114,17 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 | Offres | `d` | Cycler la période affichée (tout · session · 7j · 30j) |
 | Offres | `D` | Choisir une session de scrape précise |
 | Offres | `g` | Aller à l'onglet Génération |
-| Génération | `g` | Générer lettre + CV des offres cochées |
+| Génération | `espace` | Cocher/décocher une offre de la file (filtre optionnel pour `g`/`L`) |
+| Génération | `g` | Générer lettre + CV (lignes cochées, sinon toutes les offres en attente) |
 | Génération | `L` | Générer la **lettre seule** (sans CV — 1 appel Sonnet au lieu de 2) |
+| Génération | `x` | Retirer de la file (lignes cochées, sinon la ligne sous le curseur) |
 | Génération | `o` | Ouvrir le dossier de la candidature |
 | Candidatures | `entrée` | Basculer l'aperçu lettre ↔ CV |
 | Candidatures | `e` | Ouvrir `lettre.md` dans l'éditeur |
 | Candidatures | `p` | Régénérer `lettre.pdf` depuis `lettre.md` |
 | Candidatures | `u` | Régénérer `cv_adapte.pdf` depuis `cv_adapte.html` |
 | Candidatures | `o` | Ouvrir le dossier de la candidature |
-| Suivi | `s`/`a`/`i`/`j`/`v` | Statut → sent / answered / interview / rejected / accepted |
+| Suivi | `s`/`a`/`i`/`j`/`v`/`z` | Statut → sent / answered / interview / rejected / accepted / cancelled |
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 

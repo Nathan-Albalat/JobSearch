@@ -63,7 +63,8 @@ config/templates/fonts/  Polices locales DM Sans / DM Serif Display (.ttf) — P
 data/
   offers/               Un fichier JSON par offre (avec filter_result après filtrage)
   seen_offers.json      Hachés des offres déjà vues (déduplication)
-  applications.json     Suivi des candidatures (statuts : generated/sent/answered/interview/rejected/accepted)
+  applications.json     Suivi des candidatures (statuts : generated/sent/answered/interview/rejected/accepted/cancelled)
+  gen_queue.json         File de génération de l'onglet 2 de la TUI (persistée entre deux lancements)
   rapport_*.md          Rapports générés
 
 output/
@@ -132,9 +133,9 @@ python -m src.config --check-prompts   # échoue si un placeholder reste inconnu
 
 ## Interface TUI (`python main.py --tui`)
 
-Vue interactive sur les fichiers du pipeline — **les fichiers restent la source de vérité** : les rapports markdown, `data/offers/*.json` et `data/applications.json` restent lisibles et utilisables sans la TUI, qui ne persiste aucun état propre. On peut donc reprendre le workflow n'importe quand (scrape lundi, revue mercredi) : la TUI relit l'état courant au lancement et sur `r`.
+Vue interactive sur les fichiers du pipeline — **les fichiers restent la source de vérité** : les rapports markdown, `data/offers/*.json` et `data/applications.json` restent lisibles et utilisables sans la TUI, qui ne persiste quasiment aucun état propre (seule exception : la file de génération de l'onglet Génération, dans `data/gen_queue.json`). On peut donc reprendre le workflow n'importe quand (scrape lundi, revue mercredi) : la TUI relit l'état courant au lancement et sur `r`.
 
-5 onglets : **Offres** (tableau triable par score, panneau de détail, cocher pour génération — lignes cochées surlignées en vert, offres de la dernière session de scrape surlignées en bleu foncé, filtrage par période avec `d`/`D`), **Génération** (lance lettre + CV en tâche de fond, ou lettre seule avec `L`), **Candidatures** (liste `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle des fichiers — candidatures envoyées ou plus surlignées en vert foncé), **Suivi** (statuts + notes de `applications.json` — en attente de réponse surlignées en jaune, refusées en rouge), **Stats** (rendu texte : métriques de retour — taux d'acceptation/réponse, délai moyen —, répartition des statuts, localisation des stages, histogramme des candidatures au cours du temps).
+5 onglets : **Offres** (tableau triable par score, panneau de détail, cocher pour ajouter à la file de génération — lignes cochées surlignées en vert, offres de la dernière session de scrape surlignées en bleu foncé, filtrage par période avec `d`/`D`), **Génération** (file persistée entre deux lancements de la TUI dans `data/gen_queue.json` ; cocher des lignes avec `espace` restreint `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées ; `x` retire des lignes de la file ; lance lettre + CV en tâche de fond, ou lettre seule avec `L`), **Candidatures** (liste `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle des fichiers — candidatures envoyées ou plus surlignées en vert foncé), **Suivi** (statuts + notes de `applications.json` — en attente de réponse surlignées en jaune, refusées en rouge, annulées surlignées en gris foncé et texte atténué), **Stats** (rendu texte : métriques de retour — taux d'acceptation/réponse, délai moyen —, répartition des statuts, localisation des stages, histogramme des candidatures au cours du temps ; les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé »).
 
 Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifier le `.md`, revenir dans la TUI et presser `p` — la colonne PDF affiche « ⚠ à régénérer » quand le `.md` est plus récent que le PDF.
 
@@ -155,9 +156,11 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 | Offres | `d` | Cycler la période affichée (tout · session · 7j · 30j) |
 | Offres | `D` | Choisir une session de scrape précise |
 | Offres | `g` | Aller à l'onglet Génération |
-| Génération | `g` | Générer lettre + CV des offres cochées |
+| Génération | `espace` | Cocher/décocher une offre de la file (filtre optionnel pour `g`/`L`) |
+| Génération | `g` | Générer lettre + CV (lignes cochées, sinon toutes les offres en attente) |
 | Génération | `L` | Générer la lettre seule (sans CV adapté — 1 appel Sonnet au lieu de 2) |
 | Génération | `A` | Ajouter une offre manuelle (fichier HTML ou URL) à la liste, puis `g`/`L` |
+| Génération | `x` | Retirer de la file (lignes cochées, sinon la ligne sous le curseur) |
 | Génération | `o` | Ouvrir le dossier de la candidature |
 | Candidatures | `entrée` | Basculer l'aperçu lettre ↔ CV |
 | Candidatures | `e` | Ouvrir lettre.md dans l'éditeur |
@@ -165,7 +168,7 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 | Candidatures | `u` | Régénérer cv_adapte.pdf depuis cv_adapte.html |
 | Candidatures | `o` | Ouvrir le dossier de la candidature |
 | Candidatures | `O` | Ouvrir l'offre dans le navigateur |
-| Suivi | `s`/`a`/`i`/`j`/`v` | Statut → sent / answered / interview / rejected / accepted |
+| Suivi | `s`/`a`/`i`/`j`/`v`/`z` | Statut → sent / answered / interview / rejected / accepted / cancelled |
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 

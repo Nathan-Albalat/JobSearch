@@ -24,7 +24,7 @@ Write a professional yet genuine cover letter (~350 words) with this structure:
 1. Hook — An engaging opening that references something specific about the company or role (not generic)
 2. Why them — Why this company/role is specifically interesting to the candidate
 3. Why me — Highlight 2-3 concrete skills/experiences from the CV that match the offer's requirements
-4. Closing — Availability (from {date_dispo_en}, {duree}), enthusiasm, call to action
+4. Closing — Availability (from {date_dispo_en}, {duree}), enthusiasm, call to action. Make sure to mention that the candidate will be relocating in the country near the jobsite.
 
 Tone: professional but not stiff — natural, direct, confident without being arrogant.
 

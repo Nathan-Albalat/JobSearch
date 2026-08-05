@@ -28,7 +28,7 @@
 
   @page {
     size: A4;
-    margin: 11mm 16mm;
+    margin: 7mm 16mm;
   }
 
   * {
@@ -132,7 +132,7 @@
   }
 
   .entry {
-    margin-bottom: 7px;
+    margin-bottom: 5px;
   }
 
   .entry:last-child {
@@ -281,13 +281,7 @@
 
       <div class="section">
         <p class="section-title">Education</p>
-        <div class="entry">
-          <div class="entry-header">
-            <span class="entry-title">{{EDU_SCHOOL}}</span>
-            <span class="entry-date">{{EDU_DATES}}</span>
-          </div>
-          <p class="entry-sub">{{EDU_DETAIL}}</p>
-        </div>
+        {{EDU_ENTRIES}}
       </div>
 
     </div>

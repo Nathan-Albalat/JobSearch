@@ -177,9 +177,10 @@ def render_letter_html(
         else ""
     )
 
-    contact = " · ".join(
-        v for v in (personal.get("email", ""), personal.get("github", ""), personal.get("portfolio", "")) if v
-    )
+    contact = " · ".join(v for v in (personal.get("email", ""), personal.get("github", "")) if v)
+    portfolio = personal.get("portfolio", "")
+    if portfolio:
+        contact = f"{contact}<br>{portfolio}" if contact else portfolio
 
     placeholders = {
         **(accent_on if personal.get("accent_enabled", True) else accent_off),

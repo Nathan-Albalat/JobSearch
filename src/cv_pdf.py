@@ -21,9 +21,10 @@ def cv_data_to_text(cv_data: dict) -> str:
     lines.append(f"Name: {personal.get('full_name', '')}")
     lines.append(f"GitHub: {personal.get('github', '')}")
 
-    edu = cv_data.get("education", {})
-    lines.append(f"\nEducation: {edu.get('school', '')} ({edu.get('dates', '')})")
-    lines.append(f"  {edu.get('detail', '')}")
+    lines.append("\nEducation:")
+    for edu in cv_data.get("education", []):
+        lines.append(f"  - {edu.get('school', '')} ({edu.get('dates', '')})")
+        lines.append(f"      {edu.get('detail', '')}")
 
     avail = cv_data.get("availability", {})
     lines.append(f"\nAvailability: from {avail.get('start', '')}, {avail.get('duration', '')}")
@@ -80,11 +81,22 @@ def _build_entry(title: str, date: str, subtitle: str,
         </div>"""
 
 
+def _build_edu_entry(school: str, dates: str, detail: str) -> str:
+    return f"""
+        <div class="entry">
+          <div class="entry-header">
+            <span class="entry-title">{school}</span>
+            <span class="entry-date">{dates}</span>
+          </div>
+          <p class="entry-sub">{detail}</p>
+        </div>"""
+
+
 def render_cv_html(template_path: str, static_data: dict, adapted: dict) -> str:
     template = Path(template_path).read_text(encoding="utf-8")
 
     personal = static_data.get("personal", {})
-    edu = static_data.get("education", {})
+    education = static_data.get("education", [])
     avail = static_data.get("availability", {})
     langs = static_data.get("languages", [])
     accent_on = {"ACCENT_COLOR": "#2C5F4A", "ACCENT_LIGHT": "#E8EFE9"}
@@ -99,6 +111,10 @@ def render_cv_html(template_path: str, static_data: dict, adapted: dict) -> str:
         _build_entry(p["title"], p["date"], p["subtitle"], p.get("bullets", []), p.get("stack"))
         for p in adapted.get("projects", [])
     )
+    edu_html = "\n".join(
+        _build_edu_entry(e["school"], e["dates"], e.get("detail", ""))
+        for e in education
+    )
 
     placeholders = {
         **accent,
@@ -110,9 +126,7 @@ def render_cv_html(template_path: str, static_data: dict, adapted: dict) -> str:
         "PORTFOLIO": personal.get("portfolio", ""),
         "EXPERIENCE_ENTRIES": exp_html,
         "PROJECT_ENTRIES": proj_html,
-        "EDU_SCHOOL": edu.get("school", ""),
-        "EDU_DATES": edu.get("dates", ""),
-        "EDU_DETAIL": edu.get("detail", ""),
+        "EDU_ENTRIES": edu_html,
         "START_DATE": avail.get("start", ""),
         "DURATION": avail.get("duration", ""),
         "MOBILITY": avail.get("mobility", ""),

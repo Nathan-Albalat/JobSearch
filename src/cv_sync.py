@@ -6,7 +6,7 @@ from src.cv_pdf import load_cv_data
 
 def generate_cv_master_md(cv_data: dict) -> str:
     personal = cv_data.get("personal", {})
-    edu = cv_data.get("education", {})
+    education = cv_data.get("education", [])
     avail = cv_data.get("availability", {})
     skills = cv_data.get("skills", {})
 
@@ -23,9 +23,12 @@ def generate_cv_master_md(cv_data: dict) -> str:
         "",
         "## Formation",
         "",
-        f"### {edu.get('school', '')}",
-        f"**{edu.get('detail', '')}** | {edu.get('dates', '')}",
-        "",
+    ]
+    for edu in education:
+        lines.append(f"### {edu.get('school', '')}")
+        lines.append(f"**{edu.get('detail', '')}** | {edu.get('dates', '')}")
+        lines.append("")
+    lines += [
         "---",
         "",
         "## Expériences professionnelles",

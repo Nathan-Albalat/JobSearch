@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from datetime import date
 
-STATUSES = ["generated", "sent", "answered", "interview", "rejected", "accepted"]
+STATUSES = ["generated", "sent", "answered", "interview", "rejected", "accepted", "cancelled"]
 # Statuts indiquant qu'une réponse de l'entreprise a été reçue
 RESPONSE_STATUSES = {"answered", "interview", "rejected", "accepted"}
 
@@ -15,6 +15,7 @@ _STATUS_LABELS = {
     "interview": "🎙 entretien",
     "rejected": "❌ refusée",
     "accepted": "✅ acceptée",
+    "cancelled": "🚫 annulée",
 }
 
 
@@ -136,14 +137,17 @@ def compute_stats(data_dir: str = "data") -> dict:
     """Statistiques des candidatures pour le panneau de stats de la TUI."""
     apps = load_applications(data_dir)
     by_status = Counter(a.get("status", "generated") for a in apps)
+    active = [a for a in apps if a.get("status") != "cancelled"]
 
     accepted = by_status.get("accepted", 0)
     rejected = by_status.get("rejected", 0)
     generated = by_status.get("generated", 0)
+    cancelled = by_status.get("cancelled", 0)
     coarse = {
-        "Accepté": accepted,
-        "Refusé": rejected,
-        "En attente": len(apps) - accepted - rejected - generated,
+        "Acceptée": accepted,
+        "Refusée": rejected,
+        "Annulée": cancelled,
+        "En attente": len(apps) - accepted - rejected - cancelled - generated,
     }
 
     by_location = Counter(_application_location(a, data_dir) for a in apps)
@@ -156,13 +160,13 @@ def compute_stats(data_dir: str = "data") -> dict:
             by_month[month] = by_month.get(month, 0) + 1
     by_month = dict(sorted(by_month.items()))
 
-    # --- Métriques de retour de candidature ---
-    sent = sum(1 for a in apps if a.get("status") != "generated")
-    responded = sum(1 for a in apps if a.get("status") in RESPONSE_STATUSES)
+    # --- Métriques de retour de candidature (les annulées sont exclues) ---
+    sent = sum(1 for a in active if a.get("status") != "generated")
+    responded = sum(1 for a in active if a.get("status") in RESPONSE_STATUSES)
     decided = accepted + rejected
 
     delays = []
-    for a in apps:
+    for a in active:
         s, r = a.get("sent_at"), a.get("responded_at")
         if s and r:
             try:

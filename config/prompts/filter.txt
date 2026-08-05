@@ -14,6 +14,8 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 - Aucune exigence d'expérience professionnelle préalable incompatible
 - C'est un {type_contrat} et non {type_contrat_negatif}
 - L'offre est rédigée en anglais
+- La maîtrise du Néerlandais n'est pas marqué comme nécessaire
+- C'est une offre de stage explicite, pas un emploi.
 
 **6-7 — Pertinent**
 - Domaine adjacent ou partiellement aligné (ex : DevOps si fort en Python, Web si fort en JS)

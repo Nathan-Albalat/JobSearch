@@ -74,17 +74,17 @@ Instead of chaining commands, you can control everything from a terminal interfa
 python main.py --tui
 ```
 
-**Important principle:** the TUI is just a **view** on the pipeline's files. It creates no hidden state: reports, `data/offers/*.json` and `data/applications.json` remain readable and editable without it. So you can resume work anytime (scrape Monday, review Wednesday) — the TUI re-reads current state on startup and with the `r` key.
+**Important principle:** the TUI is just a **view** on the pipeline's files. It creates almost no hidden state: reports, `data/offers/*.json` and `data/applications.json` remain readable and editable without it. So you can resume work anytime (scrape Monday, review Wednesday) — the TUI re-reads current state on startup and with the `r` key. The one exception is the Generation tab's queue, persisted in `data/gen_queue.json`.
 
 ### The 5 Tabs
 
 | Tab | Role |
 |---|---|
-| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to process — checked rows are **highlighted in green**. Offers from the latest scrape session are **highlighted in dark blue**; the displayed period (all / latest session / last 7 days / last 30 days) can be filtered with `d`/`D`. |
-| **2 · Generation** | Launch generation (letter + CV, or letter only) of checked offers as a background task. |
+| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to add to the generation queue — checked rows are **highlighted in green**. Offers from the latest scrape session are **highlighted in dark blue**; the displayed period (all / latest session / last 7 days / last 30 days) can be filtered with `d`/`D`. |
+| **2 · Generation** | The generation queue, persisted across TUI restarts in `data/gen_queue.json`. Check rows with `space` to restrict `g`/`L` to that subset — with nothing checked, `g`/`L` process all pending offers. `x` removes rows from the queue. Launches letter + CV generation (or letter only) as a background task. |
 | **3 · Applications** | List of `output/candidatures/` directories, letter/CV preview, **PDF regeneration after manual editing**. |
-| **4 · Tracking** | Statuses and notes of applications (`applications.json`). Rejected applications are **highlighted in red**. |
-| **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. |
+| **4 · Tracking** | Statuses and notes of applications (`applications.json`). Applications awaiting a response are **highlighted in yellow**, rejected ones in **red**, cancelled ones in **dark grey with dimmed text**. |
+| **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. Cancelled applications are excluded from the rates and average response time, counted separately in a "Cancelled" category. |
 
 ### Cover Letter Editing Workflow
 
@@ -114,15 +114,17 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 | Offers | `d` | Cycle displayed period (all · latest session · 7 days · 30 days) |
 | Offers | `D` | Pick a specific scrape session |
 | Offers | `g` | Go to Generation tab |
-| Generation | `g` | Generate letter + CV for checked offers |
+| Generation | `space` | Check/uncheck an offer in the queue (optional filter for `g`/`L`) |
+| Generation | `g` | Generate letter + CV (checked rows, or all pending offers) |
 | Generation | `L` | Generate **letter only** (no CV — 1 Sonnet call instead of 2) |
+| Generation | `x` | Remove from the queue (checked rows, or the row under the cursor) |
 | Generation | `o` | Open application folder |
 | Applications | `enter` | Toggle letter ↔ CV preview |
 | Applications | `e` | Open `lettre.md` in editor |
 | Applications | `p` | Regenerate `lettre.pdf` from `lettre.md` |
 | Applications | `u` | Regenerate `cv_adapte.pdf` from `cv_adapte.html` |
 | Applications | `o` | Open application folder |
-| Tracking | `s`/`a`/`i`/`j`/`v` | Status → sent / answered / interview / rejected / accepted |
+| Tracking | `s`/`a`/`i`/`j`/`v`/`z` | Status → sent / answered / interview / rejected / accepted / cancelled |
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
 

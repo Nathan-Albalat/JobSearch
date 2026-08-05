@@ -83,7 +83,7 @@ python main.py --tui
 | **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à ajouter à la file de génération — les lignes cochées sont **surlignées en vert**. Les offres de la dernière session de scrape sont **surlignées en bleu foncé** ; la période affichée (tout / dernière session / 7 derniers jours / 30 derniers jours) se filtre avec `d`/`D`. |
 | **2 · Génération** | La file de génération, persistée entre deux lancements de la TUI dans `data/gen_queue.json`. Coche des lignes avec `espace` pour restreindre `g`/`L` à ce sous-ensemble — sans rien coché, `g`/`L` traitent toutes les offres en attente. `x` retire des lignes de la file. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. |
 | **3 · Candidatures** | Liste des dossiers `output/candidatures/`, aperçu de la lettre/CV, **régénération des PDF après retouche manuelle**. |
-| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Les candidatures **en attente de réponse sont surlignées en jaune**, les **refusées en rouge**, les **annulées en gris foncé avec texte atténué**. |
+| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Chaque statut a sa propre couleur : **envoyée** en jaune, **réponse reçue** en ambre, **entretien** en violet, **acceptée** en vert, **refusée** en rouge, **annulée** en gris foncé avec texte atténué. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. Les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé ». |
 
 ### Workflow de retouche d'une lettre

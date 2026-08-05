@@ -138,15 +138,38 @@ class HighlightDataTable(DataTable):
 
 
 # Surlignage des candidatures déjà envoyées (onglet Candidatures) — vert foncé, modifiable ici.
+# Valeur identique à ACCEPTED_HIGHLIGHT_COLOR mais usage distinct (onglet différent) : les deux
+# constantes restent séparées pour qu'un futur ajustement de l'une n'affecte pas l'autre.
 SENT_HIGHLIGHT_COLOR = "#1e4620"
-# Surlignage des candidatures en attente de réponse (onglet Suivi) — jaune, modifiable ici.
+# Surlignage des candidatures envoyées, en attente de réponse (onglet Suivi) — jaune, modifiable ici.
 PENDING_HIGHLIGHT_COLOR = "#584b00"
 # Surlignage des offres de la dernière session de scrape (onglet Offres) — bleu foncé, modifiable ici.
 NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
 # Surlignage des candidatures annulées (onglet Suivi) — gris foncé, modifiable ici.
 CANCELLED_HIGHLIGHT_COLOR = "#2b2b2b"
+# Surlignage des candidatures avec réponse reçue, décision non tombée (onglet Suivi) — ambre, modifiable ici.
+ANSWERED_HIGHLIGHT_COLOR = "#6b4310"
+# Surlignage des candidatures en entretien (onglet Suivi) — violet, modifiable ici.
+INTERVIEW_HIGHLIGHT_COLOR = "#46326b"
+# Surlignage des candidatures acceptées (onglet Suivi) — vert, modifiable ici.
+ACCEPTED_HIGHLIGHT_COLOR = "#1e4620"
+# Surlignage des candidatures refusées (onglet Suivi) — rouge, modifiable ici.
+REJECTED_HIGHLIGHT_COLOR = "#870000"
 # Statuts considérés comme « en attente de réponse » (candidature envoyée, décision non tombée).
+# Ne pilote plus l'affichage (voir TRACK_STATUS_STYLES ci-dessous) : conservé comme définition
+# métier, pendant de RESPONSE_STATUSES dans src/tracker.py.
 PENDING_STATUSES = {"sent", "answered", "interview"}
+
+# Table de correspondance statut → style de ligne pour l'onglet Suivi. `generated` est absent
+# volontairement : une candidature pas encore envoyée n'a pas de surlignage.
+TRACK_STATUS_STYLES = {
+    "sent": Style(color="white", bgcolor=PENDING_HIGHLIGHT_COLOR),
+    "answered": Style(color="white", bgcolor=ANSWERED_HIGHLIGHT_COLOR),
+    "interview": Style(color="white", bgcolor=INTERVIEW_HIGHLIGHT_COLOR),
+    "accepted": Style(color="white", bgcolor=ACCEPTED_HIGHLIGHT_COLOR),
+    "rejected": Style(color="white", bgcolor=REJECTED_HIGHLIGHT_COLOR),
+    "cancelled": Style(color="grey50", bgcolor=CANCELLED_HIGHLIGHT_COLOR),
+}
 
 CONSOLE_URL = "https://console.anthropic.com/settings/billing"
 
@@ -211,7 +234,8 @@ HELP_TEXT = """\
   [b #7aa2f7]z[/]  Statut → annulée (offre qui n'existe plus)
   [b #7aa2f7]n[/]  Éditer la note de la candidature
   [b #7aa2f7]o[/]  Ouvrir l'offre dans le navigateur
-  (en attente de réponse en jaune, refusées en rouge, annulées en gris)
+  (envoyée en jaune · réponse en ambre · entretien en violet ·
+   acceptée en vert · refusée en rouge · annulée en gris)
 
 [b]Onglet Stats[/b]
   Retour de candidature (taux d'acceptation, taux de réponse,
@@ -592,10 +616,19 @@ class StageTUI(App):
         previous = self._current_row_key("letters-table")
         status_by_offer = {a["offer_id"]: a["status"] for a in load_applications()}
         dirs = self._candidature_dirs()
+
+        def _letter_row_style(folder: str):
+            status = status_by_offer.get(os.path.basename(folder).rsplit("_", 1)[-1], "generated")
+            if status == "cancelled":
+                return Style(color="grey50", bgcolor=CANCELLED_HIGHLIGHT_COLOR)
+            if status != "generated":
+                return Style(color="white", bgcolor=SENT_HIGHLIGHT_COLOR)
+            return None
+
         table.row_styles = {
-            folder: Style(color="white", bgcolor=SENT_HIGHLIGHT_COLOR)
+            folder: style
             for folder in dirs
-            if status_by_offer.get(os.path.basename(folder).rsplit("_", 1)[-1], "generated") != "generated"
+            if (style := _letter_row_style(folder)) is not None
         }
         table.clear()
         for folder in dirs:
@@ -667,18 +700,9 @@ class StageTUI(App):
         table = self.query_one("#track-table", HighlightDataTable)
         apps = load_applications()
         table.row_styles = {
-            **{
-                a["offer_id"]: Style(color="white", bgcolor=PENDING_HIGHLIGHT_COLOR)
-                for a in apps if a["status"] in PENDING_STATUSES
-            },
-            **{
-                a["offer_id"]: Style(color="white", bgcolor="dark_red")
-                for a in apps if a["status"] == "rejected"
-            },
-            **{
-                a["offer_id"]: Style(color="grey50", bgcolor=CANCELLED_HIGHLIGHT_COLOR)
-                for a in apps if a["status"] == "cancelled"
-            },
+            a["offer_id"]: TRACK_STATUS_STYLES[a["status"]]
+            for a in apps
+            if a["status"] in TRACK_STATUS_STYLES
         }
         table.clear()
         for app in apps:

@@ -127,9 +127,6 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 ## Example of a Typical Session
 
 ```bash
-# Activate the environment
-venvon
-
 # Run the complete pipeline
 python main.py --scrape
 
@@ -158,7 +155,7 @@ crontab -e
 Add this line (adjust the path if needed):
 
 ```
-0 8 */2 * * cd "path/to/Script" && source venv/bin/activate && python main.py --scrape >> data/cron.log 2>&1
+0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (only if you use a venv) && python main.py --scrape >> data/cron.log 2>&1
 ```
 
 What it does: every 2 days at 8:00 AM, the pipeline runs and results are appended to `data/cron.log`.

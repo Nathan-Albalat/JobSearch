@@ -127,9 +127,6 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 ## Exemple de session type
 
 ```bash
-# Activer l'environnement
-venvon
-
 # Lancer le pipeline complet
 python main.py --scrape
 
@@ -158,7 +155,7 @@ crontab -e
 Ajouter cette ligne (adapter le chemin si nécessaire) :
 
 ```
-0 8 */2 * * cd "path/to/Script" && source venv/bin/activate && python main.py --scrape >> data/cron.log 2>&1
+0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (seulement si vous utilisez une venv) && python main.py --scrape >> data/cron.log 2>&1
 ```
 
 Ce que ça fait : tous les 2 jours à 8h00, le pipeline tourne et les résultats sont ajoutés à `data/cron.log`.

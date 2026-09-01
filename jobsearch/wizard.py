@@ -1,8 +1,10 @@
 """Assistant d'installation interactif (`jobsearch --setup`).
 
 App Textual autonome (distincte de `jobsearch.tui.StageTUI`) qui accompagne
-un tiers dans les 6 étapes de première configuration : présentation, clé
-API, sujet de recherche, prompt de scoring (non sautable), profil, récap.
+un tiers dans les étapes de première configuration : présentation, clés API
+(Anthropic + optionnelles), sujet de recherche, pré-filtre, profil, aperçu
+du prompt de scoring (non sautable, paramétré avec le sujet ET le profil —
+d'où le profil collecté avant), récap.
 
 Motif « aperçu puis confirmation » repris de `jobsearch/migrate.py` : rien
 n'est écrit sur le disque sans que le contenu ait été montré, et un fichier
@@ -27,9 +29,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Footer, Header, Input, Label, Static
+from textual.widgets import Footer, Header, Input, Label, Static, TextArea
 
-from jobsearch.config import PACKAGE_ROOT, PATHS
+from jobsearch.config import DEFAULTS, PACKAGE_ROOT, PATHS, Search, _deep_merge, fill_template
 
 # ---------------------------------------------------------------------------
 # Navigation
@@ -131,6 +133,74 @@ def render_geo_details(pays: list[str]) -> list[str]:
         "**Reste** : à scorer normalement sur le contenu technique, sans bonus géographique."
     )
     return details
+
+
+# Opposé du type de contrat choisi, injecté dans le prompt via
+# {type_contrat_negatif} — TOUJOURS dérivé du contrat choisi, jamais laissé
+# retomber sur la valeur de l'exemple livré (« une offre d'emploi », qui
+# n'a de sens que pour un stage) : un CDI décrit avec ce défaut produirait un
+# prompt contradictoire avec lui-même (« évaluer une offre de CDI, et non une
+# offre d'emploi »).
+_TYPE_CONTRAT_NEGATIF = {
+    "stage": "une offre d'emploi",
+    "alternance": "un stage ou un CDI",
+    "cdi": "un stage ou une alternance",
+    "cdd": "un stage ou un CDI",
+    "freelance": "un poste salarié",
+}
+
+
+def derive_type_contrat_negatif(type_contrat: str) -> str:
+    """Dérive `sujet.type_contrat_negatif` du type de contrat choisi — repli
+    neutre (jamais une devinette hasardeuse) si le type saisi est libre et non
+    reconnu."""
+    key = (type_contrat or "").strip().lower()
+    for name, negatif in _TYPE_CONTRAT_NEGATIF.items():
+        if name in key:
+            return negatif
+    return f"un contrat autre que {type_contrat}" if type_contrat else "un autre type de contrat"
+
+
+# Mention de poste valorisée dans le barème ({titre_bonus}) — pertinente pour
+# un contrat d'insertion (stage/alternance), pas pour un CDI où « Junior »/
+# « Intern » n'ont pas de sens dans un titre de poste recherché. Sans repli
+# vide explicite, l'ancien défaut ("Junior, Intern") restait injecté tel quel
+# pour n'importe quel contrat.
+_TITRE_BONUS = {
+    "stage": ["Junior", "Intern"],
+    "alternance": ["Junior", "Alternant", "Apprenti"],
+    "cdi": [],
+    "cdd": [],
+    "freelance": [],
+}
+
+
+def derive_titre_bonus(type_contrat: str) -> list[str]:
+    key = (type_contrat or "").strip().lower()
+    for name, bonus in _TITRE_BONUS.items():
+        if name in key:
+            return bonus
+    return []
+
+
+def render_sujet_label(values: dict) -> str:
+    """Dérive `sujet.label` ({sujet} dans les prompts lettre/CV) du type de
+    contrat ET du premier domaine visé — jamais l'exemple livré ("stage en
+    informatique et ingénierie logicielle"), qui contredirait un `type_contrat`
+    différent (ex: CDI) dans le même prompt."""
+    contrat = (values.get("type_contrat") or "").strip() or "poste"
+    domaines = values.get("domaines") or []
+    return f"{contrat} en {domaines[0]}" if domaines else contrat
+
+
+def render_domaines_ouverture(values: dict) -> str:
+    """Formulation neutre d'ouverture à d'autres domaines ({domaines_ouverture})
+    — mentionne le premier domaine choisi quand il est connu plutôt que de
+    reprendre tel quel le texte générique de l'exemple livré."""
+    domaines = values.get("domaines") or []
+    if domaines:
+        return f"Ouvert à d'autres domaines proches de {domaines[0]} si le projet est intéressant"
+    return "Ouvert à d'autres domaines proches si le projet est intéressant"
 
 
 def render_scoring_bonus(values: dict) -> list[str]:
@@ -390,6 +460,11 @@ def render_search_yaml(values: dict, prefilter_values: dict | None = None) -> st
         )
 
     text = _set_scalar(text, "sujet", "type_contrat", _yaml_str(values["type_contrat"]))
+    text = _set_scalar(text, "sujet", "label", _yaml_str(render_sujet_label(values)))
+    text = _set_scalar(
+        text, "sujet", "type_contrat_negatif",
+        _yaml_str(derive_type_contrat_negatif(values["type_contrat"])),
+    )
     prefilter_values = prefilter_values or PREFILTER_DEFAULTS
     text = _set_scalar(
         text, "sujet", "expertise_recruteur",
@@ -418,13 +493,140 @@ def render_search_yaml(values: dict, prefilter_values: dict | None = None) -> st
     # on ne les fait jamais hériter de l'exemple livré (qui peut porter le contexte d'un tiers).
     text = _set_scalar(text, "geo", "notes", _yaml_str(render_geo_notes(values["pays"], region_ville)))
     text = _set_list(text, "geo", "details", render_geo_details(values["pays"]))
+    # `geo.secondaire`/`geo.dernier_recours` ne sont pas demandés par cet assistant
+    # (seule `geo.priorite` l'est) : laissés vides plutôt qu'hérités de l'exemple
+    # livré ("Europe (hors pays frontaliers)"/"Hors Europe", qui présuppose une
+    # recherche centrée sur l'Europe). Un vide explicite neutralise proprement les
+    # bonus/malus associés dans le prompt ; à affiner depuis l'onglet Réglages.
+    text = _set_list(text, "geo", "secondaire", [])
+    text = _set_list(text, "geo", "dernier_recours", [])
 
     text = _set_list(text, "domaines", "liste", values["domaines"])
+    text = _set_scalar(text, "domaines", "ouverture", _yaml_str(render_domaines_ouverture(values)))
     text = _set_scalar(text, "scoring", "seuil", str(values["seuil"]))
     text = _set_list(text, "scoring", "bonus", render_scoring_bonus(values))
     text = _set_list(text, "scoring", "malus", render_scoring_malus(values))
+    text = _set_list(text, "scoring", "titre_bonus", derive_titre_bonus(values["type_contrat"]))
     text = _set_prefilter_keywords(text, render_prefilter_keywords(prefilter_values, values))
     return text
+
+
+# ---------------------------------------------------------------------------
+# Garde-fou anti-régression — troisième bug de la même famille (cf. CLAUDE.md,
+# section « Vérification anti-régression du sujet de recherche ») : une valeur
+# de `search.yaml` dérivée de l'entrée utilisateur qui, par erreur (clé oubliée
+# dans `render_search_yaml`, condition mal branchée…), retombe silencieusement
+# sur la valeur de `config/search.example.yaml` livrée avec le paquet — celle
+# du sujet d'origine (stage tech, Pays-Bas). Exposé sans appel API via
+# `python -m jobsearch.config --check-wizard-defaults`.
+# ---------------------------------------------------------------------------
+
+# Clés connues pour dépendre de l'entrée utilisateur (sujet/domaines/contrat) —
+# à étendre à chaque nouvelle clé dérivée ajoutée à `render_search_yaml`.
+RISK_KEYS: list[tuple[str, str]] = [
+    ("sujet", "label"),
+    ("sujet", "type_contrat_negatif"),
+    ("scoring", "titre_bonus"),
+    ("geo", "secondaire"),
+    ("geo", "dernier_recours"),
+    ("domaines", "ouverture"),
+]
+
+def _guard_profiles() -> list[dict]:
+    """Deux profils volontairement très contrastés (le sujet d'origine du
+    paquet, et celui de l'audit ayant motivé ce garde-fou : CDI / France /
+    droit) — n'importe quelle clé de RISK_KEYS encore égale à la valeur de
+    l'exemple livré pour l'un des deux profils, ou identique entre les deux
+    profils malgré ce contraste, trahit une valeur non dérivée de l'entrée
+    utilisateur. Fonction (plutôt qu'une constante de module) : `SEARCH_DEFAULTS`/
+    `PREFILTER_DEFAULTS` sont définis plus bas dans ce fichier."""
+    return [
+        {
+            "search_values": {
+                **SEARCH_DEFAULTS,
+                "type_contrat": "stage",
+                "pays": ["Pays-Bas"],
+                "domaines": ["Développement logiciel"],
+            },
+            "prefilter_values": {**PREFILTER_DEFAULTS, "preset": "informatique"},
+        },
+        {
+            "search_values": {
+                **SEARCH_DEFAULTS,
+                "type_contrat": "CDI",
+                "pays": ["France"],
+                "region_ville": "Lyon",
+                "domaines": ["Droit des affaires"],
+            },
+            "prefilter_values": {**PREFILTER_DEFAULTS, "preset": "droit"},
+        },
+    ]
+
+
+def _load_example_search_yaml() -> dict:
+    example_path = os.path.join(PACKAGE_ROOT, "config", "search.example.yaml")
+    with open(example_path, encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+# `geo.secondaire`/`geo.dernier_recours` sont volontairement TOUJOURS vides,
+# quel que soit le profil (voir `render_search_yaml` : cet assistant ne
+# demande pas ces deux champs, laissés à affiner depuis l'onglet Réglages) —
+# exclus du contrôle croisé « doit varier d'un profil à l'autre » ci-dessous,
+# qui les signalerait sinon en faux positif permanent.
+_ALWAYS_EMPTY_BY_DESIGN = {("geo", "secondaire"), ("geo", "dernier_recours")}
+
+
+def check_wizard_defaults() -> list[str]:
+    """Rend `search.yaml` pour deux profils simulés très contrastés (le sujet
+    d'origine du paquet, puis CDI / France / droit — le scénario ayant motivé
+    ce garde-fou) et vérifie deux invariants sur `RISK_KEYS` :
+
+    1. pour le profil le plus éloigné du sujet d'origine (CDI/France/droit),
+       aucune clé ne doit conserver la valeur littérale de
+       `config/search.example.yaml` — un « stage » calibré tech/Pays-Bas n'a
+       aucune raison de produire la même chose qu'un CDI en droit ;
+    2. les deux profils, volontairement très contrastés, doivent produire des
+       valeurs différentes sur les clés censées dépendre de l'entrée
+       utilisateur (à l'exception documentée de `_ALWAYS_EMPTY_BY_DESIGN`).
+
+    Fonction pure, sans Textual ni appel API — testable et réutilisable (voir
+    `python -m jobsearch.config --check-wizard-defaults`). Retourne la liste
+    des anomalies détectées (vide = rien à signaler)."""
+    example = _load_example_search_yaml()
+    profiles = _guard_profiles()
+    rendered = [
+        yaml.safe_load(render_search_yaml(p["search_values"], p["prefilter_values"])) or {}
+        for p in profiles
+    ]
+    anomalies: list[str] = []
+
+    # (1) Le profil CDI/France/droit (index 1) ne doit littéralement rien devoir
+    # au sujet d'origine (stage tech, Pays-Bas) livré dans search.example.yaml.
+    contrat_eloigne = profiles[1]["search_values"]["type_contrat"]
+    for section, key in RISK_KEYS:
+        value = (rendered[1].get(section) or {}).get(key)
+        example_value = (example.get(section) or {}).get(key)
+        if value == example_value:
+            anomalies.append(
+                f"{section}.{key} = {value!r} — identique à search.example.yaml "
+                f"pour le profil {contrat_eloigne!r} (valeur potentiellement héritée "
+                "sans dérivation depuis l'entrée utilisateur)."
+            )
+
+    # (2) Contrôle croisé entre les deux profils contrastés.
+    for section, key in RISK_KEYS:
+        if (section, key) in _ALWAYS_EMPTY_BY_DESIGN:
+            continue
+        v0 = (rendered[0].get(section) or {}).get(key)
+        v1 = (rendered[1].get(section) or {}).get(key)
+        if v0 == v1:
+            anomalies.append(
+                f"{section}.{key} identique entre les deux profils simulés contrastés "
+                f"(stage/Pays-Bas vs CDI/France/droit) : {v0!r} — suspect d'une valeur "
+                "non dérivée de l'entrée utilisateur."
+            )
+    return anomalies
 
 
 def render_filter_prompt(values: dict) -> str:
@@ -459,6 +661,27 @@ def render_filter_prompt(values: dict) -> str:
     return base
 
 
+def parse_competences_text(text: str) -> dict[str, list[str]]:
+    """Parse le contenu du `TextArea` « Compétences » de `ProfileScreen` : une
+    catégorie par ligne, format libre `Catégorie: item1, item2` — l'utilisateur
+    choisit lui-même le nom de ses catégories (voir `render_profile_yaml`)."""
+    result: dict[str, list[str]] = {}
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        categorie, items_raw = line.split(":", 1)
+        categorie = categorie.strip()
+        if categorie:
+            result[categorie] = parse_csv(items_raw)
+    return result
+
+
+def render_competences_text(competences: dict[str, list[str]]) -> str:
+    """Inverse de `parse_competences_text` — pré-remplit le `TextArea`."""
+    return "\n".join(f"{categorie}: {', '.join(items)}" for categorie, items in competences.items())
+
+
 def render_profile_yaml(values: dict) -> str:
     langues = []
     for item in values["langues"]:
@@ -475,16 +698,56 @@ def render_profile_yaml(values: dict) -> str:
             "specialite": values["specialite"],
             "diplome_prevu": values["diplome_prevu"],
         },
-        "competences_techniques": {
-            "langages_maitrise": values["langages_maitrise"],
-            "langages_pratiques": values["langages_pratiques"],
-            "frameworks": values["frameworks"],
-            "outils": values["outils"],
-            "domaines_ml": [],
-        },
+        # Mapping libre de catégories choisies par l'utilisateur (ex: "Langages",
+        # "Domaines du droit", "Logiciels") — jamais les clés fixes de l'ancien
+        # format (`langages_maitrise`/`frameworks`/...), qui codaient en dur un
+        # vocabulaire informatique inadapté à un outil généraliste. La lecture,
+        # elle, reste rétrocompatible avec l'ancien format : voir
+        # `jobsearch.filter.render_competences_lines`.
+        "competences": values["competences"],
         "langues": langues,
     }
     return yaml.safe_dump(data, allow_unicode=True, sort_keys=False)
+
+
+def _build_preview_search(search_values: dict, prefilter_values: dict | None) -> Search:
+    """`Search` construite en mémoire depuis les réponses de l'assistant, sans
+    passer par le disque — utilisée uniquement pour l'aperçu paramétré du
+    prompt (`PromptPreviewScreen`), jamais pour le fichier réellement écrit
+    (qui doit, lui, conserver ses placeholders `{xxx}`, résolus au scoring)."""
+    text = render_search_yaml(search_values, prefilter_values)
+    data = yaml.safe_load(text) or {}
+    return Search(_deep_merge(DEFAULTS, data))
+
+
+def render_filter_prompt_preview(
+    search_values: dict, prefilter_values: dict | None, profile_values: dict | None
+) -> str:
+    """Aperçu du prompt de scoring, placeholders résolus — jamais écrit tel
+    quel sur le disque (voir `render_filter_prompt`, qui garde les
+    placeholders littéraux, résolus plus tard par `fill_template` au moment
+    du scoring depuis `search.yaml`)."""
+    base = render_filter_prompt(search_values)
+    search = _build_preview_search(search_values, prefilter_values)
+    profile = {
+        "formation": {
+            "ecole": (profile_values or {}).get("ecole", ""),
+            "niveau": (profile_values or {}).get("niveau", ""),
+            "specialite": (profile_values or {}).get("specialite", ""),
+            "diplome_prevu": (profile_values or {}).get("diplome_prevu", ""),
+        },
+        "competences": (profile_values or {}).get("competences", {}),
+        "langues": [
+            {"langue": item.split(":", 1)[0].strip(), "niveau": item.split(":", 1)[1].strip()}
+            if ":" in item
+            else {"langue": item.strip(), "niveau": ""}
+            for item in (profile_values or {}).get("langues", [])
+        ],
+    }
+    from jobsearch.filter import render_profile_text
+
+    profile_text = render_profile_text(profile, search)
+    return fill_template(base, {**search.placeholders(), "profile": profile_text}, warn=False)
 
 
 def check_api_key(key: str) -> tuple[bool, str]:
@@ -588,35 +851,110 @@ class InfoScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+API_KEYS_DEFAULTS = {
+    "key": "",
+    "adzuna_id": "",
+    "adzuna_key": "",
+    "notify_email": "",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_user": "",
+    "smtp_password": "",
+}
+
+
 class ApiKeyScreen(ModalScreen[dict | _Back]):
-    """Étape 2 — Clé API. Sautable (Input vide = pas de clé renseignée)."""
+    """Étape 2 — Clés API. Toutes sautables (champ vide = non renseignée).
+
+    Couvre la clé Anthropic (requise pour filtre/génération) et les clés
+    optionnelles déjà présentes dans `.env.example` (Adzuna, notifications
+    SMTP) — auparavant seule la clé Anthropic était proposée ici, ce qui
+    laissait les autres sources/`.env` non couvertes par l'assistant."""
 
     BINDINGS = [Binding("escape", "back", "Retour")]
 
-    def __init__(self, initial_key: str = "") -> None:
+    def __init__(self, initial: dict | None = None) -> None:
         super().__init__()
-        self._initial_key = initial_key
+        self._initial = {**API_KEYS_DEFAULTS, **(initial or {})}
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="wizard-box"):
+        v = self._initial
+        with VerticalScroll(id="wizard-box"):
             yield Label(
-                "Clé API Anthropic (console.anthropic.com/settings/keys).\n"
-                "Laisse vide et appuie sur entrée pour passer cette étape.\n"
-                "entrée : valider   ·   échap : retour à l'étape précédente"
+                "Clés API — toutes optionnelles à l'exception de la première (recommandée).\n"
+                "Laisse un champ vide pour passer cette étape sur cette clé.\n"
+                "entrée dans n'importe quel champ : valider   ·   échap : retour à l'étape précédente"
             )
+            yield Label(
+                "\n[b]Anthropic[/b] (console.anthropic.com/settings/keys) — requise pour le "
+                "filtrage des offres et la génération de candidature :"
+            )
+            yield Input(value=v["key"], password=True, placeholder="sk-ant-...", id="key-input")
+            yield Label(
+                "\n[b]Adzuna[/b] (optionnel — source d'offres supplémentaire) — clés gratuites "
+                "sur developer.adzuna.com :"
+            )
+            yield Input(value=v["adzuna_id"], placeholder="ADZUNA_APP_ID", id="adzuna-id-input")
+            yield Input(value=v["adzuna_key"], placeholder="ADZUNA_APP_KEY", id="adzuna-key-input")
+            yield Label(
+                "\n[b]Notifications email[/b] (optionnel — email envoyé après chaque scrape).\n"
+                "Pour Gmail : active la validation en 2 étapes, puis crée un « mot de passe "
+                "d'application » sur myaccount.google.com/apppasswords (pas ton mot de passe habituel) :"
+            )
+            yield Input(value=v["notify_email"], placeholder="NOTIFY_EMAIL (destinataire)", id="notify-email-input")
+            yield Input(value=v["smtp_host"], placeholder="SMTP_HOST", id="smtp-host-input")
+            yield Input(value=v["smtp_user"], placeholder="SMTP_USER (adresse d'envoi)", id="smtp-user-input")
             yield Input(
-                value=self._initial_key, password=True, placeholder="sk-ant-...", id="key-input"
+                value=v["smtp_password"], password=True,
+                placeholder="SMTP_PASSWORD (mot de passe d'application)", id="smtp-password-input",
             )
 
     def on_mount(self) -> None:
         self.query_one("#key-input", Input).focus()
 
+    def _collect(self) -> dict:
+        return {
+            "key": self.query_one("#key-input", Input).value.strip(),
+            "adzuna_id": self.query_one("#adzuna-id-input", Input).value.strip(),
+            "adzuna_key": self.query_one("#adzuna-key-input", Input).value.strip(),
+            "notify_email": self.query_one("#notify-email-input", Input).value.strip(),
+            "smtp_host": self.query_one("#smtp-host-input", Input).value.strip(),
+            "smtp_user": self.query_one("#smtp-user-input", Input).value.strip(),
+            "smtp_password": self.query_one("#smtp-password-input", Input).value.strip(),
+        }
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        key = self.query_one("#key-input", Input).value.strip()
-        self.dismiss({"key": key})
+        self.dismiss(self._collect())
 
     def action_back(self) -> None:
         self.dismiss(BACK)
+
+
+def render_env_file(keys: dict) -> str:
+    """Génère `.env` à partir de `.env.example` (commentaires conservés) —
+    écrit même quand toutes les clés sont sautées, pour que `.env` existe
+    toujours après un `--setup` complet (sinon `_check_setup`, dans
+    `cli.py`, continue de le réclamer)."""
+    example_path = os.path.join(PACKAGE_ROOT, ".env.example")
+    if os.path.exists(example_path):
+        with open(example_path, encoding="utf-8") as f:
+            text = f.read()
+    else:
+        text = (
+            "ANTHROPIC_API_KEY=\n\nNOTIFY_EMAIL=\nSMTP_HOST=smtp.gmail.com\nSMTP_PORT=587\n"
+            "SMTP_USER=\nSMTP_PASSWORD=\n\nADZUNA_APP_ID=\nADZUNA_APP_KEY=\n"
+        )
+    replacements = {
+        "ANTHROPIC_API_KEY=your_key_here": f"ANTHROPIC_API_KEY={keys.get('key', '')}",
+        "NOTIFY_EMAIL=": f"NOTIFY_EMAIL={keys.get('notify_email', '')}",
+        "SMTP_HOST=smtp.gmail.com": f"SMTP_HOST={keys.get('smtp_host') or 'smtp.gmail.com'}",
+        "SMTP_USER=your_gmail@gmail.com": f"SMTP_USER={keys.get('smtp_user', '')}",
+        "SMTP_PASSWORD=": f"SMTP_PASSWORD={keys.get('smtp_password', '')}",
+        "ADZUNA_APP_ID=": f"ADZUNA_APP_ID={keys.get('adzuna_id', '')}",
+        "ADZUNA_APP_KEY=": f"ADZUNA_APP_KEY={keys.get('adzuna_key', '')}",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new, 1)
+    return text
 
 
 SEARCH_DEFAULTS = {
@@ -800,7 +1138,7 @@ class PrefilterScreen(ModalScreen[dict | _Back]):
 
 
 class PromptPreviewScreen(ModalScreen[bool | _Back]):
-    """Étape 4 — Prompt de scoring. Non sautable : impossible de continuer sans
+    """Étape 5 — Prompt de scoring. Non sautable : impossible de continuer sans
     le valider, mais on peut toujours remonter à l'étape « sujet »."""
 
     BINDINGS = [
@@ -817,8 +1155,14 @@ class PromptPreviewScreen(ModalScreen[bool | _Back]):
             yield Label(
                 "[b]Étape obligatoire[/b] — aperçu du prompt de scoring, paramétré avec tes réponses.\n"
                 "Point de départ, affinable ensuite depuis l'onglet Réglages (touche 6) de la TUI.\n"
-                "entrée : continuer   ·   échap : retour à l'étape sujet"
+                "Les valeurs entre accolades ({xxx}) sont substituées ci-dessous pour l'aperçu\n"
+                "uniquement — le fichier réellement écrit, lui, conserve ces placeholders : ils sont\n"
+                "résolus automatiquement à chaque scoring, depuis config/search.yaml.\n"
+                "(Exception : {title}/{company}/{location}/{url}/{description} en bas de l'aperçu —\n"
+                "propres à chaque offre, jamais connus à l'avance, résolus eux aussi au scoring.)\n"
+                "entrée : continuer   ·   échap : retour à l'étape profil"
             )
+            yield Static("[b]" + "─" * 78 + "[/b]\n[b]Aperçu du prompt (paramétré)[/b]\n" + "─" * 78)
             yield Static(self._prompt_text)
 
     def action_go(self) -> None:
@@ -829,22 +1173,33 @@ class PromptPreviewScreen(ModalScreen[bool | _Back]):
 
 
 PROFILE_DEFAULTS = {
-    "ecole": "Mon École d'Ingénieurs",
+    "ecole": "Mon École",
     "niveau": "Ingénieur 5ème année",
     "specialite": "Informatique",
     "diplome_prevu": "2027",
-    "langages_maitrise": ["Python", "Java", "C"],
-    "langages_pratiques": ["JavaScript", "TypeScript", "SQL"],
-    "frameworks": [],
-    "outils": ["Git", "Docker", "Linux"],
+    # Mapping libre de catégories : JobSearch est généraliste, ce ne sont pas
+    # forcément des compétences "informatique" (voir render_profile_yaml) —
+    # ces deux catégories ne sont qu'un exemple de départ, librement renommable/
+    # remplaçable dans le TextArea de l'écran.
+    "competences": {"Langages": ["Python", "Java", "C"], "Outils": ["Git", "Docker", "Linux"]},
     "langues": ["Français:Natif", "Anglais:Courant (B2/C1)"],
 }
 
 
 class ProfileScreen(ModalScreen[dict | _Back]):
-    """Étape 5 — Profil du candidat."""
+    """Étape 4 — Profil du candidat.
 
-    BINDINGS = [Binding("escape", "back", "Retour")]
+    Les compétences sont saisies en paires libres Catégorie/Détail (ex:
+    "Langages: Python, C++" ou "Domaines du droit: Droit des affaires, Droit
+    social") plutôt qu'en vocabulaire informatique fixe (langages/frameworks/
+    outils) — l'utilisateur nomme lui-même ses catégories. Voir
+    `jobsearch.filter.render_competences_lines` pour la rétrocompatibilité
+    avec l'ancien format à clés fixes."""
+
+    BINDINGS = [
+        Binding("escape", "back", "Retour"),
+        Binding("ctrl+s", "submit", "Valider", priority=True),
+    ]
 
     def __init__(self, initial: dict | None = None) -> None:
         super().__init__()
@@ -854,8 +1209,8 @@ class ProfileScreen(ModalScreen[dict | _Back]):
         v = self._initial
         with VerticalScroll(id="wizard-box"):
             yield Label(
-                "Profil du candidat — entrée pour valider.\n"
-                "échap : retour à l'étape précédente."
+                "Profil du candidat.\n"
+                "ctrl+s : valider tout le formulaire   ·   échap : retour à l'étape précédente"
             )
             yield Label("École :")
             yield Input(value=v["ecole"], id="p-ecole")
@@ -865,32 +1220,37 @@ class ProfileScreen(ModalScreen[dict | _Back]):
             yield Input(value=v["specialite"], id="p-specialite")
             yield Label("Diplôme prévu (année) :")
             yield Input(value=v["diplome_prevu"], id="p-diplome")
-            yield Label("Langages maîtrisés (séparés par des virgules) :")
-            yield Input(value=", ".join(v["langages_maitrise"]), id="p-langages-m")
-            yield Label("Langages pratiqués (séparés par des virgules) :")
-            yield Input(value=", ".join(v["langages_pratiques"]), id="p-langages-p")
-            yield Label("Frameworks (séparés par des virgules) :")
-            yield Input(value=", ".join(v["frameworks"]), id="p-frameworks")
-            yield Label("Outils (séparés par des virgules) :")
-            yield Input(value=", ".join(v["outils"]), id="p-outils")
+            yield Label(
+                "Compétences — une catégorie par ligne, format \"Catégorie: item1, item2\".\n"
+                "Choisis toi-même le nom de tes catégories, ex :\n"
+                "  Langages: Python, C++\n"
+                "  Frameworks: React, Django\n"
+                "ou, dans un autre domaine :\n"
+                "  Domaines du droit: Droit des affaires, Droit social\n"
+                "  Logiciels: Lexis, Dalloz"
+            )
+            yield TextArea(render_competences_text(v["competences"]), id="p-competences")
             yield Label("Langues (format \"Langue:Niveau\", séparées par des virgules) :")
             yield Input(value=", ".join(v["langues"]), id="p-langues")
 
     def on_mount(self) -> None:
         self.query_one("#p-ecole", Input).focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.dismiss({
+    def _collect(self) -> dict:
+        return {
             "ecole": self.query_one("#p-ecole", Input).value.strip(),
             "niveau": self.query_one("#p-niveau", Input).value.strip(),
             "specialite": self.query_one("#p-specialite", Input).value.strip(),
             "diplome_prevu": self.query_one("#p-diplome", Input).value.strip(),
-            "langages_maitrise": parse_csv(self.query_one("#p-langages-m", Input).value),
-            "langages_pratiques": parse_csv(self.query_one("#p-langages-p", Input).value),
-            "frameworks": parse_csv(self.query_one("#p-frameworks", Input).value),
-            "outils": parse_csv(self.query_one("#p-outils", Input).value),
+            "competences": parse_competences_text(self.query_one("#p-competences", TextArea).text),
             "langues": parse_csv(self.query_one("#p-langues", Input).value),
-        })
+        }
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(self._collect())
+
+    def action_submit(self) -> None:
+        self.dismiss(self._collect())
 
     def action_back(self) -> None:
         self.dismiss(BACK)
@@ -917,13 +1277,13 @@ class ConfirmWriteScreen(ModalScreen[bool | _Back]):
             marker = " [dim](existe déjà)[/dim]" if os.path.exists(path) else ""
             lines.append(f"  · {label} — {path}{marker}")
         lines.append(
-            "\nReste optionnel, à personnaliser plus tard (onglet Réglages, touche 6) :"
-            "\n  - cv_master/cv_data.yaml (CV PDF)"
+            "\nÀ personnaliser plus tard, si besoin (onglet Réglages, touche 6) :"
+            "\n  - cv_master/cv_data.yaml et cv_master.md — écrits ci-dessus avec un contenu "
+            "générique (exemple livré avec le paquet), à remplacer par ton propre CV"
             "\n  - config/templates/*.html (charte graphique CV/lettre)"
-            "\n  - Adzuna (ADZUNA_APP_ID/KEY dans .env)"
-            "\n  - notifications email (SMTP dans .env)"
+            "\n  - clés API laissées vides ci-dessus (éditables directement dans .env)"
         )
-        lines.append("\n[dim]entrée : écrire ces fichiers   ·   échap : retour à l'étape profil[/dim]")
+        lines.append("\n[dim]entrée : écrire ces fichiers   ·   échap : retour à l'étape aperçu du prompt[/dim]")
         with VerticalScroll(id="wizard-box"):
             yield Static("\n".join(lines))
 
@@ -952,6 +1312,14 @@ class SummaryScreen(ModalScreen[None]):
             lines.append("\nNon écrit (fichier existant conservé) :")
             for label in self._skipped:
                 lines.append(f"  · {label}")
+        lines.append(
+            "\n[b]Fortement recommandé[/b] : personnalise davantage le prompt de scoring et le "
+            "pré-filtre avant de scorer beaucoup d'offres. Le barème livré est générique — un jeu "
+            "d'exemples réels calibrés sur ta propre recherche (remplacer les exemples A-D de "
+            "config/prompts/filter.txt par 8-14 offres vraies) et un pré-filtre de mots-clés affiné "
+            "améliorent nettement la précision du classement. À faire depuis l'onglet Réglages "
+            "(touche 6) de la TUI."
+        )
         lines.append("\nProchaine commande :\n  [b]jobsearch --scrape[/b]\n(ou jobsearch --tui puis 'S')")
         lines.append("\n[dim]entrée pour terminer[/dim]")
         with VerticalScroll(id="wizard-box"):
@@ -1018,6 +1386,12 @@ class SetupWizard(App):
                 self._skipped.append(label)
                 return False
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        # L'arborescence de données est créée en même temps, comme le fait
+        # `setup.sh` : sans `data/offers/`, la TUI plantait au lancement juste
+        # après un `--setup` (aucun scrape encore effectué). Un dossier vide est
+        # un état parfaitement normal — c'est son ABSENCE qui cassait.
+        os.makedirs(PATHS.offers_dir, exist_ok=True)
+        os.makedirs(PATHS.output_dir, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         self._written.append((label, path))
@@ -1027,9 +1401,13 @@ class SetupWizard(App):
         """(label, path, contenu) — dérivé des réponses collectées. Recalculé
         au moment de l'écriture (étape 6), jamais avant."""
         items: list[tuple[str, str, str]] = []
-        key = answers.get("key", "")
-        if key:
-            items.append(("Clé API (.env)", PATHS.env_path, f"ANTHROPIC_API_KEY={key}\n"))
+        # `.env` est toujours écrit, même si toutes les clés ont été sautées :
+        # `_check_setup` (jobsearch/cli.py) le réclame ensuite, et un fichier
+        # commenté sans clé renseignée reste un état cohérent (à compléter plus
+        # tard), là où une absence totale relance le message « première
+        # utilisation détectée » en boucle après un --setup pourtant complet.
+        api_keys = answers.get("api_keys", API_KEYS_DEFAULTS)
+        items.append(("Clés API (.env)", PATHS.env_path, render_env_file(api_keys)))
         search_values = answers["search_values"]
         prefilter_values = answers.get("prefilter_values", PREFILTER_DEFAULTS)
         items.append((
@@ -1047,6 +1425,29 @@ class SetupWizard(App):
             os.path.join(PATHS.config_dir, "profile.yaml"),
             render_profile_yaml(answers["profile_values"]),
         ))
+        # CV master : servent uniquement à `--generate` (candidature), jamais au scrape
+        # ni à la revue des offres (`--tui`) — mais `_check_setup` les réclame quand
+        # même avant de laisser lancer QUOI que ce soit. Plutôt que retirer cette
+        # exigence (et risquer un `--generate` qui échoue plus tard sans repère clair),
+        # on les initialise ici depuis les `.example` du paquet : un CV générique,
+        # explicitement signalé comme tel (voir ConfirmWriteScreen/SummaryScreen),
+        # à personnaliser ensuite via `cv_master/cv_data.yaml` (onglet Réglages, touche 6).
+        cv_example_data = os.path.join(PACKAGE_ROOT, "cv_master", "cv_data.example.yaml")
+        cv_example_md = os.path.join(PACKAGE_ROOT, "cv_master", "cv_master.example.md")
+        if os.path.exists(cv_example_data):
+            with open(cv_example_data, encoding="utf-8") as f:
+                items.append((
+                    "CV master, générique à personnaliser (cv_data.yaml)",
+                    os.path.join(PATHS.cv_dir, "cv_data.yaml"),
+                    f.read(),
+                ))
+        if os.path.exists(cv_example_md):
+            with open(cv_example_md, encoding="utf-8") as f:
+                items.append((
+                    "Résumé CV, générique à personnaliser (cv_master.md)",
+                    os.path.join(PATHS.cv_dir, "cv_master.md"),
+                    f.read(),
+                ))
         return items
 
     @work
@@ -1062,19 +1463,19 @@ class SetupWizard(App):
                 step = 1
 
             elif step == 1:
-                result = await self.push_screen_wait(ApiKeyScreen(initial_key=answers.get("key", "")))
+                result = await self.push_screen_wait(ApiKeyScreen(initial=answers.get("api_keys")))
                 if result is BACK:
                     step = 0
                     continue
-                answers["key"] = result["key"]
-                if answers["key"]:
+                answers["api_keys"] = result
+                if answers["api_keys"]["key"]:
                     do_validate = await self.push_screen_wait(
                         OverwriteConfirmScreen(
-                            "Valider la clé via un appel API minimal (métadonnées, non facturé) ?"
+                            "Valider la clé Anthropic via un appel API minimal (métadonnées, non facturé) ?"
                         )
                     )
                     if do_validate:
-                        ok, msg = await asyncio.to_thread(check_api_key, answers["key"])
+                        ok, msg = await asyncio.to_thread(check_api_key, answers["api_keys"]["key"])
                         await self.push_screen_wait(InfoScreen(msg))
                 step = 2
 
@@ -1097,19 +1498,23 @@ class SetupWizard(App):
                 step = 4
 
             elif step == 4:
-                prompt_text = render_filter_prompt(answers["search_values"])
-                confirmed = await self.push_screen_wait(PromptPreviewScreen(prompt_text))
-                if confirmed is BACK:
+                # Le profil est collecté AVANT l'aperçu du prompt (étape 5) : l'aperçu
+                # substitue {profile} avec ces réponses, donc il doit les avoir en main.
+                result = await self.push_screen_wait(ProfileScreen(initial=answers.get("profile_values")))
+                if result is BACK:
                     step = 3
                     continue
+                answers["profile_values"] = result
                 step = 5
 
             elif step == 5:
-                result = await self.push_screen_wait(ProfileScreen(initial=answers.get("profile_values")))
-                if result is BACK:
+                prompt_text = render_filter_prompt_preview(
+                    answers["search_values"], answers.get("prefilter_values"), answers["profile_values"]
+                )
+                confirmed = await self.push_screen_wait(PromptPreviewScreen(prompt_text))
+                if confirmed is BACK:
                     step = 4
                     continue
-                answers["profile_values"] = result
                 step = 6
 
             elif step == 6:

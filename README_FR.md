@@ -32,6 +32,8 @@ Le premier lancement d'une autre commande (`jobsearch --scrape`, `--tui`, …) a
 
 > **Note :** ni `--setup` ni `setup.sh` ne remplacent jamais un fichier existant.
 
+> **Vérifications (sans appel API) :** `python -m jobsearch.config --check-prompts` échoue si un placeholder reste non résolu dans l'un des 3 prompts. `python -m jobsearch.config --check-wizard-defaults` simule deux profils `--setup` contrastés et échoue si une valeur censée être dérivée de tes réponses (intitulé du sujet, opposé du type de contrat, bonus de titre, ouverture de domaines…) retombe silencieusement sur celle livrée dans `config/search.example.yaml` (le sujet de l'auteur d'origine : stage tech, Pays-Bas).
+
 **Se lance depuis n'importe quel répertoire.** Deux racines distinctes : le code et ses ressources par défaut (prompts, templates HTML, polices) vivent dans le paquet (`jobsearch/resources/`, accédées via `importlib.resources` pour être trouvées quel que soit le mode d'installation) ; ta config personnelle (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) et tes données (`data/`, `output/`) vivent sous `JOBSEARCH_HOME`, qui vaut par défaut `~/.jobsearch/` — `jobsearch --applications` fonctionne de la même façon depuis le dépôt ou depuis n'importe où ailleurs. Surchargeable via la variable d'environnement `JOBSEARCH_HOME`. `python -m jobsearch.config` affiche les chemins effectifs.
 
 **Les prompts et templates HTML sont du contenu éditable, pas des ressources figées.** Les 3 prompts de scoring/génération (`config/prompts/*.txt`) et les 2 templates HTML (`config/templates/cover_letter.html`, `cv_en.html`) sont résolus en priorité depuis `JOBSEARCH_HOME/config/`, avec repli automatique sur les défauts du paquet si tu n'as encore rien personnalisé — aucune action requise sur une installation existante. Pour les personnaliser, copie les défauts dans `JOBSEARCH_HOME/config/prompts/` / `.../templates/` (ou lance `jobsearch --migrate --apply`, qui les y copie sans jamais écraser un fichier existant) puis édite les copies. Seules les polices restent toujours dans le paquet.
@@ -101,7 +103,7 @@ jobsearch --tui
 | **3 · Candidatures** | Liste des dossiers `output/candidatures/`, aperçu de la lettre/CV, **régénération des PDF après retouche manuelle**. |
 | **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Chaque statut a sa propre couleur : **envoyée** en jaune, **réponse reçue** en ambre, **entretien** en violet, **acceptée** en vert, **refusée** en rouge, **annulée** en gris foncé avec texte atténué. Le panneau de droite affiche la timeline individuelle de la candidature sous le curseur, reconstruite depuis son `history` (journal statut → date/heure), avec l'écart en jours entre chaque événement — les dates déduites des anciens champs ponctuels (avant l'existence de `history`) sont suffixées d'un `~`. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. Les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé ». Aussi : un rendu arborescent du parcours des candidatures (flux de statuts) et une répartition mensuelle des statuts atteints. `f` exporte le diagramme de Sankey correspondant en HTML autonome (`output/stats/flux.html`), ouvert dans le navigateur. |
-| **6 · Réglages** | Table listant tous les fichiers de config éditables — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml` — avec leur rôle, leur **état** (personnalisé / défaut du paquet / absent) et leur date de modification. `entrée` sur une ligne ouvre le fichier dans ton éditeur : pour un prompt/template encore au défaut du paquet, la copie vers la config utilisateur se fait **avant** l'ouverture, pour ne jamais éditer les fichiers livrés avec le paquet. Utilise `$VISUAL`/`$EDITOR` s'ils sont définis (en suspendant la TUI pour un éditeur terminal), sinon retombe sur `open`/`xdg-open`/`start` selon l'OS. `r` ensuite pour recharger — vide aussi le cache de `search.yaml`, un seuil de scoring modifié prend effet immédiatement. |
+| **6 · Réglages** | Table listant tous les fichiers de config éditables — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml` — avec leur rôle, leur **état** (personnalisé / défaut du paquet / absent) et leur date de modification. `entrée` sur une ligne ouvre le fichier dans ton éditeur : pour un prompt/template encore au défaut du paquet, la copie vers la config utilisateur se fait **avant** l'ouverture, pour ne jamais éditer les fichiers livrés avec le paquet. Utilise `$VISUAL`/`$EDITOR` s'ils sont définis (en suspendant la TUI pour un éditeur terminal), sinon retombe sur `open`/`xdg-open`/`start` selon l'OS. `r` ensuite pour recharger — vide aussi le cache de `search.yaml`, un seuil de scoring modifié prend effet immédiatement. Un bandeau sur cet onglet rappelle que le prompt de scoring et le pré-filtre de mots-clés livrés sont génériques — les personnaliser avec des exemples/mots-clés réels de ta recherche améliore nettement la précision du classement. |
 
 ### Offres en doublon
 
@@ -205,7 +207,18 @@ Ce que ça fait : tous les 2 jours à 8h00, le pipeline tourne et les résultats
 Pour un vrai changement de sujet (ex. passer d'une recherche de stage à une recherche de CDI), il faut aussi repartir d'un dossier `data/` vierge — le prompt de scoring livré (`filter.txt`) contient désormais des exemples génériques qui s'adaptent à n'importe quel sujet via les placeholders, donc rien à réécrire à la main pour démarrer. Pour un scoring plus fin, remplacer ces exemples par 8-14 offres réelles représentatives de ta recherche dans `config/prompts/filter.txt` (prend le pas sur le défaut du paquet). Voir la section « Changer de sujet de recherche » dans `CLAUDE.md` pour la procédure complète.
 
 ### Modifier ton profil de candidat
-Édite `config/profile.yaml` — ce fichier ne contient que ton identité (formation, compétences techniques, langues), indépendante du sujet de recherche.
+Édite `config/profile.yaml` — ce fichier ne contient que ton identité (formation, compétences, langues), indépendante du sujet de recherche. Les compétences sont des paires libres catégorie/détail sous `competences` (tu nommes toi-même tes catégories — pas forcément techniques) :
+```yaml
+competences:
+  Langages: [Python, C++]
+  Frameworks: [React, Django]
+```
+```yaml
+competences:
+  Domaines du droit: [Droit des affaires, Droit social]
+  Logiciels: [Lexis, Dalloz]
+```
+L'écran profil de l'assistant `jobsearch --setup` écrit ce format. L'ancien format à clés fixes (`competences_techniques` avec `langages_maitrise`/`langages_pratiques`/`frameworks`/`outils`/`domaines_ml`) reste lu par rétrocompatibilité si `competences` est absent.
 
 ### Ajouter des sources RSS
 Édite `config/sources.yaml` — ajoute un bloc :

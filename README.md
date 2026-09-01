@@ -32,6 +32,8 @@ Any first launch of another command (`jobsearch --scrape`, `--tui`, …) before 
 
 > **Note:** neither `--setup` nor `setup.sh` ever overwrites an existing file.
 
+> **Checks (no API call):** `python -m jobsearch.config --check-prompts` fails if a placeholder is left unresolved in any of the 3 prompts. `python -m jobsearch.config --check-wizard-defaults` simulates two contrasted `--setup` profiles and fails if a value that's supposed to be derived from your answers (subject label, opposite contract type, title bonus, domain openness…) silently falls back to the value shipped in `config/search.example.yaml` (the original author's subject: tech internship, Netherlands).
+
 **Runs from any directory.** Two separate roots: the code and its default resources (prompts, HTML templates, fonts) live in the package (`jobsearch/resources/`, accessed via `importlib.resources` so they're found however the package was installed); your personal config (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) and your data (`data/`, `output/`) live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` — `jobsearch --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m jobsearch.config` to display the effective paths.
 
 **Prompts and HTML templates are editable content, not fixed resources.** The 3 scoring/generation prompts (`config/prompts/*.txt`) and the 2 HTML templates (`config/templates/cover_letter.html`, `cv_en.html`) are resolved with priority given to `JOBSEARCH_HOME/config/`, falling back automatically to the package defaults if you haven't customized them — no action required on an existing install. To customize them, copy the defaults into `JOBSEARCH_HOME/config/prompts/` / `.../templates/` (or run `jobsearch --migrate --apply`, which copies them there without ever overwriting an existing file) and edit the copies. Only the fonts always stay in the package.
@@ -101,7 +103,7 @@ jobsearch --tui
 | **3 · Applications** | List of `output/candidatures/` directories, letter/CV preview, **PDF regeneration after manual editing**. |
 | **4 · Tracking** | Statuses and notes of applications (`applications.json`). Each status has its own colour: **sent** in yellow, **answered** in amber, **interview** in purple, **accepted** in green, **rejected** in red, **cancelled** in dark grey with dimmed text. The right-hand panel shows the individual timeline of the application under the cursor, rebuilt from its `history` (status → datetime log), with the day gap between each event — dates inferred from the old point-in-time fields (before `history` existed) are suffixed with `~`. |
 | **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. Cancelled applications are excluded from the rates and average response time, counted separately in a "Cancelled" category. Also: a tree view of the application journey (status flow) and a monthly breakdown of statuses reached. Press `f` to export the corresponding Sankey diagram as a self-contained HTML file (`output/stats/flux.html`), opened in your browser. |
-| **6 · Settings** | Table listing every editable config file — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml` — with its role, **state** (customized / package default / missing) and last-modified date. Press `enter` on a row to open it in your editor: for a prompt/template still at the package default, the default is copied to your user config **before** opening it, so you never edit the files shipped with the package. Uses `$VISUAL`/`$EDITOR` if set (suspending the TUI for a terminal editor), otherwise falls back to `open`/`xdg-open`/`start` depending on your OS. Press `r` afterwards to reload — this also clears the cached `search.yaml` values, so a changed scoring threshold takes effect immediately. |
+| **6 · Settings** | Table listing every editable config file — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml` — with its role, **state** (customized / package default / missing) and last-modified date. Press `enter` on a row to open it in your editor: for a prompt/template still at the package default, the default is copied to your user config **before** opening it, so you never edit the files shipped with the package. Uses `$VISUAL`/`$EDITOR` if set (suspending the TUI for a terminal editor), otherwise falls back to `open`/`xdg-open`/`start` depending on your OS. Press `r` afterwards to reload — this also clears the cached `search.yaml` values, so a changed scoring threshold takes effect immediately. A banner on this tab reminds you that the shipped scoring prompt and keyword pre-filter are generic — personalizing them with real examples/keywords from your own search meaningfully improves ranking accuracy. |
 
 ### Duplicate Offers
 
@@ -205,7 +207,18 @@ Edit `config/search.yaml` (see the commented `config/search.example.yaml`):
 To fully change subject (e.g. from internship search to full-time job search), also start from an empty `data/` folder — the packaged `filter.txt` scoring prompt now ships with generic examples that adapt to any subject via placeholders, so there is nothing to rewrite by hand to get started. For a sharper scoring signal, replace those examples with 8-14 real offers representative of your search in `config/prompts/filter.txt` (takes priority over the package default). See "Changer de sujet de recherche" in `CLAUDE.md` for the full process.
 
 ### Change Your Candidate Profile
-Edit `config/profile.yaml` — this only holds your identity (education, technical skills, languages), independent of the search subject.
+Edit `config/profile.yaml` — this only holds your identity (education, skills, languages), independent of the search subject. Skills are free-form category/detail pairs under `competences` (you name your own categories — not necessarily technical):
+```yaml
+competences:
+  Languages: [Python, C++]
+  Frameworks: [React, Django]
+```
+```yaml
+competences:
+  Areas of law: [Corporate law, Labor law]
+  Software: [Lexis, Dalloz]
+```
+The `jobsearch --setup` wizard's profile screen writes this format. The older fixed-key format (`competences_techniques` with `langages_maitrise`/`langages_pratiques`/`frameworks`/`outils`/`domaines_ml`) is still read for backward compatibility if `competences` is absent.
 
 ### Add RSS Sources
 Edit `config/sources.yaml` — add a block:

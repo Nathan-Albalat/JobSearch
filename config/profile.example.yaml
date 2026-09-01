@@ -1,34 +1,45 @@
 formation:
-  ecole: "Votre École d'Ingénieurs"
+  ecole: "Votre École"
   niveau: "Ingénieur 5ème année (INFO5)"
   specialite: "Informatique"
   diplome_prevu: "2027"
 
-competences_techniques:
-  langages_maitrise:
+# Mapping libre de catégories, choisies par vous — pas forcément techniques
+# (JobSearch est généraliste). Le nom de chaque catégorie est repris tel quel
+# dans le prompt de scoring. Deux exemples ci-dessous ; n'en garder qu'un jeu
+# cohérent avec votre profil.
+competences:
+  Langages:
     - Python
     - Java
     - C
-  langages_pratiques:
-    - JavaScript
-    - TypeScript
-    - SQL
-    - HTML
-    - CSS
-  frameworks:
+  Frameworks:
     - Spring
-  outils:
+  Outils:
     - Git
     - Docker
-    - PostgreSQL
     - Linux
-  domaines_ml:
-    - "Q-Learning"
-    - "Value Iteration"
-    - "Bandit Algorithm"
+  # Exemple pour un tout autre secteur (à remplacer, pas à cumuler) :
+  # Domaines du droit:
+  #   - Droit des affaires
+  #   - Droit social
+  # Logiciels:
+  #   - Lexis
+  #   - Dalloz
 
 langues:
   - langue: "Français"
     niveau: "Natif"
   - langue: "Anglais"
     niveau: "Courant (B2/C1)"
+
+# Ancien format, toujours lu par rétrocompatibilité si `competences`
+# (ci-dessus) est absent — ne pas cumuler les deux formats dans un même
+# fichier, seul `competences` prime s'il est présent :
+#
+# competences_techniques:
+#   langages_maitrise: [Python, Java, C]
+#   langages_pratiques: [JavaScript, TypeScript, SQL]
+#   frameworks: [Spring]
+#   outils: [Git, Docker, Linux]
+#   domaines_ml: []

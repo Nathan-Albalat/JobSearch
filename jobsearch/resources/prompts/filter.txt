@@ -9,36 +9,32 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 **8-10 — Très pertinent**
 - Le domaine correspond directement à l'un des domaines visés ({domaines})
 - La localisation est prioritaire ({pays_prioritaires})
-- La durée acceptée est ≥ {duree_min_semaines} semaines
+{duree_bullet_8_10}
 - Les compétences attendues chevauchent significativement celles du candidat
 - Aucune exigence d'expérience professionnelle préalable incompatible
 - C'est un {type_contrat} et non {type_contrat_negatif}
-- L'offre est rédigée en anglais
-- La maîtrise du Néerlandais n'est pas marqué comme nécessaire
-- C'est une offre de stage explicite, pas un emploi.
+- Aucune exigence de maîtrise d'une langue locale qui ne figure pas dans le profil du candidat
 
 **6-7 — Pertinent**
 - Domaine adjacent ou partiellement aligné (ex : un domaine proche mais distinct de ceux visés, ou une spécialisation voisine)
-- Localisation secondaire acceptable ou remote mondial
-- Durée légèrement inférieure à {duree_min_semaines} semaines mais négociable, OU durée non précisée
+{duree_bullet_6_7}
 - Compétences partiellement connues (1-2 requises sur 3-4 maîtrisées)
 
 **3-5 — Peu pertinent**
-- Domaine éloigné mais avec un lien avec les domaines visés (ex : une fonction support ou transverse touchant partiellement au domaine)
-- Localisation peu pratique (hors Europe, pas de remote)
-- Exige une expérience que le candidat n'a pas (ex : 2 ans requis)
+- Domaine éloigné mais avec un lien avec les domaines visés (ex : une fonction support, transverse ou générale touchant partiellement au domaine)
+- Localisation peu pratique (hors des zones prioritaires ou secondaires ({pays_prioritaires} / {pays_secondaires}), pas de remote)
+- Exige une expérience professionnelle sensiblement supérieure à celle du candidat
 - Compétences attendues inconnues mais apprenables rapidement
 
 **0-2 — Non pertinent**
 - Hors des domaines visés
-- Exigences incompatibles (master requis, expérience > 2 ans, pas de {type_contrat})
-- Durée trop courte (< 3 mois) et non négociable
+- Exigences incompatibles avec le profil du candidat (diplôme non détenu, expérience professionnelle largement supérieure, pas de {type_contrat})
+{duree_bullet_0_2}
 
 ## Règles de scoring additionnelles
-- Si l'offre ne mentionne pas de durée : ne pas pénaliser, supposer qu'elle est négociable
-- Si la localisation est "remote" sans restriction géographique : traiter comme neutre (ni bonus ni malus)
-- Si le titre contient l'un de ces mots : {titre_bonus} — c'est un bon signal, légèrement bonus
-- Si l'offre exige un niveau bac+5 ou un diplôme déjà obtenu : pénaliser si le candidat est encore en formation
+{duree_regle_defaut}
+{titre_bonus_regle}
+- Si l'offre exige un niveau de diplôme supérieur à celui indiqué dans le profil du candidat, ou un diplôme que le candidat n'a pas encore obtenu : pénaliser
 - Privilégier la substance de la description sur le titre seul
 
 ## Exemples de scoring (génériques)
@@ -53,15 +49,15 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
      modèles génériques. -->
 
 **Exemple A — Score 9/10**
-Une offre de {type_contrat} dont le domaine correspond directement à un des domaines visés par le candidat, située dans un pays prioritaire ({pays_prioritaires}), avec une durée compatible (≥ {duree_min_semaines} semaines) et des compétences attendues qui recouvrent largement celles du candidat, sans exigence d'expérience professionnelle préalable incompatible.
-→ Correspondance quasi parfaite sur les cinq critères du barème (domaine, géo, durée, compétences, type de contrat).
+Une offre de {type_contrat} dont le domaine correspond directement à un des domaines visés par le candidat, située dans un pays prioritaire ({pays_prioritaires}){duree_clause_exemple_a}, avec des compétences attendues qui recouvrent largement celles du candidat, sans exigence d'expérience professionnelle préalable incompatible.
+→ Correspondance quasi parfaite sur les critères déterminants du barème.
 
 **Exemple B — Score 6/10**
-Une offre dans un domaine adjacent (proche mais pas identique aux domaines visés), avec des compétences partiellement maîtrisées, une localisation secondaire acceptable ou un remote large, et une durée légèrement inférieure à {duree_min_semaines} semaines mais non explicitement bloquante.
+Une offre dans un domaine adjacent (proche mais pas identique aux domaines visés), avec des compétences partiellement maîtrisées, une localisation secondaire acceptable ou un remote large{duree_clause_exemple_b}.
 → Plusieurs critères favorables mais aucun n'est pleinement optimal — pertinent sans être idéal.
 
 **Exemple C — Score 4/10**
-Une offre avec un lien réel mais minoritaire avec les domaines visés (ex : support, analyse fonctionnelle, reporting), une localisation hors des zones prioritaires ou secondaires, ou une exigence d'expérience/diplôme au-delà du profil du candidat.
+Une offre avec un lien réel mais minoritaire avec les domaines visés (ex : une fonction support, transverse ou générale), une localisation hors des zones prioritaires ou secondaires, ou une exigence d'expérience/diplôme au-delà du profil du candidat.
 → Lien avec les domaines visés présent mais dilué par d'autres critères défavorables — score médian.
 
 **Exemple D — Score 1/10**

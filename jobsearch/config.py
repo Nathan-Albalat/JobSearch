@@ -485,8 +485,37 @@ class Search:
         domaines = self.get("domaines", default={}) or {}
         scoring = self.get("scoring", default={}) or {}
 
-        duree_texte = duree.get("texte", "") if duree.get("applicable", True) else ""
+        duree_applicable = duree.get("applicable", True)
+        duree_texte = duree.get("texte", "") if duree_applicable else ""
+        min_semaines = duree.get("min_semaines", "")
         geo_details = "\n".join(f"- {d}" for d in (geo.get("details") or []))
+
+        # Règles de durée du barème de scoring (filter.txt) : rendues vides quand
+        # `duree.applicable` est faux (ex: un CDI sans durée minimale) plutôt que
+        # codées en dur dans le prompt, pour que le barème s'adapte automatiquement
+        # si l'utilisateur bascule ce réglage plus tard depuis l'onglet Réglages.
+        # Les lignes `duree_bullet_*`/`duree_regle_defaut` occupent chacune une
+        # ligne entière du template et sont retirées en bloc par `fill_template`
+        # quand leur valeur est vide (pas de ligne creuse ni de tiret orphelin).
+        # Les `duree_clause_exemple_*` sont des fragments insérés au milieu d'une
+        # phrase et se réduisent simplement à une chaîne vide.
+        duree_bullet_8_10 = f"- La durée acceptée est ≥ {min_semaines} semaines" if duree_applicable else ""
+        duree_bullet_6_7 = (
+            f"- Durée légèrement inférieure à {min_semaines} semaines mais négociable, ou durée non précisée"
+            if duree_applicable else ""
+        )
+        duree_bullet_0_2 = (
+            f"- Durée trop courte (< {min_semaines} semaines) et non négociable" if duree_applicable else ""
+        )
+        duree_regle_defaut = (
+            "- Si l'offre ne mentionne pas de durée : ne pas pénaliser, supposer qu'elle est négociable"
+            if duree_applicable else ""
+        )
+        duree_clause_exemple_a = f", et une durée compatible (≥ {min_semaines} semaines)" if duree_applicable else ""
+        duree_clause_exemple_b = (
+            f", et une durée légèrement inférieure à {min_semaines} semaines mais non explicitement bloquante"
+            if duree_applicable else ""
+        )
 
         return {
             "sujet": sujet.get("label", ""),
@@ -509,7 +538,23 @@ class Search:
             "bonus": _joined(scoring.get("bonus")),
             "malus": _joined(scoring.get("malus")),
             "titre_bonus": _joined(scoring.get("titre_bonus")),
+            # Règle portée par une ligne entière : `scoring.titre_bonus` est vide pour
+            # bien des sujets (un CDI n'a pas de mot-clé de titre évident). Inline, la
+            # consigne rendait « Si le titre contient l'un de ces mots :  — c'est un bon
+            # signal », sans aucun mot — une instruction vide envoyée au modèle.
+            "titre_bonus_regle": (
+                f"- Si le titre contient l'un de ces mots : {_joined(scoring.get('titre_bonus'))}"
+                " — c'est un bon signal, légèrement bonus"
+                if _joined(scoring.get("titre_bonus"))
+                else ""
+            ),
             "criteres": self.render_criteria_text(),
+            "duree_bullet_8_10": duree_bullet_8_10,
+            "duree_bullet_6_7": duree_bullet_6_7,
+            "duree_bullet_0_2": duree_bullet_0_2,
+            "duree_regle_defaut": duree_regle_defaut,
+            "duree_clause_exemple_a": duree_clause_exemple_a,
+            "duree_clause_exemple_b": duree_clause_exemple_b,
         }
 
     def render_criteria_text(self) -> str:
@@ -540,7 +585,23 @@ def fill_template(template: str, values: dict, warn: bool = True) -> str:
     Un placeholder non fourni reste littéral (jamais d'exception) — un
     avertissement est émis une seule fois par run (mémorisé dans un `set`
     module-level) pour ne pas polluer la sortie sur des centaines d'offres.
+
+    Cas particulier : une ligne du template ne contenant *rien d'autre* qu'un
+    seul placeholder (ex: `{duree_bullet_8_10}` seul sur sa ligne) est retirée
+    en bloc quand la valeur fournie est une chaîne vide, plutôt que de laisser
+    une ligne blanche ou un tiret orphelin dans le prompt rendu (utilisé pour
+    neutraliser les règles de durée quand `duree.applicable` est faux).
     """
+    lines = template.split("\n")
+    kept_lines = []
+    for line in lines:
+        stripped = line.strip()
+        match = _PLACEHOLDER_RE.fullmatch(stripped)
+        if match and values.get(match.group(1)) == "":
+            continue
+        kept_lines.append(line)
+    template = "\n".join(kept_lines)
+
     for key, value in values.items():
         template = template.replace("{" + key + "}", str(value))
     if warn:
@@ -598,7 +659,23 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Affiche les chemins et valeurs effectives de configuration")
     parser.add_argument("--check-prompts", action="store_true", help="Rend les 3 prompts et échoue si un placeholder reste inconnu")
+    parser.add_argument(
+        "--check-wizard-defaults", action="store_true",
+        help="Simule 2 profils contrastés via `jobsearch --setup` et échoue si une clé "
+        "dérivée de l'entrée utilisateur retombe silencieusement sur search.example.yaml",
+    )
     args = parser.parse_args()
+
+    if args.check_wizard_defaults:
+        from jobsearch.wizard import check_wizard_defaults
+
+        anomalies = check_wizard_defaults()
+        if anomalies:
+            for a in anomalies:
+                print(f"ANOMALIE : {a}")
+            sys.exit(1)
+        print("OK : aucune valeur d'auteur retombée silencieusement dans search.yaml (2 profils simulés).")
+        sys.exit(0)
 
     if args.check_prompts:
         from jobsearch.filter import build_system_prompt, load_profile_text as _load_profile_text

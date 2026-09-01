@@ -13,6 +13,66 @@ from dotenv import load_dotenv
 from jobsearch.config import PATHS, Search, fill_template, get_search
 
 
+# Ancien format de `competences_techniques` (clés fixes, contexte informatique) —
+# conservé pour rétrocompatibilité : les profils existants (dont celui réellement
+# utilisé par l'auteur) reposent encore dessus. `render_competences_lines` bascule
+# vers ce format seulement si le nouveau (`competences`, mapping libre de
+# catégories) est absent.
+_LEGACY_COMPETENCES_LABELS = [
+    ("langages_maitrise", "Langages maîtrisés"),
+    ("langages_pratiques", "Langages pratiqués"),
+    ("frameworks", "Frameworks"),
+    ("outils", "Outils"),
+    ("domaines_ml", "Domaines ML pratiqués"),
+]
+
+
+def render_competences_lines(profile: dict) -> list[str]:
+    """Une ligne "Catégorie : item1, item2" par catégorie de compétences.
+
+    Nouveau format (généraliste, choisi librement par l'utilisateur à
+    l'installation) : `competences: {Catégorie: [items]}`. Ancien format
+    (clés fixes, hérité du sujet historique "stage tech") : toujours lu si
+    `competences` (nouveau) est absent — ne jamais lever d'exception sur
+    l'un ou l'autre.
+    """
+    competences = profile.get("competences")
+    if isinstance(competences, dict) and competences:
+        return [
+            f"{categorie} : {', '.join(items or [])}"
+            for categorie, items in competences.items()
+        ]
+    legacy = profile.get("competences_techniques", {}) or {}
+    return [
+        f"{label} : {', '.join(legacy.get(key, []) or [])}"
+        for key, label in _LEGACY_COMPETENCES_LABELS
+    ]
+
+
+def render_profile_text(profile: dict, search: Search) -> str:
+    """Corps commun à `load_profile_text` (lecture disque) et à l'aperçu du
+    prompt de l'assistant `--setup` (`jobsearch/wizard.py`, profil encore en
+    mémoire, pas encore écrit sur disque) — pas de lecture de fichier ici."""
+    formation = profile.get("formation", {})
+    langues = profile.get("langues", [])
+
+    lines = [
+        f"Formation : {formation.get('niveau', '')} — {formation.get('ecole', '')} "
+        f"({formation.get('specialite', '')}), diplôme prévu {formation.get('diplome_prevu', '')}",
+        search.render_criteria_text(),
+        f"Géographie : priorité {', '.join(search.get('geo', 'priorite', default=[]))} ; "
+        f"ensuite {', '.join(search.get('geo', 'secondaire', default=[]))}",
+        f"Domaines : {', '.join(search.get('domaines', 'liste', default=[]))} "
+        f"— {search.get('domaines', 'ouverture', default='')}",
+        *render_competences_lines(profile),
+        f"Langues : {', '.join(l['langue'] + ' (' + l.get('niveau', '') + ')' for l in langues)}",
+        f"Score minimum requis : {search.threshold}/10",
+        f"Bonus si : {', '.join(search.get('scoring', 'bonus', default=[]))}",
+        f"Pénalité si : {', '.join(search.get('scoring', 'malus', default=[]))}",
+    ]
+    return "\n".join(lines)
+
+
 def load_profile_text(config_dir: str, search: Search | None = None) -> str:
     path = os.path.join(config_dir, "profile.yaml")
     with open(path, "r", encoding="utf-8") as f:
@@ -28,29 +88,7 @@ def load_profile_text(config_dir: str, search: Search | None = None) -> str:
     if search is None:
         search = get_search(config_dir)
 
-    formation = profile.get("formation", {})
-    competences = profile.get("competences_techniques", {})
-    langues = profile.get("langues", [])
-
-    lines = [
-        f"Formation : {formation.get('niveau', '')} — {formation.get('ecole', '')} "
-        f"({formation.get('specialite', '')}), diplôme prévu {formation.get('diplome_prevu', '')}",
-        search.render_criteria_text(),
-        f"Géographie : priorité {', '.join(search.get('geo', 'priorite', default=[]))} ; "
-        f"ensuite {', '.join(search.get('geo', 'secondaire', default=[]))}",
-        f"Domaines : {', '.join(search.get('domaines', 'liste', default=[]))} "
-        f"— {search.get('domaines', 'ouverture', default='')}",
-        f"Langages maîtrisés : {', '.join(competences.get('langages_maitrise', []))}",
-        f"Langages pratiqués : {', '.join(competences.get('langages_pratiques', []))}",
-        f"Frameworks : {', '.join(competences.get('frameworks', []))}",
-        f"Outils : {', '.join(competences.get('outils', []))}",
-        f"Domaines ML pratiqués : {', '.join(competences.get('domaines_ml', []))}",
-        f"Langues : {', '.join(l['langue'] + ' (' + l.get('niveau', '') + ')' for l in langues)}",
-        f"Score minimum requis : {search.threshold}/10",
-        f"Bonus si : {', '.join(search.get('scoring', 'bonus', default=[]))}",
-        f"Pénalité si : {', '.join(search.get('scoring', 'malus', default=[]))}",
-    ]
-    return "\n".join(lines)
+    return render_profile_text(profile, search)
 
 
 def strip_html(html: str, max_chars: int = 2000) -> str:
@@ -283,6 +321,9 @@ def filter_all(
     total_cache_creation = 0
     total_cache_read = 0
 
+    if not os.path.isdir(offers_dir):
+        print("Aucune offre à filtrer (lance d'abord un scrape).")
+        return
     all_files = sorted(f for f in os.listdir(offers_dir) if f.endswith(".json"))
     pending = [
         f for f in all_files

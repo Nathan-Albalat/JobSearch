@@ -11,6 +11,10 @@ from jobsearch.tracker import render_tracking_section
 def load_filtered_offers(data_dir: str) -> list[dict]:
     offers_dir = os.path.join(data_dir, "offers")
     offers = []
+    # Après un `--setup` et avant le premier scrape, `data/offers/` n'existe pas
+    # encore : c'est un état normal (aucune offre collectée), pas une erreur.
+    if not os.path.isdir(offers_dir):
+        return offers
     for filename in os.listdir(offers_dir):
         if not filename.endswith(".json"):
             continue

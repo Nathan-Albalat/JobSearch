@@ -326,6 +326,10 @@ HELP_TEXT = """\
   recherche, profil, sources, prompts, templates, données du CV) avec
   leur état (personnalisé · défaut du paquet · absent) et leur date de
   modification.
+  Fortement recommandé : le prompt de scoring livré (config/prompts/filter.txt)
+  et le pré-filtre de mots-clés (search.yaml) sont génériques — les
+  personnaliser avec des exemples et mots-clés réels de ta recherche
+  améliore nettement la précision du classement des offres.
   [b #7aa2f7]↑ / ↓[/]   Naviguer
   [b #7aa2f7]entrée[/]  Ouvrir le fichier dans l'éditeur (copie d'abord le défaut du
              paquet vers la config utilisateur si besoin, avant édition)
@@ -672,9 +676,16 @@ class StageTUI(App):
                     yield Static("", id="stats-flow", classes="stats-section")
                     yield Static("", id="stats-flow-months", classes="stats-section")
             with TabPane("6 · Réglages", id="settings"):
-                with Horizontal():
-                    yield HighlightDataTable(id="settings-table", cursor_type="row")
-                    yield VerticalScroll(Static("", id="settings-detail-text"), id="settings-detail")
+                with Vertical():
+                    yield Static(
+                        "[b]Recommandé[/b] : personnalise le prompt de scoring (config/prompts/filter.txt) "
+                        "et le pré-filtre (search.yaml) avec des exemples et mots-clés réels de ta recherche — "
+                        "le barème livré est générique, un jeu d'exemples calibré donne un classement nettement plus précis.",
+                        id="settings-banner",
+                    )
+                    with Horizontal():
+                        yield HighlightDataTable(id="settings-table", cursor_type="row")
+                        yield VerticalScroll(Static("", id="settings-detail-text"), id="settings-detail")
         # Barre de statut + Footer regroupés dans un conteneur docké : deux widgets
         # `dock: bottom` frères se superposent sur la même ligne (l'un masque l'autre).
         with Vertical(id="bottom-bar"):
@@ -1811,7 +1822,14 @@ def _warn_if_empty_home() -> bool:
     """Garde-fou : n'affiche jamais silencieusement « 0 offre » si les données existent
     encore dans le dépôt (ancien emplacement) mais n'ont pas été copiées vers `JOBSEARCH_HOME`.
     Retourne True si la TUI doit s'arrêter avant de se lancer."""
-    from jobsearch.config import PACKAGE_ROOT, JOBSEARCH_HOME
+    from jobsearch.config import PACKAGE_ROOT, JOBSEARCH_HOME, JOBSEARCH_HOME_EXPLICIT
+
+    # Une racine choisie explicitement (`JOBSEARCH_HOME=…`) est un geste délibéré —
+    # bac à sable de test, seconde recherche… Les données restées dans le dépôt
+    # appartiennent à la racine PAR DÉFAUT : proposer de les y migrer n'aurait aucun
+    # sens ici, et bloquerait le lancement. Même règle que `_check_setup` (cli.py).
+    if JOBSEARCH_HOME_EXPLICIT:
+        return False
 
     home_offers = os.path.isdir(PATHS.offers_dir) and any(
         f.endswith(".json") for f in os.listdir(PATHS.offers_dir)

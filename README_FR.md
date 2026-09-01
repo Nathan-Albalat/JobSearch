@@ -18,6 +18,18 @@ pipx install git+https://github.com/<toi>/jobsearch
 pip install -e .
 ```
 
+Cette installation de base fonctionne sur n'importe quel Python récent (3.11+, y compris 3.12/3.13/3.14) et couvre toutes les sources sauf LinkedIn/Indeed. Ces deux-là passent par `python-jobspy`, qui est un extra **optionnel** :
+
+```bash
+# pipx, depuis une source git, avec l'extra jobspy, épinglé sur Python 3.11 :
+pipx install "jobsearch[jobspy] @ git+https://github.com/<toi>/jobsearch" --python python3.11
+
+# développement local, dans un venv Python 3.11 :
+pip install -e '.[jobspy]'
+```
+
+Pourquoi cet extra et la contrainte Python ≤ 3.11 : `python-jobspy` épingle `NUMPY==1.26.3`, qui n'a de wheels que jusqu'à Python 3.11. `pipx` utilise par défaut le Python le plus récent trouvé sur la machine — installer le paquet de base avec `python-jobspy` embarqué sur un Python plus récent (3.12+) ferait donc tenter à pip de **compiler** numpy depuis les sources, avec un échec sur une erreur cryptique `ModuleNotFoundError: No module named 'genapi'` qui ne mentionne ni jobspy ni la version de Python. Sortir `python-jobspy` en extra optionnel garde l'installation de base légère et compatible avec n'importe quelle version de Python ; seules les deux sources de type `jobspy` de `config/sources.yaml` (LinkedIn/Indeed) ont besoin de l'extra et d'un interpréteur 3.11. En son absence, ces deux sources sont simplement ignorées avec un message explicatif — ce n'est pas une erreur, le reste du scrape se déroule normalement.
+
 WeasyPrint (rendu PDF) requiert une dépendance système : Pango/Cairo — `brew install pango` sur macOS. C'est le principal écueil d'installation : sans elle, `--letter-pdf` / `--generate` échouent à l'étape PDF alors que le reste fonctionne.
 
 Dans les deux cas, tu obtiens une commande globale `jobsearch`. Lance ensuite l'assistant d'installation interactif :

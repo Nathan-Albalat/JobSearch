@@ -12,7 +12,14 @@ def fetch_jobspy(source: dict) -> list[dict]:
     try:
         from jobspy import scrape_jobs
     except ImportError:
-        print("    python-jobspy non installé (pip install python-jobspy) — source ignorée.")
+        print(
+            "    python-jobspy non installé — source ignorée (ce n'est pas une erreur).\n"
+            "    Pour l'activer (LinkedIn/Indeed), il faut un Python ≤ 3.11 : python-jobspy "
+            "épingle NUMPY==1.26.3, qui n'a de wheels que jusqu'à cette version — sur un Python "
+            "plus récent, l'installation tenterait de compiler numpy et échouerait.\n"
+            "      pipx : pipx install \"jobsearch[jobspy]\" --python python3.11\n"
+            "      venv local : pip install -e '.[jobspy]' (dans un venv Python 3.11)"
+        )
         return []
 
     from jobsearch.config import get_search

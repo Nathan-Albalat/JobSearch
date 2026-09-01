@@ -18,9 +18,11 @@ dependencies = [
     "python-dotenv",
     "jinja2",
     "weasyprint",
-    "python-jobspy",
     "textual",
 ]
+
+[project.optional-dependencies]
+jobspy = ["python-jobspy"]
 
 [project.scripts]
 jobsearch = "jobsearch.cli:main"

@@ -191,22 +191,26 @@ pipx install git+https://github.com/<toi>/jobsearch   # commande globale `jobsea
 pip install -e .
 ```
 
-Dépendance système requise par WeasyPrint (rendu PDF) : Pango/Cairo — `brew install pango` sur macOS.
+Cette installation de base fonctionne sur n'importe quel Python récent (3.11+, y compris 3.12/3.13/3.14).
+`python-jobspy` (LinkedIn/Indeed) est une **dépendance optionnelle** (`jobsearch[jobspy]`), pas dans les
+dépendances de base :
+
+```bash
+pipx install "jobsearch[jobspy] @ git+https://github.com/<toi>/jobsearch" --python python3.11
+# ou, en développement local :
+pip install -e '.[jobspy]'   # dans un venv Python 3.11
+```
 
 **Piège — version de Python imposée par `python-jobspy`.** Cette dépendance épingle `NUMPY==1.26.3`,
 qui n'a de wheels que jusqu'à Python 3.11. Or `pipx` utilise par défaut le Python le plus récent de la
-machine (3.14 chez l'auteur) : l'installation échoue alors en tentant de **compiler** numpy, sur une
-erreur `ModuleNotFoundError: No module named 'genapi'` qui ne mentionne ni jobspy ni la version de
-Python. Contournement immédiat :
-
-```bash
-pipx install -e . --python /chemin/vers/python3.11
-```
-
-Correctif de fond à faire : passer `python-jobspy` en **dépendance optionnelle** (`jobsearch[jobspy]`).
-`fetch_jobspy` (`jobsearch/scraper_jobspy.py`) intercepte déjà l'`ImportError` et ignore la source avec
-un message, donc le reste du pipeline fonctionne sans elle — l'installation de base deviendrait légère
-et compatible avec les Python récents, seuls LinkedIn/Indeed exigeant l'extra et un Python ≤ 3.11.
+machine (3.14 chez l'auteur) : embarquer `python-jobspy` dans les dépendances de base ferait donc échouer
+l'installation en tentant de **compiler** numpy, sur une erreur `ModuleNotFoundError: No module named
+'genapi'` qui ne mentionne ni jobspy ni la version de Python — indiagnosticable pour un utilisateur
+lambda. D'où l'extra optionnel : l'installation de base reste légère et compatible avec les Python
+récents, seuls LinkedIn/Indeed exigeant l'extra et un Python ≤ 3.11. `fetch_jobspy`
+(`jobsearch/scraper_jobspy.py`) intercepte l'`ImportError` et ignore la source avec un message
+explicatif (pas une erreur — le reste du scrape continue), indiquant la commande d'installation correcte
+selon le mode (pipx/venv local) et la contrainte de version.
 
 Premier lancement : `jobsearch --scrape` (ou toute autre commande) détecte l'absence de config dans
 `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut) et propose de lancer `setup.sh`, qui copie les fichiers

@@ -17,7 +17,6 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 
 **6-7 — Pertinent**
 - Domaine adjacent ou partiellement aligné (ex : un domaine proche mais distinct de ceux visés, ou une spécialisation voisine)
-- Localisation secondaire acceptable ou remote mondial
 {duree_bullet_6_7}
 - Compétences partiellement connues (1-2 requises sur 3-4 maîtrisées)
 
@@ -34,8 +33,7 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 
 ## Règles de scoring additionnelles
 {duree_regle_defaut}
-- Si la localisation est "remote" sans restriction géographique : traiter comme neutre (ni bonus ni malus)
-- Si le titre contient l'un de ces mots : {titre_bonus} — c'est un bon signal, légèrement bonus
+{titre_bonus_regle}
 - Si l'offre exige un niveau de diplôme supérieur à celui indiqué dans le profil du candidat, ou un diplôme que le candidat n'a pas encore obtenu : pénaliser
 - Privilégier la substance de la description sur le titre seul
 

@@ -538,16 +538,6 @@ class Search:
             "bonus": _joined(scoring.get("bonus")),
             "malus": _joined(scoring.get("malus")),
             "titre_bonus": _joined(scoring.get("titre_bonus")),
-            # Règle portée par une ligne entière : `scoring.titre_bonus` est vide pour
-            # bien des sujets (un CDI n'a pas de mot-clé de titre évident). Inline, la
-            # consigne rendait « Si le titre contient l'un de ces mots :  — c'est un bon
-            # signal », sans aucun mot — une instruction vide envoyée au modèle.
-            "titre_bonus_regle": (
-                f"- Si le titre contient l'un de ces mots : {_joined(scoring.get('titre_bonus'))}"
-                " — c'est un bon signal, légèrement bonus"
-                if _joined(scoring.get("titre_bonus"))
-                else ""
-            ),
             "criteres": self.render_criteria_text(),
             "duree_bullet_8_10": duree_bullet_8_10,
             "duree_bullet_6_7": duree_bullet_6_7,

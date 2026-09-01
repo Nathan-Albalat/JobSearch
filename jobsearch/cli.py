@@ -191,7 +191,7 @@ def cmd_letter_pdf(args) -> None:
 
 
 def main() -> None:
-    if "--migrate" not in sys.argv:
+    if "--migrate" not in sys.argv and "--setup" not in sys.argv:
         _check_setup()
 
     parser = argparse.ArgumentParser(
@@ -199,6 +199,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemples :
+  jobsearch --setup    # première installation : assistant interactif
   jobsearch --scrape
   jobsearch --scrape --threshold 7
   jobsearch --scrape --with fr   # inclut aussi les sources FR-only (HelloWork, WTTJ FR)
@@ -235,6 +236,11 @@ Exemples :
         "--letter-pdf",
         metavar="PATH",
         help="Rend une lettre en PDF : fichier .md/.txt (corps de lettre, avec --company/--title/--location/--dept) ou .json (format files/letter/)",
+    )
+    group.add_argument(
+        "--setup",
+        action="store_true",
+        help="Assistant d'installation interactif (clé API, sujet de recherche, prompt de scoring, profil)",
     )
     group.add_argument(
         "--tui",
@@ -347,6 +353,10 @@ Exemples :
 
     if args.letter_pdf:
         cmd_letter_pdf(args)
+    elif args.setup:
+        from jobsearch.wizard import run_setup  # import paresseux : textual requis seulement ici
+
+        run_setup()
     elif args.tui:
         from jobsearch.tui import run_tui  # import paresseux : textual requis seulement ici
         run_tui()

@@ -492,7 +492,7 @@ class ConfirmScreen(ModalScreen[bool]):
 
 
 class StageTUI(App):
-    TITLE = "Pipeline de stage"
+    TITLE = "JobSearch — pipeline de stage"
 
     CSS = """
     #detail {

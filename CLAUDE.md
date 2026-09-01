@@ -75,6 +75,7 @@ jobsearch/                [paquet installable — code + ressources par défaut,
   notifier.py           Envoi email optionnel (SMTP)
   duplicates.py         Marquage manuel des offres en doublon (champ `duplicate_of`) — stdlib uniquement
   migrate.py             `--migrate` : copie (jamais déplace) la config perso, les prompts/templates par défaut et les données du dépôt vers JOBSEARCH_HOME
+  wizard.py              `--setup` : assistant d'installation Textual autonome (6 étapes) — voir section dédiée ci-dessous
   resources/              [ressources du paquet, empaquetées via `importlib.resources` — défauts de référence]
     prompts/             Copie de référence des 3 prompts (mêmes fichiers que `config/prompts/` avant migration)
     templates/            Copie de référence des 2 templates HTML + fonts/*.ttf (polices DM Sans / DM Serif Display, non surchargeables)
@@ -114,6 +115,9 @@ files/
 ## Commandes principales
 
 ```bash
+# Assistant d'installation interactif (première utilisation)
+jobsearch --setup
+
 # Pipeline complet (scrape + filtre + rapport)
 jobsearch --scrape
 
@@ -269,6 +273,19 @@ Le pipeline se lance depuis **n'importe quel répertoire**, et sépare deux raci
 **Migration depuis une installation où tout vivait dans le dépôt** (avant cette séparation) : `jobsearch --migrate` (mode à blanc, n'écrit rien, affiche ce qui serait copié) puis `jobsearch --migrate --apply` (copie réelle, `jobsearch/migrate.py`). Ne fait QUE des copies — ne déplace ni ne supprime jamais les originaux du dépôt ; refuse d'écraser un fichier déjà présent à destination ; vérifie après coup le nombre de fichiers et les sommes de contrôle. Suppression des originaux laissée à l'utilisateur.
 
 **Garde-fou** : si `JOBSEARCH_HOME` est vide/absent alors que le dépôt contient encore des offres dans `data/offers/` (ancien emplacement, pas encore migré), `_check_setup` (`jobsearch/cli.py`) et `_warn_if_empty_home` (`jobsearch/tui.py`, appelé par `run_tui()`) affichent un message explicite pointant vers `--migrate` plutôt que de laisser croire à « 0 offre » / une perte de données.
+
+## Assistant d'installation (`jobsearch --setup`)
+
+App Textual autonome (`jobsearch/wizard.py`, distincte de `jobsearch/tui.py`) qui automatise le parcours que `setup.sh` se contentait de décrire (checklist de 5 fichiers à éditer à la main). Exemptée de `_check_setup` (même mécanisme que `--migrate`, `jobsearch/cli.py`), donc utilisable sur une racine `JOBSEARCH_HOME` vierge. 6 étapes, pilotées via `push_screen_wait` dans un worker (`@work` async) :
+
+1. **Présentation** — porte d'entrée `jobsearch --tui`, coût API (Haiku au filtrage, Sonnet à la génération).
+2. **Clé API** — `Input(password=True)`, écrite dans `PATHS.env_path`. Sautable (échap). Validation optionnelle par un appel minimal, non facturé (`client.models.list(limit=1)`), demandée par confirmation explicite avant tout appel réseau.
+3. **Sujet de recherche** — type de contrat, durée applicable ou non, pays prioritaires, domaines, seuil. Génère `search.yaml` en substituant ces valeurs directement dans le texte de `config/search.example.yaml` du dépôt (jamais `yaml.safe_dump`, qui détruirait ses ~200 lignes de commentaires) : `_set_scalar`/`_set_list` repèrent la section top-level (`sujet:`, `duree:`, `geo:`, `domaines:`, `scoring:`) puis remplacent la valeur scalaire ou le bloc de liste correspondant, sans toucher au reste du fichier (`details` géo, `bonus`/`malus`, `prefilter`…).
+4. **Prompt de scoring — non sautable.** Part du défaut générique livré (`jobsearch/resources/prompts/filter.txt`, déjà neutre depuis la neutralisation du prompt livré — squelette paramétré + 4 exemples décrivant la *forme* d'une offre pertinente plutôt que des offres réelles) et y insère un bloc littéral « Repères issus de la configuration initiale » avec le type de contrat et les domaines choisis à l'étape 3 (texte en clair, pas seulement des placeholders `{type_contrat}`/`{domaines}` — nécessaire pour qu'un `grep` sur le fichier généré retrouve les réponses de l'utilisateur). Écrit dans `JOBSEARCH_HOME/config/prompts/filter.txt`. Échap à cette étape annule tout l'assistant (rien n'est écrit) plutôt que de sauter l'étape.
+5. **Profil** — formulaire structuré (`config/profile.example.yaml` est plat, court, sans commentaires → seul fichier qui s'y prête), rendu via `yaml.safe_dump` (pas de commentaires à préserver ici).
+6. **Récapitulatif** — fichiers écrits/ignorés, ce qui reste optionnel (CV, templates, Adzuna, SMTP), commande suivante (`jobsearch --scrape` ou `jobsearch --tui`).
+
+**Aperçu puis confirmation** (motif repris de `jobsearch/migrate.py`) : `_write_with_confirm` n'écrit jamais par-dessus un fichier déjà présent sans un écran de confirmation dédié (`OverwriteConfirmScreen`) — relancer `--setup` sur une racine déjà configurée n'écrase donc rien silencieusement ; un refus d'écraser est consigné et affiché au récapitulatif.
 
 ## Configuration du candidat
 

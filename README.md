@@ -20,9 +20,17 @@ pip install -e .
 
 WeasyPrint (PDF rendering) requires a system dependency: Pango/Cairo — `brew install pango` on macOS. This is the main installation pitfall; without it, `--letter-pdf` / `--generate` will fail at the PDF step even though everything else works.
 
-Either way, you get a global `jobsearch` command. First launch (`jobsearch --scrape`, `--tui`, …) detects that `JOBSEARCH_HOME` (`~/.jobsearch/` by default) is missing its configuration and offers to run `setup.sh`, which copies `.example` files from the package to their final names there and tells you which ones to edit next.
+Either way, you get a global `jobsearch` command. Run the interactive setup wizard next:
 
-> **Note:** `setup.sh` never overwrites an existing file.
+```bash
+jobsearch --setup
+```
+
+It's a standalone Textual app that walks you through 6 steps: an overview of what the tool does, your Anthropic API key (optional at this stage, with an optional — confirmed before it runs — minimal validation call), your search subject (contract type, minimum duration, priority countries, domains, score threshold), the scoring prompt (**not skippable**: the package ships a generic, parameterized default with no real offer examples baked in — the wizard fills it in with your search subject so your very first scrape isn't scored against someone else's search, refinable later from the Settings tab of the TUI, key `6`), your candidate profile, and a recap of what's configured vs. still optional (CV data, templates, Adzuna, SMTP). It never overwrites a file that already exists without asking first, and shows you the content before writing anything — safe to re-run.
+
+Any first launch of another command (`jobsearch --scrape`, `--tui`, …) before running `--setup` detects that `JOBSEARCH_HOME` (`~/.jobsearch/` by default) is missing its configuration and offers to run `setup.sh` instead, a lighter fallback that copies `.example` files from the package to their final names and tells you which ones to edit by hand.
+
+> **Note:** neither `--setup` nor `setup.sh` ever overwrites an existing file.
 
 **Runs from any directory.** Two separate roots: the code and its default resources (prompts, HTML templates, fonts) live in the package (`jobsearch/resources/`, accessed via `importlib.resources` so they're found however the package was installed); your personal config (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) and your data (`data/`, `output/`) live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` — `jobsearch --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m jobsearch.config` to display the effective paths.
 
@@ -52,6 +60,7 @@ Step 4 — Application : Claude generates cover letter + adapted CV
 
 | Command | Description |
 |---|---|
+| `jobsearch --setup` | Interactive first-install wizard (API key, search subject, scoring prompt, profile) |
 | `jobsearch --scrape` | Run steps 1-2-3 (collect + filter + report) |
 | `jobsearch --scrape --threshold 7` | Same with relevance threshold of 7/10 |
 | `jobsearch --scrape --with fr` | Also include FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR), disabled by default |

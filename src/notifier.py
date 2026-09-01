@@ -5,6 +5,8 @@ from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
 
+from src.config import PATHS
+
 
 def _build_body(pertinent: list[dict], threshold: int, report_path: str) -> str:
     lines = [
@@ -47,7 +49,7 @@ def send_notification(
     report_path: str,
 ) -> bool:
     """Sends an email digest if NOTIFY_EMAIL is configured. Returns True if sent."""
-    load_dotenv()
+    load_dotenv(PATHS.env_path)
     recipient = os.environ.get("NOTIFY_EMAIL", "")
     if not recipient:
         return False

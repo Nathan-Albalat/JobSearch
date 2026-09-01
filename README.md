@@ -23,7 +23,9 @@ bash setup.sh
 > **Note:** `setup.sh` never overwrites an existing file.
 > The pipeline also suggests it automatically if a config file is missing at first launch.
 
-**Runs from any directory.** All paths (`config/`, `data/`, `cv_master/`, `output/`) resolve to an absolute location under `JOBSEARCH_HOME`, which defaults to the repository root — `python main.py --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m src.config` to display the effective paths.
+**Runs from any directory.** Two separate roots: the code and the resources shipped with it (prompts, HTML templates, fonts) live in the repository/package; your personal config (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) and your data (`data/`, `output/`) live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` — `python main.py --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m src.config` to display the effective paths.
+
+**Upgrading from an older version where data lived inside the repo?** Run `python main.py --migrate` for a dry run (prints what would be copied, writes nothing), then `python main.py --migrate --apply` to actually copy your config and data to `JOBSEARCH_HOME`. This only ever copies — it never moves or deletes the originals in the repository; the command verifies file counts and checksums after copying and tells you where the originals are so you can remove them yourself once you're satisfied.
 
 ---
 
@@ -54,6 +56,8 @@ Step 4 — Application : Claude generates cover letter + adapted CV
 | `python main.py --generate <offer_id>` | Generate application for a specific offer |
 | `python main.py --mark-duplicate <offer_id> <target_id>` | Mark `<offer_id>` as a manual duplicate of `<target_id>` (an offer you already applied to) |
 | `python main.py --unmark-duplicate <offer_id>` | Undo a duplicate marking |
+| `python main.py --migrate` | Dry run: shows what would be copied from the repo to `JOBSEARCH_HOME`, writes nothing |
+| `python main.py --migrate --apply` | Actually copies personal config and data to `JOBSEARCH_HOME` (never overwrites, never deletes the originals) |
 
 ### Modules in Isolation (for debugging)
 

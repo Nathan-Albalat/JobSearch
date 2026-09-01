@@ -255,7 +255,7 @@ def filter_all(
     threshold: int | None = None,
     use_batch: bool = True,
 ) -> tuple[int, int]:
-    load_dotenv()
+    load_dotenv(PATHS.env_path)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         print("Erreur : ANTHROPIC_API_KEY manquant dans .env", file=sys.stderr)
@@ -269,7 +269,7 @@ def filter_all(
     if threshold is None:
         threshold = search.threshold
 
-    template_path = os.path.join(config_dir, "prompts", "filter.txt")
+    template_path = PATHS.prompt("filter.txt")
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 

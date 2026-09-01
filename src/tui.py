@@ -1410,7 +1410,7 @@ class StageTUI(App):
 
             info = self._letter_offer_info(folder)
             render_letter_pdf(
-                os.path.join(PATHS.config_dir, "templates", "cover_letter.html"),
+                PATHS.template("cover_letter.html"),
                 load_cv_data(PATHS.cv_dir),
                 open(md, encoding="utf-8").read(),
                 output_path=os.path.join(folder, "lettre.pdf"),
@@ -1664,7 +1664,38 @@ class StageTUI(App):
         self.notify_status(f"Diagramme de flux exporté : {path}")
 
 
+def _warn_if_empty_home() -> bool:
+    """Garde-fou : n'affiche jamais silencieusement « 0 offre » si les données existent
+    encore dans le dépôt (ancien emplacement) mais n'ont pas été copiées vers `JOBSEARCH_HOME`.
+    Retourne True si la TUI doit s'arrêter avant de se lancer."""
+    from src.config import PACKAGE_ROOT, JOBSEARCH_HOME
+
+    home_offers = os.path.isdir(PATHS.offers_dir) and any(
+        f.endswith(".json") for f in os.listdir(PATHS.offers_dir)
+    )
+    if home_offers:
+        return False
+
+    legacy_offers_dir = os.path.join(PACKAGE_ROOT, "data", "offers")
+    legacy_count = (
+        len([f for f in os.listdir(legacy_offers_dir) if f.endswith(".json")])
+        if os.path.isdir(legacy_offers_dir)
+        else 0
+    )
+    if legacy_count:
+        print(f"⚠️  {JOBSEARCH_HOME} vide ou absent : 0 offre y serait affichée.")
+        print(f"    Le dépôt contient encore {legacy_count} offre(s) dans {legacy_offers_dir}")
+        print("    (données pas encore migrées vers le nouvel emplacement, pas perdues).")
+        print()
+        print("    Lance d'abord :  python main.py --migrate         (aperçu, n'écrit rien)")
+        print("    Puis :           python main.py --migrate --apply (copie réelle)")
+        return True
+    return False
+
+
 def run_tui() -> None:
+    if _warn_if_empty_home():
+        return
     StageTUI().run()
 
 

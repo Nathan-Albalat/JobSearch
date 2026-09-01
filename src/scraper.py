@@ -94,7 +94,7 @@ def normalize_api_json(job: dict, source: dict) -> dict:
 
 def fetch_adzuna(source: dict) -> list[dict]:
     """Interroge l'API Adzuna (clés ADZUNA_APP_ID / ADZUNA_APP_KEY dans .env)."""
-    load_dotenv()
+    load_dotenv(PATHS.env_path)
     app_id = os.environ.get("ADZUNA_APP_ID", "")
     app_key = os.environ.get("ADZUNA_APP_KEY", "")
     if not app_id or not app_key:

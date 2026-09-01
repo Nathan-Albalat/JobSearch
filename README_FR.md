@@ -23,7 +23,9 @@ bash setup.sh
 > **Note :** `setup.sh` ne remplace jamais un fichier existant.
 > Le pipeline le propose aussi automatiquement si un fichier de config est manquant au premier lancement.
 
-**Se lance depuis n'importe quel répertoire.** Tous les chemins (`config/`, `data/`, `cv_master/`, `output/`) se résolvent en absolu sous `JOBSEARCH_HOME`, qui vaut par défaut la racine du dépôt — `python main.py --applications` fonctionne de la même façon depuis le dépôt ou depuis n'importe où ailleurs. Surchargeable via la variable d'environnement `JOBSEARCH_HOME`. `python -m src.config` affiche les chemins effectifs.
+**Se lance depuis n'importe quel répertoire.** Deux racines distinctes : le code et les ressources livrées avec lui (prompts, templates HTML, polices) vivent dans le dépôt/paquet ; ta config personnelle (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) et tes données (`data/`, `output/`) vivent sous `JOBSEARCH_HOME`, qui vaut par défaut `~/.jobsearch/` — `python main.py --applications` fonctionne de la même façon depuis le dépôt ou depuis n'importe où ailleurs. Surchargeable via la variable d'environnement `JOBSEARCH_HOME`. `python -m src.config` affiche les chemins effectifs.
+
+**Tu mets à jour une installation antérieure où les données vivaient dans le dépôt ?** Lance `python main.py --migrate` pour un aperçu (affiche ce qui serait copié, n'écrit rien), puis `python main.py --migrate --apply` pour copier réellement ta config et tes données vers `JOBSEARCH_HOME`. Cette commande ne fait QUE des copies — elle ne déplace ni ne supprime jamais les originaux du dépôt ; elle vérifie le nombre de fichiers et les sommes de contrôle après la copie, et te dit où sont les originaux pour que tu puisses les supprimer toi-même une fois satisfait.
 
 ---
 
@@ -54,6 +56,8 @@ Le pipeline se déroule en 3 étapes :
 | `python main.py --generate <offer_id>` | Génère la candidature pour une offre spécifique |
 | `python main.py --mark-duplicate <offer_id> <target_id>` | Marque `<offer_id>` comme doublon manuel de `<target_id>` (une offre déjà candidatée) |
 | `python main.py --unmark-duplicate <offer_id>` | Annule un marquage de doublon |
+| `python main.py --migrate` | Aperçu à blanc : affiche ce qui serait copié du dépôt vers `JOBSEARCH_HOME`, n'écrit rien |
+| `python main.py --migrate --apply` | Copie réellement la config perso et les données vers `JOBSEARCH_HOME` (n'écrase jamais, ne supprime jamais les originaux) |
 
 ### Modules en isolation (pour debug)
 

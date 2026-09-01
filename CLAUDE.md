@@ -28,20 +28,28 @@ L'étape 4 est déclenchée manuellement : `python main.py --generate <offer_id>
 
 ## Structure des fichiers
 
+Deux racines distinctes (voir « Emplacement des données » ci-dessous) : `config/prompts/` et
+`config/templates/` sont des **ressources livrées avec le code**, elles restent dans le dépôt/paquet
+(`PACKAGE_ROOT`) quel que soit `JOBSEARCH_HOME`. Tout le reste ci-dessous (`config/search.yaml`,
+`config/profile.yaml`, `config/sources.yaml`, `config/.env`, `cv_master/`, `data/`, `output/`) est de la
+**config personnelle et des données**, résolues sous `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut). Les
+chemins présentés ici sont relatifs à leur racine respective pour rester lisibles.
+
 ```
-config/
+config/                  [PACKAGE_ROOT/config/prompts+templates ; le reste sous JOBSEARCH_HOME/config/]
   search.yaml            LE SUJET de recherche (stage/CDI, durée, géo, scoring, mots-clés, modèles…)
   profile.yaml           L'IDENTITÉ du candidat (formation, compétences, langues — indépendant du sujet)
   sources.yaml           Sources RSS et APIs à scraper
-  prompts/
+  .env                   Clés API et secrets (ANTHROPIC_API_KEY, ADZUNA_*, SMTP_*…)
+  prompts/               [ressource du paquet — PACKAGE_ROOT, jamais JOBSEARCH_HOME]
     filter.txt          Prompt de scoring Claude Haiku (barème + 14 exemples few-shot)
     cover_letter.txt    Prompt de génération de lettre de motivation
     cv_adapt.txt        Prompt d'adaptation du CV → sort un JSON structuré
-  templates/
+  templates/              [ressource du paquet — PACKAGE_ROOT, jamais JOBSEARCH_HOME]
     cv_en.html          Template HTML du CV (DM Sans / DM Serif, layout 2 colonnes)
     cover_letter.html   Template HTML de la lettre de motivation (même charte graphique)
 
-cv_master/
+cv_master/                [JOBSEARCH_HOME/cv_master/]
   cv_data.yaml          SOURCE DE VÉRITÉ pour le CV PDF (données structurées)
   cv_master.md          Résumé textuel du CV (utilisé par le prompt cover_letter)
 
@@ -61,13 +69,14 @@ src/
   manual.py             Mode manuel : extraction depuis HTML/URL + génération directe
   notifier.py           Envoi email optionnel (SMTP)
   duplicates.py         Marquage manuel des offres en doublon (champ `duplicate_of`) — stdlib uniquement
+  migrate.py             `--migrate` : copie (jamais déplace) la config perso et les données du dépôt vers JOBSEARCH_HOME
 
 scripts/
   test_api.py            Smoke-test de la clé API Anthropic (hors paquet src/)
 
-config/templates/fonts/  Polices locales DM Sans / DM Serif Display (.ttf) — PDF sans réseau
+config/templates/fonts/  Polices locales DM Sans / DM Serif Display (.ttf) — PDF sans réseau ; ressource du paquet (PACKAGE_ROOT)
 
-data/
+data/                     [JOBSEARCH_HOME/data/]
   offers/               Un fichier JSON par offre (avec filter_result après filtrage ; champ optionnel
                         `duplicate_of` : id de l'offre candidatée dont celle-ci est un doublon manuel,
                         posé/retiré via `src/duplicates.py`)
@@ -79,7 +88,7 @@ data/
   gen_queue.json         File de génération de l'onglet 2 de la TUI (persistée entre deux lancements)
   rapport_*.md          Rapports générés
 
-output/
+output/                   [JOBSEARCH_HOME/output/]
   candidatures/         Un dossier par candidature : lettre.md + lettre.pdf + cv_adapte.html + cv_adapte.pdf
   stats/
     flux.html            Export du diagramme de Sankey du flux de statuts (`f` dans l'onglet Stats de la TUI)
@@ -136,6 +145,10 @@ python main.py --tui
 # Suivi des candidatures
 python main.py --applications
 python main.py --mark <offer_id> sent --note "Candidature envoyée via le site"
+
+# Migration config perso + données du dépôt vers JOBSEARCH_HOME (copie uniquement, jamais destructif)
+python main.py --migrate            # aperçu à blanc, n'écrit rien
+python main.py --migrate --apply    # copie réelle, vérifie fichiers + sommes de contrôle après coup
 
 # Marquer une offre comme doublon manuel d'une candidature existante (voir section dédiée ci-dessous)
 python main.py --mark-duplicate <offer_id> <target_id>
@@ -202,15 +215,24 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 
 ## Emplacement des données (`JOBSEARCH_HOME`)
 
-Le pipeline se lance depuis **n'importe quel répertoire** : tous les chemins (`config/`, `data/`, `cv_master/`, `output/`) sont résolus en absolu par `src/config.py` (`PATHS`), depuis la racine `JOBSEARCH_HOME`. Par défaut, `JOBSEARCH_HOME` vaut la racine du dépôt (`PROJECT_ROOT`) — rien ne change pour un usage courant, `python main.py --applications` fonctionne aussi bien depuis `Stage/Script` que depuis `/tmp`. Surchargeable via la variable d'environnement `JOBSEARCH_HOME` (utile pour tester sur une copie isolée). Voir `python -m src.config` pour afficher les chemins effectifs.
+Le pipeline se lance depuis **n'importe quel répertoire**, et sépare deux racines résolues en absolu par `src/config.py` (`PATHS`) :
+
+- **`PACKAGE_ROOT`** (= racine du dépôt) : le code et les **ressources livrées avec lui** — `config/prompts/`, `config/templates/` (et les polices) — jamais rien d'autre. `PATHS.prompts_dir`/`PATHS.templates_dir` (et les raccourcis `PATHS.prompt()`/`PATHS.template()`) s'y résolvent toujours, quel que soit `JOBSEARCH_HOME`.
+- **`JOBSEARCH_HOME`** : la **configuration personnelle** (`config/search.yaml`, `config/profile.yaml`, `config/sources.yaml`, `config/.env`, `cv_master/cv_data.yaml`, `cv_master/cv_master.md`) et les **données** (`data/`, `output/`). Vaut par défaut `~/.jobsearch/` — surchargeable via la variable d'environnement `JOBSEARCH_HOME` (utile pour tester sur une copie isolée, ou repointer vers le dépôt avec `JOBSEARCH_HOME=.` pour un usage « tout-en-un » historique).
+
+`python main.py --applications` fonctionne aussi bien depuis `Stage/Script` que depuis `/tmp` : les chemins ne dépendent jamais du répertoire courant. Voir `python -m src.config` pour afficher les chemins effectifs.
+
+**Migration depuis une installation où tout vivait dans le dépôt** (avant cette séparation) : `python main.py --migrate` (mode à blanc, n'écrit rien, affiche ce qui serait copié) puis `python main.py --migrate --apply` (copie réelle, `src/migrate.py`). Ne fait QUE des copies — ne déplace ni ne supprime jamais les originaux du dépôt ; refuse d'écraser un fichier déjà présent à destination ; vérifie après coup le nombre de fichiers et les sommes de contrôle. Suppression des originaux laissée à l'utilisateur.
+
+**Garde-fou** : si `JOBSEARCH_HOME` est vide/absent alors que le dépôt contient encore des offres dans `data/offers/` (ancien emplacement, pas encore migré), `_check_setup` (`main.py`) et `_warn_if_empty_home` (`src/tui.py`, appelé par `run_tui()`) affichent un message explicite pointant vers `--migrate` plutôt que de laisser croire à « 0 offre » / une perte de données.
 
 ## Configuration du candidat
 
-Modifier `config/search.yaml` pour changer le **sujet** de recherche : type de contrat, durée, disponibilité, préférences géographiques, domaines, seuil de scoring, mots-clés du pré-filtre, modèles Claude et défauts des sources. Voir aussi `config/search.example.yaml` (commenté) et la section « Changer de sujet de recherche » ci-dessous.
+Modifier `config/search.yaml` (sous `JOBSEARCH_HOME`) pour changer le **sujet** de recherche : type de contrat, durée, disponibilité, préférences géographiques, domaines, seuil de scoring, mots-clés du pré-filtre, modèles Claude et défauts des sources. Voir aussi `config/search.example.yaml` (commenté, dans le dépôt) et la section « Changer de sujet de recherche » ci-dessous.
 
-Modifier `config/profile.yaml` pour changer l'**identité** du candidat : formation, compétences techniques, langues. Ce fichier ne dépend pas du sujet recherché.
+Modifier `config/profile.yaml` (sous `JOBSEARCH_HOME`) pour changer l'**identité** du candidat : formation, compétences techniques, langues. Ce fichier ne dépend pas du sujet recherché.
 
-Modifier `cv_master/cv_data.yaml` pour mettre à jour le CV :
+Modifier `cv_master/cv_data.yaml` (sous `JOBSEARCH_HOME`) pour mettre à jour le CV :
 - Expériences, projets, compétences, infos personnelles
 - Ce fichier alimente à la fois `files/cv/generate_cv.py` (CV master) et `src/generator.py` (CV adapté)
 

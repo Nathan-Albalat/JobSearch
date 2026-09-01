@@ -17,15 +17,28 @@ import yaml
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Racine des données/config du pipeline. Par défaut, la racine du dépôt (rien
-# ne bouge pour l'utilisateur actuel) — surchargeable pour lancer le pipeline
-# depuis n'importe quel répertoire, ou pointer vers un autre emplacement.
-JOBSEARCH_HOME = os.path.abspath(os.environ.get("JOBSEARCH_HOME") or PROJECT_ROOT)
+# Racine du paquet (code + ressources livrées : prompts, templates, polices).
+# Ces ressources voyagent avec le code, jamais avec les données utilisateur.
+PACKAGE_ROOT = PROJECT_ROOT
+
+# Racine des données/config PERSONNELLES de l'utilisateur (search.yaml,
+# profile.yaml, sources.yaml, cv_data.yaml, .env, data/, output/). Par défaut
+# `~/.jobsearch/` — surchargeable pour pointer vers un autre emplacement, ou
+# repointer vers le dépôt (`JOBSEARCH_HOME=.`) pour un usage "tout-en-un".
+JOBSEARCH_HOME = os.path.abspath(
+    os.environ.get("JOBSEARCH_HOME") or os.path.join(os.path.expanduser("~"), ".jobsearch")
+)
 
 
 @dataclass(frozen=True)
 class Paths:
-    """Regroupe les chemins du pipeline, résolus en absolu depuis `JOBSEARCH_HOME`."""
+    """Regroupe les chemins du pipeline.
+
+    Deux racines distinctes : les ressources livrées avec le code (prompts,
+    templates, polices) se résolvent depuis `PACKAGE_ROOT` et restent dans le
+    dépôt/paquet ; la configuration personnelle et les données se résolvent
+    depuis `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut).
+    """
 
     config_dir: str = os.path.join(JOBSEARCH_HOME, "config")
     data_dir: str = os.path.join(JOBSEARCH_HOME, "data")
@@ -34,15 +47,22 @@ class Paths:
 
     @property
     def prompts_dir(self) -> str:
-        return os.path.join(self.config_dir, "prompts")
+        """Ressource livrée avec le code — reste dans `PACKAGE_ROOT`, jamais dans `JOBSEARCH_HOME`."""
+        return os.path.join(PACKAGE_ROOT, "config", "prompts")
 
     @property
     def templates_dir(self) -> str:
-        return os.path.join(self.config_dir, "templates")
+        """Ressource livrée avec le code — reste dans `PACKAGE_ROOT`, jamais dans `JOBSEARCH_HOME`."""
+        return os.path.join(PACKAGE_ROOT, "config", "templates")
 
     @property
     def offers_dir(self) -> str:
         return os.path.join(self.data_dir, "offers")
+
+    @property
+    def env_path(self) -> str:
+        """Emplacement de `.env` — config personnelle, dans `JOBSEARCH_HOME/config/`."""
+        return os.path.join(self.config_dir, ".env")
 
     def prompt(self, name: str) -> str:
         return os.path.join(self.prompts_dir, name)
@@ -55,16 +75,8 @@ class Paths:
 
     def absolute(self) -> "Paths":
         """Conservée pour compatibilité (`src/cv_pdf.py`) — les chemins sont déjà
-        absolus depuis `JOBSEARCH_HOME`, donc simple no-op. Reste utile si un
-        `Paths` est un jour reconstruit avec des chemins relatifs explicites."""
-        if os.path.isabs(self.config_dir) and os.path.isabs(self.data_dir):
-            return self
-        return Paths(
-            config_dir=os.path.join(PROJECT_ROOT, self.config_dir),
-            data_dir=os.path.join(PROJECT_ROOT, self.data_dir),
-            cv_dir=os.path.join(PROJECT_ROOT, self.cv_dir),
-            output_dir=os.path.join(PROJECT_ROOT, self.output_dir),
-        )
+        absolus depuis `JOBSEARCH_HOME`/`PACKAGE_ROOT`, donc simple no-op."""
+        return self
 
 
 PATHS = Paths()
@@ -481,7 +493,7 @@ if __name__ == "__main__":
         print("OK : aucun placeholder inconnu dans les 3 prompts.")
         sys.exit(0)
 
-    print(f"PROJECT_ROOT   : {PROJECT_ROOT}")
+    print(f"PACKAGE_ROOT   : {PACKAGE_ROOT}")
     print(f"JOBSEARCH_HOME : {JOBSEARCH_HOME}")
     print(f"PATHS          : {PATHS}")
     search = get_search(PATHS.config_dir)

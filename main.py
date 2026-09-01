@@ -2,13 +2,13 @@ import argparse
 import os
 import sys
 
-from src.config import PROJECT_ROOT, PATHS
+from src.config import PACKAGE_ROOT, PROJECT_ROOT, PATHS
 
 
 def _check_setup() -> None:
-    """Détecte les fichiers de config manquants et propose de lancer setup.sh."""
+    """Détecte les fichiers de config manquants (dans `JOBSEARCH_HOME`) et propose de lancer setup.sh."""
     required = {
-        os.path.join(PROJECT_ROOT, ".env"): ".env.example",
+        PATHS.env_path: ".env.example",
         os.path.join(PATHS.config_dir, "profile.yaml"): "config/profile.example.yaml",
         os.path.join(PATHS.config_dir, "search.yaml"): "config/search.example.yaml",
         os.path.join(PATHS.cv_dir, "cv_data.yaml"): "cv_master/cv_data.example.yaml",
@@ -18,13 +18,36 @@ def _check_setup() -> None:
     if not missing:
         return
 
+    # Garde-fou : si le dépôt contient encore des données (ancien emplacement,
+    # avant migration), ne JAMAIS laisser croire à une installation vierge —
+    # proposer --migrate plutôt qu'un simple setup.sh qui ne créerait que des
+    # fichiers vides à côté de milliers d'offres déjà collectées.
+    legacy_offers_dir = os.path.join(PROJECT_ROOT, "data", "offers")
+    legacy_offers = (
+        [f for f in os.listdir(legacy_offers_dir) if f.endswith(".json")]
+        if os.path.isdir(legacy_offers_dir)
+        else []
+    )
+    if legacy_offers:
+        from src.config import JOBSEARCH_HOME
+
+        print(f"⚠️  {JOBSEARCH_HOME} vide ou absent — configuration manquante, MAIS le dépôt")
+        print(f"    contient encore {len(legacy_offers)} offre(s) dans {legacy_offers_dir}.")
+        print("    Ce sont probablement des données d'une installation antérieure à la séparation")
+        print("    code/données : elles n'ont pas disparu, elles n'ont simplement pas encore été")
+        print("    copiées vers leur nouvel emplacement.")
+        print()
+        print("    Lance d'abord :  python main.py --migrate         (aperçu, n'écrit rien)")
+        print("    Puis :           python main.py --migrate --apply (copie réelle)")
+        sys.exit(1)
+
     print("⚠️  Première utilisation détectée — fichiers de configuration manquants :")
     for f in missing:
         print(f"   • {f}  (exemple : {required[f]})")
     print()
     answer = input("Lancer setup.sh pour les créer automatiquement ? [O/n] ").strip().lower()
     if answer in ("", "o", "oui", "y", "yes"):
-        os.system(f"bash {os.path.join(PROJECT_ROOT, 'setup.sh')}")
+        os.system(f"bash {os.path.join(PACKAGE_ROOT, 'setup.sh')}")
         print()
         print("✓ Fichiers créés. Édite-les avant de relancer.")
         sys.exit(0)
@@ -155,7 +178,7 @@ def cmd_letter_pdf(args) -> None:
     cv_data = load_cv_data(PATHS.cv_dir)
     output = args.output or os.path.splitext(path)[0] + ".pdf"
     render_letter_pdf(
-        os.path.join(PATHS.config_dir, "templates", "cover_letter.html"),
+        PATHS.template("cover_letter.html"),
         cv_data,
         body,
         output_path=output,
@@ -168,7 +191,8 @@ def cmd_letter_pdf(args) -> None:
 
 
 def main() -> None:
-    _check_setup()
+    if "--migrate" not in sys.argv:
+        _check_setup()
 
     parser = argparse.ArgumentParser(
         description="Pipeline automatisé de recherche de stage",
@@ -238,6 +262,17 @@ Exemples :
         "--unmark-duplicate",
         metavar="OFFER_ID",
         help="Annule le marquage doublon de OFFER_ID",
+    )
+    group.add_argument(
+        "--migrate",
+        action="store_true",
+        help="Copie la config perso et les données du dépôt vers JOBSEARCH_HOME (~/.jobsearch/ par défaut). "
+             "Mode à blanc par défaut — ajouter --apply pour copier réellement. Ne supprime ni ne déplace jamais rien.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Avec --migrate : copie réellement (au lieu du mode à blanc)",
     )
     parser.add_argument(
         "--location",
@@ -349,6 +384,10 @@ Exemples :
         except ValueError as e:
             sys.exit(f"Erreur : {e}")
         print(f"Marquage doublon retiré pour {offer_id}.")
+    elif args.migrate:
+        from src.migrate import run_migrate
+
+        run_migrate(apply=args.apply)
 
 
 if __name__ == "__main__":

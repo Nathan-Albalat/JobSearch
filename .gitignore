@@ -1,3 +1,9 @@
+# NOTE (étape C) : la config perso et les données vivent désormais par défaut
+# dans ~/.jobsearch/ (JOBSEARCH_HOME), hors du dépôt — voir `python main.py --migrate`.
+# Les entrées ci-dessous restent en place tant que les originaux du dépôt n'ont
+# pas été supprimés manuellement par l'utilisateur (la migration ne fait que
+# copier, jamais déplacer) : elles évitent de committer par erreur ces fichiers
+# s'ils traînent encore ici.
 .env
 data/
 venv/

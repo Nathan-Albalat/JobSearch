@@ -119,7 +119,7 @@ def generate(
     output_dir: str = PATHS.output_dir,
     letter_only: bool = False,
 ) -> str:
-    load_dotenv()
+    load_dotenv(PATHS.env_path)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         print("Erreur : ANTHROPIC_API_KEY manquant dans .env", file=sys.stderr)
@@ -142,7 +142,7 @@ def generate(
     cv_data = load_cv_data(cv_dir)
     cv_summary = cv_data_to_text(cv_data)
 
-    with open(os.path.join(config_dir, "prompts", "cover_letter.txt"), "r", encoding="utf-8") as f:
+    with open(PATHS.prompt("cover_letter.txt"), "r", encoding="utf-8") as f:
         cover_template = f.read()
 
     folder = make_output_dir(offer, output_dir)
@@ -159,7 +159,7 @@ def generate(
     lettre_pdf_path = os.path.join(folder, "lettre.pdf")
     try:
         render_letter_pdf(
-            os.path.join(config_dir, "templates", "cover_letter.html"),
+            PATHS.template("cover_letter.html"),
             cv_data,
             lettre,
             output_path=lettre_pdf_path,
@@ -175,9 +175,9 @@ def generate(
         print("Mode lettre seule : CV adapté non généré (économie d'un appel API).")
     else:
         print(f"Génération du CV adapté...")
-        with open(os.path.join(config_dir, "prompts", "cv_adapt.txt"), "r", encoding="utf-8") as f:
+        with open(PATHS.prompt("cv_adapt.txt"), "r", encoding="utf-8") as f:
             cv_template = f.read()
-        template_path = os.path.join(config_dir, "templates", "cv_en.html")
+        template_path = PATHS.template("cv_en.html")
         adapted = generate_cv_adapt(client, offer, cv_data, cv_template, search=search)
 
         html_content = render_cv_html(template_path, cv_data, adapted)

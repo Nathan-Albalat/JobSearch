@@ -129,6 +129,83 @@ class Paths:
 PATHS = Paths()
 
 
+def settings_files() -> list[dict]:
+    """Liste des fichiers de configuration éditables, pour l'onglet Réglages de la TUI.
+
+    Chaque entrée porte : `role` (description humaine), `path` (chemin résolu — priorité
+    utilisateur, repli paquet pour prompts/templates), `kind` ("prompt"/"template"/"plain",
+    utile pour savoir s'il faut copier avant édition), `state` ("personnalisé" / "défaut du
+    paquet" / "absent") et `mtime` (datetime de dernière modification, ou None si absent).
+    """
+    import datetime as _dt
+
+    entries: list[dict] = []
+
+    def _mtime(path: str) -> _dt.datetime | None:
+        try:
+            return _dt.datetime.fromtimestamp(os.path.getmtime(path))
+        except OSError:
+            return None
+
+    def _plain(role: str, path: str) -> dict:
+        exists = os.path.exists(path)
+        return {
+            "role": role,
+            "path": path,
+            "kind": "plain",
+            "state": "personnalisé" if exists else "absent",
+            "mtime": _mtime(path) if exists else None,
+        }
+
+    entries.append(_plain("Clés API", PATHS.env_path))
+    entries.append(_plain("Sujet de recherche, filtres, scoring", os.path.join(PATHS.config_dir, "search.yaml")))
+    entries.append(_plain("Profil du candidat", os.path.join(PATHS.config_dir, "profile.yaml")))
+    entries.append(_plain("Sources à scraper", os.path.join(PATHS.config_dir, "sources.yaml")))
+
+    for name, role in (
+        ("filter.txt", "Prompt de scoring (filtrage)"),
+        ("cover_letter.txt", "Prompt de génération de lettre"),
+        ("cv_adapt.txt", "Prompt d'adaptation du CV"),
+    ):
+        user_path = os.path.join(PATHS.user_prompts_dir, name)
+        package_path = os.path.join(PATHS.package_prompts_dir, name)
+        path = PATHS.prompt(name)
+        is_user = os.path.exists(user_path)
+        is_package = os.path.exists(package_path)
+        state = "personnalisé" if is_user else ("défaut du paquet" if is_package else "absent")
+        entries.append({
+            "role": role,
+            "path": path,
+            "kind": "prompt",
+            "name": name,
+            "state": state,
+            "mtime": _mtime(path) if (is_user or is_package) else None,
+        })
+
+    for name, role in (
+        ("cv_en.html", "Template HTML du CV"),
+        ("cover_letter.html", "Template HTML de la lettre"),
+    ):
+        user_path = os.path.join(PATHS.user_templates_dir, name)
+        package_path = os.path.join(PATHS.package_templates_dir, name)
+        path = PATHS.template(name)
+        is_user = os.path.exists(user_path)
+        is_package = os.path.exists(package_path)
+        state = "personnalisé" if is_user else ("défaut du paquet" if is_package else "absent")
+        entries.append({
+            "role": role,
+            "path": path,
+            "kind": "template",
+            "name": name,
+            "state": state,
+            "mtime": _mtime(path) if (is_user or is_package) else None,
+        })
+
+    entries.append(_plain("Données du CV", os.path.join(PATHS.cv_dir, "cv_data.yaml")))
+
+    return entries
+
+
 # ---------------------------------------------------------------------------
 # Valeurs de recherche (config/search.yaml)
 # ---------------------------------------------------------------------------

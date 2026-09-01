@@ -83,7 +83,7 @@ jobsearch --tui
 
 **Important principle:** the TUI is just a **view** on the pipeline's files. It creates almost no hidden state: reports, `data/offers/*.json` and `data/applications.json` remain readable and editable without it. So you can resume work anytime (scrape Monday, review Wednesday) — the TUI re-reads current state on startup and with the `r` key. The one exception is the Generation tab's queue, persisted in `data/gen_queue.json`.
 
-### The 5 Tabs
+### The 6 Tabs
 
 | Tab | Role |
 |---|---|
@@ -92,6 +92,7 @@ jobsearch --tui
 | **3 · Applications** | List of `output/candidatures/` directories, letter/CV preview, **PDF regeneration after manual editing**. |
 | **4 · Tracking** | Statuses and notes of applications (`applications.json`). Each status has its own colour: **sent** in yellow, **answered** in amber, **interview** in purple, **accepted** in green, **rejected** in red, **cancelled** in dark grey with dimmed text. The right-hand panel shows the individual timeline of the application under the cursor, rebuilt from its `history` (status → datetime log), with the day gap between each event — dates inferred from the old point-in-time fields (before `history` existed) are suffixed with `~`. |
 | **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. Cancelled applications are excluded from the rates and average response time, counted separately in a "Cancelled" category. Also: a tree view of the application journey (status flow) and a monthly breakdown of statuses reached. Press `f` to export the corresponding Sankey diagram as a self-contained HTML file (`output/stats/flux.html`), opened in your browser. |
+| **6 · Settings** | Table listing every editable config file — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml` — with its role, **state** (customized / package default / missing) and last-modified date. Press `enter` on a row to open it in your editor: for a prompt/template still at the package default, the default is copied to your user config **before** opening it, so you never edit the files shipped with the package. Uses `$VISUAL`/`$EDITOR` if set (suspending the TUI for a terminal editor), otherwise falls back to `open`/`xdg-open`/`start` depending on your OS. Press `r` afterwards to reload — this also clears the cached `search.yaml` values, so a changed scoring threshold takes effect immediately. |
 
 ### Duplicate Offers
 
@@ -112,7 +113,7 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 
 | Context | Key | Action |
 |---|---|---|
-| Global | `1`/`2`/`3`/`4`/`5` | Switch tab (Offers / Generation / Applications / Tracking / Stats) |
+| Global | `1`/`2`/`3`/`4`/`5`/`6` | Switch tab (Offers / Generation / Applications / Tracking / Stats / Settings) |
 | Global | `r` | Reload data from disk |
 | Global | `S` / `s` | Run scrape + filter + report (spinner + current step + timer in the status bar). `s` only triggers the scrape outside the Tracking tab, where it means "sent"; `s` is an alias of `S` |
 | Global | `Ctrl+S` | Same, also including FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR) — equivalent to `jobsearch --scrape --with fr` |
@@ -141,6 +142,7 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
 | Stats | `f` | Export the status-flow Sankey diagram (HTML, opened in browser) |
+| Settings | `enter` | Open the config file under the cursor in your editor (`$VISUAL`/`$EDITOR`, else `open`/`xdg-open`/`start`) |
 
 ---
 

@@ -49,7 +49,7 @@ def send_notification(
     report_path: str,
 ) -> bool:
     """Sends an email digest if NOTIFY_EMAIL is configured. Returns True if sent."""
-    load_dotenv(PATHS.env_path)
+    load_dotenv(PATHS.env_path, override=True)
     recipient = os.environ.get("NOTIFY_EMAIL", "")
     if not recipient:
         return False

@@ -83,7 +83,7 @@ jobsearch --tui
 
 **Principe important :** la TUI n'est qu'une **vue** sur les fichiers du pipeline. Elle ne crée quasiment aucun état caché : les rapports, `data/offers/*.json` et `data/applications.json` restent lisibles et modifiables sans elle. Tu peux donc reprendre le travail n'importe quand (scraper lundi, faire la revue mercredi) — la TUI relit l'état courant à l'ouverture et avec la touche `r`. Seule exception : la file de l'onglet Génération, persistée dans `data/gen_queue.json`.
 
-### Les 5 onglets
+### Les 6 onglets
 
 | Onglet | Rôle |
 |---|---|
@@ -92,6 +92,7 @@ jobsearch --tui
 | **3 · Candidatures** | Liste des dossiers `output/candidatures/`, aperçu de la lettre/CV, **régénération des PDF après retouche manuelle**. |
 | **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Chaque statut a sa propre couleur : **envoyée** en jaune, **réponse reçue** en ambre, **entretien** en violet, **acceptée** en vert, **refusée** en rouge, **annulée** en gris foncé avec texte atténué. Le panneau de droite affiche la timeline individuelle de la candidature sous le curseur, reconstruite depuis son `history` (journal statut → date/heure), avec l'écart en jours entre chaque événement — les dates déduites des anciens champs ponctuels (avant l'existence de `history`) sont suffixées d'un `~`. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. Les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé ». Aussi : un rendu arborescent du parcours des candidatures (flux de statuts) et une répartition mensuelle des statuts atteints. `f` exporte le diagramme de Sankey correspondant en HTML autonome (`output/stats/flux.html`), ouvert dans le navigateur. |
+| **6 · Réglages** | Table listant tous les fichiers de config éditables — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml` — avec leur rôle, leur **état** (personnalisé / défaut du paquet / absent) et leur date de modification. `entrée` sur une ligne ouvre le fichier dans ton éditeur : pour un prompt/template encore au défaut du paquet, la copie vers la config utilisateur se fait **avant** l'ouverture, pour ne jamais éditer les fichiers livrés avec le paquet. Utilise `$VISUAL`/`$EDITOR` s'ils sont définis (en suspendant la TUI pour un éditeur terminal), sinon retombe sur `open`/`xdg-open`/`start` selon l'OS. `r` ensuite pour recharger — vide aussi le cache de `search.yaml`, un seuil de scoring modifié prend effet immédiatement. |
 
 ### Offres en doublon
 
@@ -112,7 +113,7 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 
 | Contexte | Touche | Action |
 |---|---|---|
-| Global | `1`/`2`/`3`/`4`/`5` | Changer d'onglet (Offres / Génération / Candidatures / Suivi / Stats) |
+| Global | `1`/`2`/`3`/`4`/`5`/`6` | Changer d'onglet (Offres / Génération / Candidatures / Suivi / Stats / Réglages) |
 | Global | `r` | Recharger les données depuis le disque |
 | Global | `S` / `s` | Lancer scrape + filtre + rapport (spinner + étape + chrono dans la barre de statut). `s` ne déclenche le scrape qu'en dehors de l'onglet Suivi, où il vaut « envoyée » ; `s` est un alias de `S` |
 | Global | `Ctrl+S` | Idem, en incluant aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR) — équivalent de `jobsearch --scrape --with fr` |
@@ -141,6 +142,7 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts (HTML, ouvert dans le navigateur) |
+| Réglages | `entrée` | Ouvrir le fichier de config sous le curseur dans l'éditeur (`$VISUAL`/`$EDITOR`, sinon `open`/`xdg-open`/`start`) |
 
 ---
 

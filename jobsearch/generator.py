@@ -119,7 +119,7 @@ def generate(
     output_dir: str = PATHS.output_dir,
     letter_only: bool = False,
 ) -> str:
-    load_dotenv(PATHS.env_path)
+    load_dotenv(PATHS.env_path, override=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         print("Erreur : ANTHROPIC_API_KEY manquant dans .env", file=sys.stderr)

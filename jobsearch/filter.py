@@ -255,7 +255,7 @@ def filter_all(
     threshold: int | None = None,
     use_batch: bool = True,
 ) -> tuple[int, int]:
-    load_dotenv(PATHS.env_path)
+    load_dotenv(PATHS.env_path, override=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         print("Erreur : ANTHROPIC_API_KEY manquant dans .env", file=sys.stderr)

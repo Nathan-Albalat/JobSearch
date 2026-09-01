@@ -12,6 +12,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import time
 import unicodedata
 import webbrowser
@@ -58,7 +59,7 @@ from jobsearch.tracker import (
     load_applications,
     mark_status,
 )
-from jobsearch.config import PATHS, get_search
+from jobsearch.config import PATHS, get_search, settings_files
 
 
 QUEUE_PATH = os.path.join(PATHS.data_dir, "gen_queue.json")
@@ -259,7 +260,7 @@ STATUS_KEYS = {
 
 HELP_TEXT = """\
 [b]Raccourcis globaux[/b]
-  [b #7aa2f7]1 / 2 / 3 / 4 / 5[/]  Onglets : Offres · Génération · Candidatures · Suivi · Stats
+  [b #7aa2f7]1 / 2 / 3 / 4 / 5 / 6[/]  Onglets : Offres · Génération · Candidatures · Suivi · Stats · Réglages
   [b #7aa2f7]r[/]                  Recharger les données depuis le disque
   [b #7aa2f7]S / s[/]              Lancer scrape + filtre + rapport (spinner dans la barre de statut)
                      (`s` = statut « envoyée » dans l'onglet Suivi uniquement)
@@ -319,6 +320,16 @@ HELP_TEXT = """\
   candidatures au cours du temps, parcours des candidatures
   (arbre de statuts) et répartition mensuelle des statuts atteints.
   [b #7aa2f7]f[/]  Exporter le diagramme de Sankey du flux (HTML, ouvert dans le navigateur)
+
+[b]Onglet Réglages[/b]
+  Liste les fichiers de configuration du pipeline (clés API, sujet de
+  recherche, profil, sources, prompts, templates, données du CV) avec
+  leur état (personnalisé · défaut du paquet · absent) et leur date de
+  modification.
+  [b #7aa2f7]↑ / ↓[/]   Naviguer
+  [b #7aa2f7]entrée[/]  Ouvrir le fichier dans l'éditeur (copie d'abord le défaut du
+             paquet vers la config utilisateur si besoin, avant édition)
+  [b #7aa2f7]r[/]       Recharger après édition (relit search.yaml, invalide le cache)
 """
 
 
@@ -497,6 +508,12 @@ class StageTUI(App):
         border-left: solid $accent;
         padding: 0 1;
     }
+    #settings-table { width: 60%; }
+    #settings-detail {
+        width: 40%;
+        border-left: solid $accent;
+        padding: 0 1;
+    }
     #stats-header { padding: 1 1 0 1; height: auto; }
     .stats-section {
         border: round $accent;
@@ -580,6 +597,7 @@ class StageTUI(App):
         Binding("3", "tab('letters')", show=False),
         Binding("4", "tab('track')", show=False),
         Binding("5", "tab('stats')", show=False),
+        Binding("6", "tab('settings')", show=False),
         Binding("e", "edit_letter", show=False),
         Binding("p", "render_letter_pdf", show=False),
         Binding("u", "render_cv_pdf", show=False),
@@ -653,6 +671,10 @@ class StageTUI(App):
                     yield Static("", id="stats-months", classes="stats-section")
                     yield Static("", id="stats-flow", classes="stats-section")
                     yield Static("", id="stats-flow-months", classes="stats-section")
+            with TabPane("6 · Réglages", id="settings"):
+                with Horizontal():
+                    yield HighlightDataTable(id="settings-table", cursor_type="row")
+                    yield VerticalScroll(Static("", id="settings-detail-text"), id="settings-detail")
         # Barre de statut + Footer regroupés dans un conteneur docké : deux widgets
         # `dock: bottom` frères se superposent sur la même ligne (l'un masque l'autre).
         with Vertical(id="bottom-bar"):
@@ -672,6 +694,9 @@ class StageTUI(App):
         self.query_one("#track-table", DataTable).add_columns(
             "ID", "Statut", "Entreprise", "Titre", "Générée", "Envoyée", "Notes"
         )
+        self.query_one("#settings-table", DataTable).add_columns(
+            "Rôle", "État", "Modifié le", "Emplacement"
+        )
         self.query_one("#stats-return").border_title = "Retour de candidature"
         self.query_one("#stats-loc").border_title = "Localisation des stages"
         self.query_one("#stats-months").border_title = "Candidatures au cours du temps"
@@ -682,6 +707,11 @@ class StageTUI(App):
     # ---------- data ----------
 
     def action_reload(self) -> None:
+        # Après une édition de search.yaml depuis l'onglet Réglages, `get_search()` (lru_cache)
+        # et `self.threshold` (capturé une fois dans __init__) doivent être invalidés ici :
+        # sinon `r` ne suffit pas à répercuter un seuil de scoring modifié.
+        get_search.cache_clear()
+        self.threshold = get_search().threshold
         self.offers = {o["id"]: o for o in load_filtered_offers(PATHS.data_dir)}
         self.selected &= set(self.offers)
         self._persist_queue()
@@ -690,6 +720,7 @@ class StageTUI(App):
         self.refresh_letters()
         self.refresh_track()
         self.refresh_stats()
+        self.refresh_settings()
         self.notify_status(f"{len(self.offers)} offre(s) filtrée(s) chargée(s).")
 
     def _generated_ids(self) -> set[str]:
@@ -977,6 +1008,114 @@ class StageTUI(App):
             parts += ["", "[dim]~ date déduite (heure inconnue, avant l'introduction de l'historique)[/dim]"]
         widget.update("\n".join(parts))
 
+    # ---------- onglet réglages ----------
+
+    def refresh_settings(self) -> None:
+        table = self.query_one("#settings-table", HighlightDataTable)
+        with self._keep_cursor("settings-table"):
+            table.clear()
+            for entry in settings_files():
+                state = entry["state"]
+                if state == "personnalisé":
+                    state_cell = "[green]personnalisé[/green]"
+                elif state == "défaut du paquet":
+                    state_cell = "[dim]défaut du paquet[/dim]"
+                else:
+                    state_cell = "[red]absent[/red]"
+                mtime = entry["mtime"]
+                mtime_cell = mtime.strftime("%Y-%m-%d %H:%M") if mtime else ""
+                table.add_row(
+                    *_cells([entry["role"], state_cell, mtime_cell, entry["path"]]),
+                    key=entry["path"],
+                )
+        self.update_settings_detail()
+
+    def update_settings_detail(self) -> None:
+        widget = self.query_one("#settings-detail-text", Static)
+        path = self._current_row_key("settings-table")
+        entry = next((e for e in settings_files() if e["path"] == path), None)
+        if not entry:
+            widget.update("")
+            return
+        parts = [
+            f"[b]{entry['role']}[/b]",
+            f"[dim]{entry['path']}[/dim]",
+            "",
+            f"État : {entry['state']}",
+        ]
+        if entry["mtime"]:
+            parts.append(f"Modifié le : {entry['mtime'].strftime('%Y-%m-%d %H:%M')}")
+        parts += ["", "[dim]entrée : ouvrir dans l'éditeur[/dim]"]
+        widget.update("\n".join(parts))
+
+    def action_edit_setting(self) -> None:
+        if self._active_tab() != "settings":
+            return
+        path = self._current_row_key("settings-table")
+        if not path:
+            return
+        entry = next((e for e in settings_files() if e["path"] == path), None)
+        if entry is None:
+            return
+
+        target = entry["path"]
+        # Piège n°2 : `PATHS.prompt()`/`PATHS.template()` peuvent renvoyer un chemin DANS
+        # le paquet (défaut livré). Éditer ce chemin directement modifierait les défauts
+        # livrés au lieu de la config personnelle — on copie d'abord vers l'emplacement
+        # utilisateur si la copie personnalisée n'existe pas encore, puis on édite la copie.
+        if entry["kind"] == "prompt" and entry["state"] != "personnalisé" and os.path.exists(target):
+            user_dir = PATHS.user_prompts_dir
+            os.makedirs(user_dir, exist_ok=True)
+            user_path = os.path.join(user_dir, entry["name"])
+            if not os.path.exists(user_path):
+                import shutil
+
+                shutil.copyfile(target, user_path)
+            target = user_path
+        elif entry["kind"] == "template" and entry["state"] != "personnalisé" and os.path.exists(target):
+            user_dir = PATHS.user_templates_dir
+            os.makedirs(user_dir, exist_ok=True)
+            user_path = os.path.join(user_dir, entry["name"])
+            if not os.path.exists(user_path):
+                import shutil
+
+                shutil.copyfile(target, user_path)
+            target = user_path
+        elif not os.path.exists(target):
+            # Fichier "plain" absent (ex. .env jamais créé) : on crée un fichier vide
+            # pour que l'éditeur ait quelque chose à ouvrir.
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            open(target, "a", encoding="utf-8").close()
+
+        self._open_in_editor(target)
+        self.notify_status(f"{os.path.basename(target)} ouvert dans l'éditeur — `r` pour recharger après édition.")
+        self.refresh_settings()
+
+    def _open_in_editor(self, path: str) -> None:
+        """Ouvre `path` dans l'éditeur — portable, contrairement à l'ancien `open` figé macOS.
+
+        Priorité à $VISUAL puis $EDITOR (convention Unix). S'ils sont définis, on suppose
+        un éditeur terminal (vim, nano…) et on suspend la TUI (`App.suspend()`, Textual
+        8.x) le temps de son exécution — sinon il écrit par-dessus l'affichage Textual et
+        le corrompt. Sans $VISUAL/$EDITOR, on retombe sur l'ouverture GUI non bloquante
+        selon la plateforme (`open` macOS / `xdg-open` Linux / `start` Windows).
+        """
+        import shlex
+
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+        if editor:
+            cmd = shlex.split(editor) + [path]
+            with self.suspend():
+                subprocess.run(cmd, check=False)
+            return
+
+        if sys.platform == "darwin":
+            subprocess.run(["open", path], check=False)
+        elif sys.platform.startswith("win"):
+            os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.run(["xdg-open", path], check=False)
+
     def refresh_stats(self) -> None:
         stats = compute_stats(PATHS.data_dir)
         header = self.query_one("#stats-header", Static)
@@ -1171,10 +1310,14 @@ class StageTUI(App):
             self.update_letter_preview()
         elif event.data_table.id == "track-table":
             self.update_track_detail()
+        elif event.data_table.id == "settings-table":
+            self.update_settings_detail()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "letters-table":
             self.action_toggle_preview()
+        elif event.data_table.id == "settings-table":
+            self.action_edit_setting()
 
     # ---------- actions ----------
 

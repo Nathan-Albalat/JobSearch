@@ -143,6 +143,92 @@ def render_scoring_bonus(values: dict) -> list[str]:
     return bonus
 
 
+def load_prefilter_presets() -> dict:
+    """Jeux de mots-clés du pré-filtre par secteur, livrés avec le paquet
+    (`jobsearch/resources/prefilter_presets.yaml`) — jamais ceux de
+    l'utilisateur (`~/.jobsearch/`, non lu ici)."""
+    with open(PATHS.prefilter_presets_path, encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+# Mots-clés du groupe `contrat` du pré-filtre, dérivés du type de contrat
+# choisi à l'étape « sujet » — indépendant du secteur (preset ou saisie
+# libre) choisi à l'étape « pré-filtre ». Recherche par sous-chaîne du type de
+# contrat saisi (ex: "stage" matche "stage" et "stage de fin d'études").
+_CONTRAT_KEYWORDS = {
+    "stage": ["stage", "internship", "intern", "werkstudent"],
+    "alternance": ["alternance", "apprentissage", "apprenticeship"],
+    "cdi": ["cdi", "permanent", "full-time", "full time"],
+    "cdd": ["cdd", "temporary", "fixed-term", "fixed term"],
+    "freelance": ["freelance", "contractor", "independent"],
+}
+
+
+def derive_contrat_keywords(type_contrat: str) -> list[str]:
+    """Dérive le groupe `contrat` du pré-filtre depuis le type de contrat
+    choisi — c'est le levier n°1 du pivot vers un autre type de contrat
+    (voir search.example.yaml)."""
+    key = (type_contrat or "").strip().lower()
+    for name, kws in _CONTRAT_KEYWORDS.items():
+        if name in key:
+            return kws
+    return [key] if key else []
+
+
+# Aucun secteur pré-sélectionné : JobSearch est généraliste, et pré-cocher
+# « informatique » réintroduirait en silence le biais que les presets existent
+# pour supprimer — un juriste repartirait avec des mots-clés de développeur et
+# obtiendrait zéro offre sans comprendre pourquoi. Le secteur est donc un choix
+# explicite de l'utilisateur.
+PREFILTER_DEFAULTS = {
+    "preset": "",
+    "custom_label": "",
+    "custom_keywords_raw": "",
+}
+
+
+def render_prefilter_keywords(prefilter_values: dict, search_values: dict) -> dict[str, list[str]]:
+    """Groupes de mots-clés du pré-filtre — soit le preset sectoriel choisi,
+    soit une saisie libre, complétés du groupe `contrat` dérivé du type de
+    contrat. Jamais les 83 mots-clés informatiques comme défaut universel :
+    le preset informatique n'est retenu que si explicitement choisi."""
+    # Pas de repli sur "informatique" : ce serait réintroduire en silence le biais
+    # que ce module existe pour supprimer. Sans preset explicite, on ne pose aucun
+    # mot-clé sectoriel — seul le groupe `contrat` (dérivé plus bas) est écrit.
+    preset_name = (prefilter_values or {}).get("preset", "")
+    if preset_name in ("", "libre"):
+        groups: dict[str, list[str]] = {
+            "mots_cles": parse_csv((prefilter_values or {}).get("custom_keywords_raw", ""))
+        }
+        if not groups["mots_cles"]:
+            groups = {}
+    else:
+        presets = load_prefilter_presets()
+        preset = presets.get(preset_name) or presets.get("informatique") or {}
+        groups = {k: list(v) for k, v in (preset.get("keywords") or {}).items()}
+    groups["contrat"] = derive_contrat_keywords(search_values.get("type_contrat", ""))
+    return groups
+
+
+def render_expertise_recruteur(prefilter_values: dict, search_values: dict) -> str:
+    """Dérivé du secteur choisi à l'étape « pré-filtre » (preset ou saisie
+    libre) et du type de contrat — jamais « informatique » par défaut."""
+    # « les {type_contrat} » attend un pluriel : `search.yaml` stocke le singulier
+    # (« stage », « CDI »). On accorde, sauf pour les sigles déjà invariables.
+    type_contrat = search_values.get("type_contrat") or "stage"
+    if type_contrat and type_contrat.islower() and not type_contrat.endswith("s"):
+        type_contrat = f"{type_contrat}s"
+    preset_name = (prefilter_values or {}).get("preset", "")
+    if preset_name in ("", "libre"):
+        secteur = ((prefilter_values or {}).get("custom_label") or "").strip()
+        # Sans secteur nommé, on reste neutre plutôt que d'écrire « en ce secteur ».
+        return f"spécialisé dans les {type_contrat} en {secteur}" if secteur else f"spécialisé dans les {type_contrat}"
+    presets = load_prefilter_presets()
+    preset = presets.get(preset_name) or presets.get("informatique") or {}
+    template = preset.get("expertise_recruteur", "spécialisé dans les {type_contrat}")
+    return template.format(type_contrat=type_contrat)
+
+
 def render_scoring_malus(values: dict) -> list[str]:
     """Dérivé du type de contrat (et, si applicable, de la durée minimale)
     choisis à l'étape « sujet »."""
@@ -220,7 +306,10 @@ def _set_list(text: str, section: str, key: str, items: list[str]) -> str:
     if span is None:
         return text
     start, end = span
-    key_pat = re.compile(rf"^(\s*){re.escape(key)}:\s*$")
+    # Deux formes possibles pour la ligne de la clé : `key:` ouvrant un bloc
+    # indenté, ou `key: []` (mapping/liste vide en ligne — forme des
+    # `.example.yaml` génériques, ex: `domaines.liste: []`).
+    key_pat = re.compile(rf"^(\s*){re.escape(key)}:\s*(?:\[\]\s*)?(?:#.*)?$")
     for i in range(start + 1, end):
         m = key_pat.match(lines[i])
         if not m:
@@ -231,6 +320,7 @@ def _set_list(text: str, section: str, key: str, items: list[str]) -> str:
         while j < end and lines[j].startswith(item_indent + "-"):
             j += 1
         if items:
+            lines[i] = f"{indent}{key}:"
             new_items = [f"{item_indent}- {_yaml_str(it)}" for it in items]
             lines[i + 1:j] = new_items
         else:
@@ -240,7 +330,48 @@ def _set_list(text: str, section: str, key: str, items: list[str]) -> str:
     return "\n".join(lines)
 
 
-def render_search_yaml(values: dict) -> str:
+def _set_prefilter_keywords(text: str, groups: dict[str, list[str]]) -> str:
+    """Remplace intégralement le bloc `prefilter.keywords` (un niveau de nom
+    de groupe de plus que `_set_list`, et éventuellement écrit comme un
+    mapping vide `{}` dans le `.example.yaml` générique) par les groupes
+    choisis à l'étape « pré-filtre » — jamais les mots-clés informatiques de
+    l'exemple livré avec le paquet."""
+    lines = text.split("\n")
+    span = _section_span(lines, "prefilter")
+    if span is None:
+        return text
+    start, end = span
+    # Deux formes possibles pour la ligne `keywords` : un mapping vide en
+    # ligne (`keywords: {}`, forme du `.example.yaml` générique) ou une clé
+    # ouvrant un bloc indenté (`keywords:`, forme déjà pivotée par un run
+    # précédent de l'assistant).
+    key_pat = re.compile(r"^(\s*)keywords:\s*(?:\{\}\s*)?(?:#.*)?$")
+    for i in range(start + 1, end):
+        m = key_pat.match(lines[i])
+        if not m:
+            continue
+        indent = m.group(1)
+        sub_indent = indent + "  "
+        item_indent = sub_indent + "  "
+        j = i + 1
+        while j < end and lines[j].startswith(sub_indent):
+            j += 1
+        new_block: list[str] = []
+        for group_name, items in groups.items():
+            if not items:
+                continue
+            new_block.append(f"{sub_indent}{group_name}:")
+            new_block.extend(f"{item_indent}- {_yaml_str(it)}" for it in items)
+        if new_block:
+            lines[i] = f"{indent}keywords:"
+        else:
+            lines[i] = f"{indent}keywords: {{}}"
+        lines[i + 1:j] = new_block
+        break
+    return "\n".join(lines)
+
+
+def render_search_yaml(values: dict, prefilter_values: dict | None = None) -> str:
     """Génère `search.yaml` en substituant les valeurs de l'assistant dans le
     `.example.yaml` du dépôt — préserve les ~200 lignes de commentaires
     d'origine (jamais de `yaml.safe_dump`, qui les détruirait)."""
@@ -252,12 +383,18 @@ def render_search_yaml(values: dict) -> str:
         text = (
             "# search.yaml — généré par jobsearch --setup (search.example.yaml introuvable,\n"
             "# les clés absentes retombent sur les valeurs par défaut de jobsearch/config.py).\n"
-            "sujet:\n  type_contrat: \"stage\"\nduree:\n  applicable: true\n"
+            "sujet:\n  type_contrat: \"stage\"\n  expertise_recruteur: \"\"\nduree:\n  applicable: true\n"
             "  min_semaines: 22\n  texte: \"22 semaines minimum\"\n"
             "geo:\n  priorite: []\n  notes: \"\"\ndomaines:\n  liste: []\nscoring:\n  seuil: 6\n"
+            "prefilter:\n  enabled: true\n  keywords:\n  exclude_keywords: []\n"
         )
 
     text = _set_scalar(text, "sujet", "type_contrat", _yaml_str(values["type_contrat"]))
+    prefilter_values = prefilter_values or PREFILTER_DEFAULTS
+    text = _set_scalar(
+        text, "sujet", "expertise_recruteur",
+        _yaml_str(render_expertise_recruteur(prefilter_values, values)),
+    )
     text = _set_scalar(text, "duree", "applicable", "true" if values["duree_applicable"] else "false")
     if values["duree_applicable"]:
         text = _set_scalar(text, "duree", "min_semaines", str(values["duree_semaines"]))
@@ -286,6 +423,7 @@ def render_search_yaml(values: dict) -> str:
     text = _set_scalar(text, "scoring", "seuil", str(values["seuil"]))
     text = _set_list(text, "scoring", "bonus", render_scoring_bonus(values))
     text = _set_list(text, "scoring", "malus", render_scoring_malus(values))
+    text = _set_prefilter_keywords(text, render_prefilter_keywords(prefilter_values, values))
     return text
 
 
@@ -486,7 +624,7 @@ SEARCH_DEFAULTS = {
     "duree_applicable": True,
     "duree_semaines": 22,
     "pays": ["Pays-Bas"],
-    "domaines": ["Informatique générale"],
+    "domaines": [],
     "seuil": 6,
     "region_ville": "",
     "dispo_raw": "",
@@ -543,7 +681,7 @@ class SearchScreen(ModalScreen[dict | _Back]):
         pays = parse_csv(self.query_one("#s-pays", Input).value, ["Pays-Bas"])
         region_ville = self.query_one("#s-region", Input).value.strip()
         dispo_raw = self.query_one("#s-dispo", Input).value.strip()
-        domaines = parse_csv(self.query_one("#s-domaines", Input).value, ["Informatique générale"])
+        domaines = parse_csv(self.query_one("#s-domaines", Input).value, [])
         return {
             "type_contrat": contrat,
             "duree_applicable": duree_app,
@@ -553,6 +691,103 @@ class SearchScreen(ModalScreen[dict | _Back]):
             "dispo_raw": dispo_raw,
             "domaines": domaines,
             "seuil": seuil,
+        }
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        values = self._collect()
+        if values is not None:
+            self.dismiss(values)
+
+    def action_back(self) -> None:
+        self.dismiss(BACK)
+
+
+class PrefilterScreen(ModalScreen[dict | _Back]):
+    """Étape 3bis — Pré-filtre (mots-clés gratuits appliqués avant l'appel API).
+
+    Choix d'un jeu de mots-clés pré-rempli par secteur (informatique compris,
+    conservé comme un preset parmi d'autres — jamais le défaut universel), ou
+    saisie libre. Le groupe `contrat` est dérivé du type de contrat choisi à
+    l'étape précédente, indépendamment de ce choix.
+    """
+
+    BINDINGS = [Binding("escape", "back", "Retour")]
+
+    def __init__(self, initial: dict | None = None) -> None:
+        super().__init__()
+        self._initial = {**PREFILTER_DEFAULTS, **(initial or {})}
+        self._presets = load_prefilter_presets()
+        self._order = list(self._presets.keys())
+
+    def compose(self) -> ComposeResult:
+        v = self._initial
+        lines = "\n".join(
+            f"  {i + 1}. {name} — {self._presets[name].get('label', name)}"
+            for i, name in enumerate(self._order)
+        )
+        with VerticalScroll(id="wizard-box"):
+            yield Label(
+                "Pré-filtre — mots-clés appliqués gratuitement avant l'appel à l'API,\n"
+                "pour écarter les offres hors sujet sans les faire scorer.\n"
+                "échap : retour à l'étape précédente.\n\n"
+                "Secteurs disponibles :\n"
+                f"{lines}\n"
+                "  libre — saisir ses propres mots-clés"
+            )
+            yield Label("\nNuméro, nom du secteur, ou 'libre' :")
+            yield Input(value=v["preset"], id="pf-preset")
+            yield Label(
+                "Si 'libre' : mots-clés séparés par des virgules "
+                "(ex: infirmier, hôpital, soins, patient) :"
+            )
+            yield Input(value=v.get("custom_keywords_raw", ""), id="pf-keywords")
+            yield Label(
+                "Si 'libre' : secteur en quelques mots, pour le prompt "
+                "(ex: 'la vente', 'la santé') :"
+            )
+            yield Input(value=v.get("custom_label", ""), id="pf-label")
+            yield Label("", id="pf-error")
+
+    def on_mount(self) -> None:
+        self.query_one("#pf-preset", Input).focus()
+
+    def _resolve_preset(self, raw: str) -> str | None:
+        raw = raw.strip().lower()
+        if not raw:
+            return None
+        if raw in ("libre", "custom"):
+            return "libre"
+        if raw in self._presets:
+            return raw
+        try:
+            idx = int(raw) - 1
+        except ValueError:
+            idx = -1
+        if 0 <= idx < len(self._order):
+            return self._order[idx]
+        for name in self._order:
+            if self._presets[name].get("label", "").strip().lower() == raw:
+                return name
+        return None
+
+    def _collect(self) -> dict | None:
+        error = self.query_one("#pf-error", Label)
+        raw = self.query_one("#pf-preset", Input).value
+        preset = self._resolve_preset(raw)
+        if preset is None:
+            error.update(
+                "[red]Choix invalide — entre un numéro, un nom de secteur ou 'libre'.[/red]"
+            )
+            return None
+        custom_keywords_raw = self.query_one("#pf-keywords", Input).value.strip()
+        custom_label = self.query_one("#pf-label", Input).value.strip()
+        if preset == "libre" and not custom_keywords_raw:
+            error.update("[red]Saisie libre choisie : au moins un mot-clé est requis.[/red]")
+            return None
+        return {
+            "preset": preset,
+            "custom_keywords_raw": custom_keywords_raw,
+            "custom_label": custom_label,
         }
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -736,7 +971,7 @@ class SetupWizard(App):
 
     CSS = """
     WelcomeScreen, OverwriteConfirmScreen, InfoScreen, ApiKeyScreen, SearchScreen,
-    PromptPreviewScreen, ProfileScreen, ConfirmWriteScreen, SummaryScreen {
+    PrefilterScreen, PromptPreviewScreen, ProfileScreen, ConfirmWriteScreen, SummaryScreen {
         align: center middle;
     }
     #wizard-box {
@@ -796,10 +1031,11 @@ class SetupWizard(App):
         if key:
             items.append(("Clé API (.env)", PATHS.env_path, f"ANTHROPIC_API_KEY={key}\n"))
         search_values = answers["search_values"]
+        prefilter_values = answers.get("prefilter_values", PREFILTER_DEFAULTS)
         items.append((
             "Sujet de recherche (search.yaml)",
             os.path.join(PATHS.config_dir, "search.yaml"),
-            render_search_yaml(search_values),
+            render_search_yaml(search_values, prefilter_values),
         ))
         items.append((
             "Prompt de scoring (filter.txt)",
@@ -851,30 +1087,40 @@ class SetupWizard(App):
                 step = 3
 
             elif step == 3:
-                prompt_text = render_filter_prompt(answers["search_values"])
-                confirmed = await self.push_screen_wait(PromptPreviewScreen(prompt_text))
-                if confirmed is BACK:
+                result = await self.push_screen_wait(
+                    PrefilterScreen(initial=answers.get("prefilter_values"))
+                )
+                if result is BACK:
                     step = 2
                     continue
+                answers["prefilter_values"] = result
                 step = 4
 
             elif step == 4:
-                result = await self.push_screen_wait(ProfileScreen(initial=answers.get("profile_values")))
-                if result is BACK:
+                prompt_text = render_filter_prompt(answers["search_values"])
+                confirmed = await self.push_screen_wait(PromptPreviewScreen(prompt_text))
+                if confirmed is BACK:
                     step = 3
                     continue
-                answers["profile_values"] = result
                 step = 5
 
             elif step == 5:
-                plan = [(label, path) for label, path, _content in self._build_write_items(answers)]
-                confirmed = await self.push_screen_wait(ConfirmWriteScreen(plan))
-                if confirmed is BACK:
+                result = await self.push_screen_wait(ProfileScreen(initial=answers.get("profile_values")))
+                if result is BACK:
                     step = 4
                     continue
+                answers["profile_values"] = result
                 step = 6
 
             elif step == 6:
+                plan = [(label, path) for label, path, _content in self._build_write_items(answers)]
+                confirmed = await self.push_screen_wait(ConfirmWriteScreen(plan))
+                if confirmed is BACK:
+                    step = 5
+                    continue
+                step = 7
+
+            elif step == 7:
                 for label, path, content in self._build_write_items(answers):
                     await self._write_with_confirm(path, content, label)
                 await self.push_screen_wait(SummaryScreen(self._written, self._skipped))

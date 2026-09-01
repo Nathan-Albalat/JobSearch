@@ -33,4 +33,5 @@ jobsearch = [
     "resources/prompts/*.txt",
     "resources/templates/*.html",
     "resources/templates/fonts/*.ttf",
+    "resources/prefilter_presets.yaml",
 ]

@@ -228,7 +228,7 @@ NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
 # Surlignage des doublons confirmés (onglet Offres) — gris, teinte de `cancelled`.
 DUPLICATE_HIGHLIGHT_COLOR = "#2b2b2b"
 # Surlignage des doublons suspectés (onglet Offres) — violet sobre, pas de teinte fluo.
-SUSPECTED_HIGHLIGHT_COLOR = "#3b2a4a"
+SUSPECTED_HIGHLIGHT_COLOR = "#5c4075"
 # Statuts considérés comme « en attente de réponse » (candidature envoyée, décision non tombée).
 # Ne pilote plus l'affichage (voir TRACK_STATUS_STYLES ci-dessous) : conservé comme définition
 # métier, pendant de RESPONSE_STATUSES dans src/tracker.py.

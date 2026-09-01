@@ -23,9 +23,11 @@ def _check_setup() -> None:
     # proposer --migrate plutôt qu'un simple setup.sh qui ne créerait que des
     # fichiers vides à côté de milliers d'offres déjà collectées.
     legacy_offers_dir = os.path.join(PROJECT_ROOT, "data", "offers")
+    from jobsearch.config import JOBSEARCH_HOME_EXPLICIT
+
     legacy_offers = (
         [f for f in os.listdir(legacy_offers_dir) if f.endswith(".json")]
-        if os.path.isdir(legacy_offers_dir)
+        if os.path.isdir(legacy_offers_dir) and not JOBSEARCH_HOME_EXPLICIT
         else []
     )
     if legacy_offers:
@@ -45,15 +47,22 @@ def _check_setup() -> None:
     for f in missing:
         print(f"   • {f}  (exemple : {required[f]})")
     print()
-    answer = input("Lancer setup.sh pour les créer automatiquement ? [O/n] ").strip().lower()
+    # L'assistant est proposé en premier : il pose les questions et écrit une config
+    # cohérente, là où `setup.sh` se contente de copier les `.example` en laissant
+    # l'utilisateur les éditer à la main. `setup.sh` reste disponible pour qui
+    # préfère partir des fichiers bruts (ou n'a pas de terminal interactif).
+    answer = input("Lancer l'assistant de configuration (jobsearch --setup) ? [O/n] ").strip().lower()
     if answer in ("", "o", "oui", "y", "yes"):
-        os.system(f"bash {os.path.join(PACKAGE_ROOT, 'setup.sh')}")
-        print()
-        print("✓ Fichiers créés. Édite-les avant de relancer.")
+        from jobsearch.wizard import run_setup
+
+        run_setup()
         sys.exit(0)
-    else:
-        print("Abandon. Lance 'bash setup.sh' manuellement ou crée les fichiers à la main.")
-        sys.exit(1)
+    print()
+    print("Abandon. Deux options pour configurer JobSearch :")
+    print("   • jobsearch --setup            assistant guidé (recommandé)")
+    print(f"   • bash {os.path.join(PACKAGE_ROOT, 'setup.sh')}")
+    print("     copie les fichiers d'exemple, à éditer ensuite à la main")
+    sys.exit(1)
 
 
 from jobsearch.scraper import scrape_all

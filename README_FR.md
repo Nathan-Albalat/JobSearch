@@ -1,4 +1,4 @@
-# Guide d'utilisation — Pipeline de recherche de stage
+# Guide d'utilisation — Pipeline de recherche d'emploi
 
 ## Prérequis
 
@@ -26,7 +26,7 @@ Dans les deux cas, tu obtiens une commande globale `jobsearch`. Lance ensuite l'
 jobsearch --setup
 ```
 
-C'est une app Textual autonome qui te guide en 6 étapes : présentation de l'outil, ta clé API Anthropic (facultative à ce stade, avec une validation minimale optionnelle — confirmée avant d'être lancée), ton sujet de recherche (type de contrat, durée minimale, pays prioritaires, domaines, seuil de score), le prompt de scoring (**étape non sautable** : le paquet livre un défaut générique et paramétré, sans exemple d'offre réelle — l'assistant le complète avec ton sujet pour que ton tout premier scrape ne soit pas calibré sur la recherche de quelqu'un d'autre, affinable ensuite depuis l'onglet Réglages de la TUI, touche `6`), ton profil de candidat, puis un récapitulatif de ce qui est configuré et de ce qui reste optionnel (données du CV, templates, Adzuna, SMTP). Il n'écrase jamais un fichier déjà présent sans le demander, et montre le contenu avant de l'écrire — se relance sans risque.
+C'est une app Textual autonome qui te guide en 7 étapes : présentation de l'outil, ta clé API Anthropic (facultative à ce stade, avec une validation minimale optionnelle — confirmée avant d'être lancée), ton sujet de recherche (type de contrat, durée minimale, pays prioritaires, domaines, seuil de score), le pré-filtre (choisir un jeu de mots-clés pré-rempli pour ton secteur — informatique, santé, droit, commerce/vente, communication/marketing, ingénierie, enseignement… — ou saisir librement les tiens ; ce choix pilote aussi la description du recruteur utilisée dans le prompt de scoring), le prompt de scoring (**étape non sautable** : le paquet livre un défaut générique et paramétré, sans exemple d'offre réelle — l'assistant le complète avec ton sujet pour que ton tout premier scrape ne soit pas calibré sur la recherche de quelqu'un d'autre, affinable ensuite depuis l'onglet Réglages de la TUI, touche `6`), ton profil de candidat, puis un récapitulatif de ce qui est configuré et de ce qui reste optionnel (données du CV, templates, Adzuna, SMTP). Il n'écrase jamais un fichier déjà présent sans le demander, et montre le contenu avant de l'écrire — se relance sans risque.
 
 Le premier lancement d'une autre commande (`jobsearch --scrape`, `--tui`, …) avant `--setup` détecte que `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut) n'a pas encore de configuration et propose de lancer `setup.sh` à la place, un repli plus sommaire qui copie les fichiers `.example` du paquet vers leurs noms définitifs et indique quels fichiers éditer à la main.
 

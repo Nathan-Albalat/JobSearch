@@ -1,0 +1,299 @@
+# prefilter_presets.yaml — jeux de mots-clés pré-remplis par secteur, proposés
+# à l'étape « pré-filtre » de `jobsearch --setup`. Chaque entrée alimente
+# `prefilter.keywords` de search.yaml (le groupe `contrat` est, lui, dérivé du
+# type de contrat choisi, jamais de ce fichier — voir `derive_contrat_keywords`
+# dans jobsearch/wizard.py).
+#
+# `label` : affiché dans l'assistant. `expertise_recruteur` : gabarit avec
+# `{type_contrat}`, substitué à l'écriture. `domaines` : suggestion de
+# `domaines.liste`, modifiable dans l'assistant avant écriture. `keywords` :
+# groupes de mots-clés (les noms de groupes n'ont pas de sens fonctionnel,
+# ils sont aplatis avant utilisation — is_tech_offer/prefilter_keywords).
+#
+# Ajouter un secteur : dupliquer une entrée, changer la clé (utilisée comme
+# identifiant interne) et son contenu. Aucune modification de code requise.
+
+informatique:
+  label: "Informatique / Ingénierie logicielle"
+  expertise_recruteur: "spécialisé dans les {type_contrat} en informatique et ingénierie logicielle"
+  domaines:
+    - "Développement logiciel (backend, fullstack)"
+    - "Data Engineering"
+    - "Intelligence Artificielle / Machine Learning"
+    - "Informatique générale"
+  keywords:
+    langages:
+      - python
+      - java
+      - javascript
+      - typescript
+      - golang
+      - rust
+      - scala
+      - kotlin
+      - swift
+      - php
+      - ruby
+      - "c++"
+      - "c#"
+      - matlab
+    frameworks_outils:
+      - django
+      - flask
+      - fastapi
+      - spring
+      - react
+      - vue
+      - angular
+      - node
+      - tensorflow
+      - pytorch
+      - scikit
+      - docker
+      - kubernetes
+      - git
+      - sql
+      - nosql
+      - mongodb
+      - postgresql
+      - aws
+      - azure
+      - gcp
+      - linux
+      - api
+    roles:
+      - software
+      - developer
+      - engineer
+      - backend
+      - frontend
+      - fullstack
+      - devops
+      - data
+      - "data science"
+      - "machine learning"
+      - "deep learning"
+      - nlp
+      - "computer vision"
+      - embedded
+      - firmware
+      - robotics
+      - cybersecurity
+      - cloud
+      - sre
+      - mlops
+      - analyst
+      - tech
+      - it
+      - ict
+      - digital
+      - coding
+      - programming
+    termes_fr_nl_de:
+      - développeur
+      - ingénieur
+      - informatique
+      - logiciel
+      - données
+      - "apprentissage automatique"
+      - "intelligence artificielle"
+      - programmation
+      - "systèmes embarqués"
+      - réseaux
+      - cybersécurité
+      - digitaal
+      - coderen
+      - informatica
+      - datenexperte
+
+sante:
+  label: "Santé"
+  expertise_recruteur: "spécialisé dans les {type_contrat} dans le secteur de la santé"
+  domaines:
+    - "Soins infirmiers"
+    - "Médical / Paramédical"
+    - "Santé publique"
+    - "Pharmacie"
+  keywords:
+    roles:
+      - infirmier
+      - infirmière
+      - médecin
+      - aide-soignant
+      - aide-soignante
+      - kinésithérapeute
+      - pharmacien
+      - pharmacienne
+      - sage-femme
+      - nurse
+      - healthcare
+      - medical
+      - clinical
+      - patient
+    termes_fr_nl_de:
+      - santé
+      - hôpital
+      - clinique
+      - soins
+      - paramédical
+      - pharmacie
+      - médical
+      - gezondheid
+      - ziekenhuis
+      - krankenpflege
+      - gesundheit
+
+droit:
+  label: "Droit"
+  expertise_recruteur: "spécialisé dans les {type_contrat} dans le secteur juridique"
+  domaines:
+    - "Droit des affaires"
+    - "Droit social"
+    - "Contentieux"
+    - "Conseil juridique"
+  keywords:
+    roles:
+      - juriste
+      - avocat
+      - avocate
+      - notaire
+      - paralegal
+      - legal
+      - lawyer
+      - attorney
+      - compliance
+      - contentieux
+    termes_fr_nl_de:
+      - droit
+      - juridique
+      - cabinet
+      - contrat
+      - réglementation
+      - contentieux
+      - recht
+      - advocaat
+      - rechtsanwalt
+      - juristisch
+
+commerce:
+  label: "Commerce / Vente"
+  expertise_recruteur: "spécialisé dans les {type_contrat} en commerce et vente"
+  domaines:
+    - "Vente B2B"
+    - "Vente B2C"
+    - "Business Development"
+    - "Retail"
+  keywords:
+    roles:
+      - vendeur
+      - vendeuse
+      - commercial
+      - commerciale
+      - "business developer"
+      - sales
+      - account
+      - retail
+      - "account manager"
+      - négociateur
+    termes_fr_nl_de:
+      - vente
+      - commerce
+      - clientèle
+      - prospection
+      - négociation
+      - verkoop
+      - handel
+      - vertrieb
+      - verkauf
+
+communication:
+  label: "Communication / Marketing"
+  expertise_recruteur: "spécialisé dans les {type_contrat} en communication et marketing"
+  domaines:
+    - "Marketing digital"
+    - "Communication institutionnelle"
+    - "Relations presse"
+    - "Réseaux sociaux"
+  keywords:
+    roles:
+      - communication
+      - marketing
+      - "chargé de communication"
+      - "content manager"
+      - "community manager"
+      - brand
+      - "social media"
+      - relations presse
+      - copywriter
+      - seo
+    termes_fr_nl_de:
+      - communication
+      - marketing
+      - marque
+      - réseaux sociaux
+      - publicité
+      - communicatie
+      - marketing
+      - kommunikation
+      - werbung
+
+ingenierie:
+  label: "Ingénierie (hors informatique)"
+  expertise_recruteur: "spécialisé dans les {type_contrat} en ingénierie"
+  domaines:
+    - "Mécanique"
+    - "Génie civil"
+    - "Électrotechnique"
+    - "Industrialisation"
+  keywords:
+    roles:
+      - ingénieur
+      - engineer
+      - mécanique
+      - mechanical
+      - "génie civil"
+      - "civil engineering"
+      - électrotechnique
+      - "quality engineer"
+      - production
+      - industrialisation
+    termes_fr_nl_de:
+      - ingénierie
+      - conception
+      - fabrication
+      - qualité
+      - maintenance
+      - techniek
+      - ingenieur
+      - technik
+      - ingenieurwesen
+
+enseignement:
+  label: "Enseignement / Formation"
+  expertise_recruteur: "spécialisé dans les {type_contrat} dans l'enseignement et la formation"
+  domaines:
+    - "Enseignement primaire/secondaire"
+    - "Enseignement supérieur"
+    - "Formation professionnelle"
+    - "Ingénierie pédagogique"
+  keywords:
+    roles:
+      - enseignant
+      - enseignante
+      - professeur
+      - formateur
+      - formatrice
+      - teacher
+      - tutor
+      - "ingénieur pédagogique"
+      - éducateur
+      - "instructional designer"
+    termes_fr_nl_de:
+      - enseignement
+      - formation
+      - pédagogie
+      - éducation
+      - onderwijs
+      - opleiding
+      - unterricht
+      - bildung

@@ -7,10 +7,10 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 ## Barème de scoring (0 à 10)
 
 **8-10 — Très pertinent**
-- Le domaine technique correspond directement (ex : IA/ML, Data, Backend, Systèmes embarqués)
+- Le domaine correspond directement à l'un des domaines visés ({domaines})
 - La localisation est prioritaire ({pays_prioritaires})
 - La durée acceptée est ≥ {duree_min_semaines} semaines
-- La stack technique chevauche significativement les compétences du candidat
+- Les compétences attendues chevauchent significativement celles du candidat
 - Aucune exigence d'expérience professionnelle préalable incompatible
 - C'est un {type_contrat} et non {type_contrat_negatif}
 - L'offre est rédigée en anglais
@@ -18,19 +18,19 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 - C'est une offre de stage explicite, pas un emploi.
 
 **6-7 — Pertinent**
-- Domaine adjacent ou partiellement aligné (ex : DevOps si fort en Python, Web si fort en JS)
+- Domaine adjacent ou partiellement aligné (ex : un domaine proche mais distinct de ceux visés, ou une spécialisation voisine)
 - Localisation secondaire acceptable ou remote mondial
 - Durée légèrement inférieure à {duree_min_semaines} semaines mais négociable, OU durée non précisée
-- Stack partiellement connue (1-2 technos maîtrisées sur 3-4 requises)
+- Compétences partiellement connues (1-2 requises sur 3-4 maîtrisées)
 
 **3-5 — Peu pertinent**
-- Domaine éloigné mais avec une composante tech (ex : Marketing Digital, IT Support)
+- Domaine éloigné mais avec un lien avec les domaines visés (ex : une fonction support ou transverse touchant partiellement au domaine)
 - Localisation peu pratique (hors Europe, pas de remote)
 - Exige une expérience que le candidat n'a pas (ex : 2 ans requis)
-- Stack inconnue mais apprenables rapidement
+- Compétences attendues inconnues mais apprenables rapidement
 
 **0-2 — Non pertinent**
-- Hors domaine informatique/ingénierie (ex : vente, médical, communication, RH sans tech)
+- Hors des domaines visés
 - Exigences incompatibles (master requis, expérience > 2 ans, pas de {type_contrat})
 - Durée trop courte (< 3 mois) et non négociable
 
@@ -53,19 +53,19 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
      modèles génériques. -->
 
 **Exemple A — Score 9/10**
-Une offre de {type_contrat} dont le domaine correspond directement à un des domaines visés par le candidat, située dans un pays prioritaire ({pays_prioritaires}), avec une durée compatible (≥ {duree_min_semaines} semaines) et une stack technique qui recouvre largement les compétences du candidat, sans exigence d'expérience professionnelle préalable incompatible.
-→ Correspondance quasi parfaite sur les cinq critères du barème (domaine, géo, durée, stack, type de contrat).
+Une offre de {type_contrat} dont le domaine correspond directement à un des domaines visés par le candidat, située dans un pays prioritaire ({pays_prioritaires}), avec une durée compatible (≥ {duree_min_semaines} semaines) et des compétences attendues qui recouvrent largement celles du candidat, sans exigence d'expérience professionnelle préalable incompatible.
+→ Correspondance quasi parfaite sur les cinq critères du barème (domaine, géo, durée, compétences, type de contrat).
 
 **Exemple B — Score 6/10**
-Une offre dans un domaine adjacent (proche mais pas identique aux domaines visés), avec une stack partiellement maîtrisée, une localisation secondaire acceptable ou un remote large, et une durée légèrement inférieure à {duree_min_semaines} semaines mais non explicitement bloquante.
+Une offre dans un domaine adjacent (proche mais pas identique aux domaines visés), avec des compétences partiellement maîtrisées, une localisation secondaire acceptable ou un remote large, et une durée légèrement inférieure à {duree_min_semaines} semaines mais non explicitement bloquante.
 → Plusieurs critères favorables mais aucun n'est pleinement optimal — pertinent sans être idéal.
 
 **Exemple C — Score 4/10**
-Une offre avec une composante technique réelle mais minoritaire (ex : support, analyse fonctionnelle, reporting), une localisation hors des zones prioritaires ou secondaires, ou une exigence d'expérience/diplôme au-delà du profil du candidat.
-→ Signal technique présent mais dilué par d'autres critères défavorables — score médian.
+Une offre avec un lien réel mais minoritaire avec les domaines visés (ex : support, analyse fonctionnelle, reporting), une localisation hors des zones prioritaires ou secondaires, ou une exigence d'expérience/diplôme au-delà du profil du candidat.
+→ Lien avec les domaines visés présent mais dilué par d'autres critères défavorables — score médian.
 
 **Exemple D — Score 1/10**
-Une offre hors du domaine informatique/ingénierie (ex : vente, marketing non technique, communication, support administratif), sans aucune exigence ni composante technique, quel que soit le type de contrat ou la localisation.
+Une offre hors des domaines visés ({domaines}), sans aucune exigence ni lien avec ceux-ci, quel que soit le type de contrat ou la localisation.
 → Absence de correspondance sur le critère le plus déterminant (le domaine) : le reste du barème ne peut pas compenser.
 
 ## Considérations géographiques détaillées
@@ -78,7 +78,7 @@ Format attendu :
 {
   "score": <entier de 0 à 10>,
   "pertinent": <true si score >= {seuil}, sinon false>,
-  "raison": "<justification en 1-2 phrases mentionnant le domaine, la localisation et la stack>",
+  "raison": "<justification en 1-2 phrases mentionnant le domaine, la localisation et les compétences attendues>",
   "points_forts": ["<élément 1>", "<élément 2>"],
   "points_faibles": ["<élément 1>", "<élément 2>"]
 }

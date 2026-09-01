@@ -9,10 +9,13 @@
 # puis profile.yaml, puis cv_data.yaml, puis repartir d'un data/ vierge.
 
 sujet:
-  label: "stage en informatique et ingénierie logicielle"
+  label: "stage"                               # ex: "stage en droit", "CDI en marketing"
   type_contrat: "stage"                       # ex: "CDI", "alternance"
   type_contrat_negatif: "une offre d'emploi"   # ce que ce N'EST PAS
-  expertise_recruteur: "spécialisé dans les stages en informatique et ingénierie logicielle"
+  # Dérivé automatiquement du secteur choisi à l'étape « pré-filtre » de
+  # `jobsearch --setup` (voir jobsearch/resources/prefilter_presets.yaml).
+  # Exemple si renseigné à la main : "spécialisé dans les stages en informatique et ingénierie logicielle"
+  expertise_recruteur: ""
 
 duree:
   min_semaines: 12
@@ -50,19 +53,18 @@ geo:
     - "**France** : acceptable mais pas prioritaire — à scorer normalement sur le contenu technique sans bonus géographique"
     - "**Hors Europe** : pénaliser légèrement, sauf si le contenu technique est exceptionnel"
 
+# Domaines visés — dérivés automatiquement du secteur choisi à l'étape
+# « pré-filtre » de `jobsearch --setup` (voir jobsearch/resources/prefilter_presets.yaml,
+# ou une saisie libre). Exemple ci-dessous à titre d'illustration uniquement.
 domaines:
-  liste:
-    - "Développement logiciel (backend, fullstack)"
-    - "Data Engineering"
-    - "Intelligence Artificielle / Machine Learning"
-    - "Informatique générale"
-  ouverture: "Ouvert à d'autres domaines informatique si le projet est intéressant"
+  liste: []   # ex: "Développement logiciel", "Droit des affaires", "Marketing digital"…
+  ouverture: "Ouvert à d'autres domaines proches si le projet est intéressant"
 
 scoring:
   seuil: 6
   bonus:
-    - "Stack Python ou JS/TS"
-    - "Domaine IA/ML ou Data"
+    - "Compétences attendues largement maîtrisées par le candidat"
+    - "Domaine directement aligné avec les domaines visés"
     - "Localisation prioritaire"
     - "Entreprise internationale"
   malus:
@@ -74,98 +76,22 @@ scoring:
     - "Intern"
   penalite_diplome: true   # false en recherche d'emploi : inverse le sens de la règle diplôme
 
+# Pré-filtre mots-clés — le filtre GRATUIT appliqué avant l'appel payant à
+# Haiku. `jobsearch --setup` le pré-remplit depuis un preset sectoriel (ou une
+# saisie libre) choisi à l'étape « pré-filtre » — voir
+# jobsearch/resources/prefilter_presets.yaml pour la liste des secteurs
+# disponibles (informatique, santé, droit, commerce/vente,
+# communication/marketing, ingénierie, enseignement…) et pour dupliquer un
+# preset vers un nouveau secteur sans toucher au code Python. Les noms de
+# groupes ci-dessous (ex: `roles`, `termes_fr_nl_de`) n'ont pas de sens
+# fonctionnel : tous les mots-clés sont aplatis avant utilisation
+# (`Search.prefilter_keywords`). Le groupe `contrat` est un cas particulier :
+# il est dérivé automatiquement du type de contrat choisi (`sujet.type_contrat`)
+# — c'est le levier n°1 du pivot vers un autre type de contrat.
 prefilter:
   enabled: true
   desc_chars: 400
-  keywords:
-    langages:
-      - python
-      - java
-      - javascript
-      - typescript
-      - golang
-      - rust
-      - scala
-      - kotlin
-      - swift
-      - php
-      - ruby
-      - "c++"
-      - "c#"
-      - matlab
-    frameworks_outils:
-      - django
-      - flask
-      - fastapi
-      - spring
-      - react
-      - vue
-      - angular
-      - node
-      - tensorflow
-      - pytorch
-      - scikit
-      - docker
-      - kubernetes
-      - git
-      - sql
-      - nosql
-      - mongodb
-      - postgresql
-      - aws
-      - azure
-      - gcp
-      - linux
-      - api
-    roles:
-      - software
-      - developer
-      - engineer
-      - backend
-      - frontend
-      - fullstack
-      - devops
-      - data
-      - "data science"
-      - "machine learning"
-      - "deep learning"
-      - nlp
-      - "computer vision"
-      - embedded
-      - firmware
-      - robotics
-      - cybersecurity
-      - cloud
-      - sre
-      - mlops
-      - analyst
-      - tech
-      - it
-      - ict
-      - digital
-      - coding
-      - programming
-    termes_fr_nl_de:
-      - développeur
-      - ingénieur
-      - informatique
-      - logiciel
-      - données
-      - "apprentissage automatique"
-      - "intelligence artificielle"
-      - programmation
-      - "systèmes embarqués"
-      - réseaux
-      - cybersécurité
-      - digitaal
-      - coderen
-      - informatica
-      - datenexperte
-    contrat:   # levier n°1 du pivot vers un autre type de contrat
-      - intern
-      - internship
-      - stage
-      - werkstudent
+  keywords: {}   # rempli par `jobsearch --setup` — vide ici, ce fichier est un modèle générique
   exclude_keywords: []
 
 dedup:

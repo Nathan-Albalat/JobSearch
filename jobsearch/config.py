@@ -40,6 +40,7 @@ PACKAGE_ROOT = PROJECT_ROOT
 # profile.yaml, sources.yaml, cv_data.yaml, .env, data/, output/). Par défaut
 # `~/.jobsearch/` — surchargeable pour pointer vers un autre emplacement, ou
 # repointer vers le dépôt (`JOBSEARCH_HOME=.`) pour un usage "tout-en-un".
+JOBSEARCH_HOME_EXPLICIT = bool(os.environ.get("JOBSEARCH_HOME"))
 JOBSEARCH_HOME = os.path.abspath(
     os.environ.get("JOBSEARCH_HOME") or os.path.join(os.path.expanduser("~"), ".jobsearch")
 )
@@ -83,6 +84,11 @@ class Paths:
     def package_templates_dir(self) -> str:
         """Défauts de référence livrés avec le paquet (dont les polices, non surchargeables)."""
         return _package_resource_dir("resources", "templates")
+
+    @property
+    def prefilter_presets_path(self) -> str:
+        """Jeux de mots-clés du pré-filtre par secteur, proposés par `jobsearch --setup`."""
+        return _package_resource_dir("resources", "prefilter_presets.yaml")
 
     # Alias conservés pour compatibilité (`cv_pdf.py` : base_url WeasyPrint,
     # les polices restant toujours dans le paquet quel que soit le template utilisé).

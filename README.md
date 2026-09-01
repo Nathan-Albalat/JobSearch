@@ -1,4 +1,4 @@
-# User Guide — Internship Search Pipeline
+# User Guide — Job Search Pipeline
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ Either way, you get a global `jobsearch` command. Run the interactive setup wiza
 jobsearch --setup
 ```
 
-It's a standalone Textual app that walks you through 6 steps: an overview of what the tool does, your Anthropic API key (optional at this stage, with an optional — confirmed before it runs — minimal validation call), your search subject (contract type, minimum duration, priority countries, domains, score threshold), the scoring prompt (**not skippable**: the package ships a generic, parameterized default with no real offer examples baked in — the wizard fills it in with your search subject so your very first scrape isn't scored against someone else's search, refinable later from the Settings tab of the TUI, key `6`), your candidate profile, and a recap of what's configured vs. still optional (CV data, templates, Adzuna, SMTP). It never overwrites a file that already exists without asking first, and shows you the content before writing anything — safe to re-run.
+It's a standalone Textual app that walks you through 7 steps: an overview of what the tool does, your Anthropic API key (optional at this stage, with an optional — confirmed before it runs — minimal validation call), your search subject (contract type, minimum duration, priority countries, domains, score threshold), the pre-filter (pick a pre-filled keyword set for your field — software, healthcare, law, sales, marketing, engineering, education… — or type your own free-form keywords; this also drives the recruiter framing used in the scoring prompt), the scoring prompt (**not skippable**: the package ships a generic, parameterized default with no real offer examples baked in — the wizard fills it in with your search subject so your very first scrape isn't scored against someone else's search, refinable later from the Settings tab of the TUI, key `6`), your candidate profile, and a recap of what's configured vs. still optional (CV data, templates, Adzuna, SMTP). It never overwrites a file that already exists without asking first, and shows you the content before writing anything — safe to re-run.
 
 Any first launch of another command (`jobsearch --scrape`, `--tui`, …) before running `--setup` detects that `JOBSEARCH_HOME` (`~/.jobsearch/` by default) is missing its configuration and offers to run `setup.sh` instead, a lighter fallback that copies `.example` files from the package to their final names and tells you which ones to edit by hand.
 

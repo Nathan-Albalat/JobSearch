@@ -336,3 +336,9 @@ If the variable is empty or missing, no notification is sent.
 
 **offer_id not found for --generate**
 → The ID is the JSON filename without `.json` in `data/offers/` (e.g., `0151e52f`)
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

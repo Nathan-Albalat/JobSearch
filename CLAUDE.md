@@ -62,6 +62,9 @@ src/
   notifier.py           Envoi email optionnel (SMTP)
   duplicates.py         Marquage manuel des offres en doublon (champ `duplicate_of`) — stdlib uniquement
 
+scripts/
+  test_api.py            Smoke-test de la clé API Anthropic (hors paquet src/)
+
 config/templates/fonts/  Polices locales DM Sans / DM Serif Display (.ttf) — PDF sans réseau
 
 data/
@@ -85,7 +88,6 @@ files/
   generate_cv.py        Génère le CV PDF "master" (sans adaptation) depuis cv_data.yaml
   cv_nathan_albala_en.html  Preview HTML du CV master
   cv_nathan_albala_en.pdf   PDF du CV master
-  template_en.html      (obsolète — remplacé par config/templates/cv_en.html)
 ```
 
 ---

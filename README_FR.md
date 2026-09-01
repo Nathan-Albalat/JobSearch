@@ -336,3 +336,9 @@ Si la variable est vide ou absente, aucune notification n'est envoyée.
 
 **L'offre_id est introuvable pour --generate**
 → L'ID est le nom du fichier JSON sans `.json` dans `data/offers/` (ex: `0151e52f`)
+
+---
+
+## Licence
+
+MIT — voir [LICENSE](LICENSE).

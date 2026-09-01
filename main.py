@@ -174,6 +174,7 @@ def main() -> None:
 Exemples :
   python main.py --scrape
   python main.py --scrape --threshold 7
+  python main.py --scrape --with fr   # inclut aussi les sources FR-only (HelloWork, WTTJ FR)
   python main.py --generate 0151e52f
   python main.py --from-url https://example.com/jobs/stage-dev
   python main.py --from-file ~/Downloads/offre_wttj.html --url-source "https://..." --company "Criteo"

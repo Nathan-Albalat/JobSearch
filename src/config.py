@@ -196,6 +196,7 @@ DEFAULTS: dict = {
             "results_per_page": 50,
             "pages": 1,
         },
+        "wttj": {"pages": 3, "delay": 0.3, "contract_types": [], "max_offers": 0},
     },
 }
 

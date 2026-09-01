@@ -76,6 +76,85 @@ sources:
       what: "software intern"
       pages: 2
 
+  # --- Welcome to the Jungle (API publique v3, sans auth) ---
+  # Pièges vérifiés (voir CLAUDE.md) : chaque offre est répétée une fois par bureau
+  # de l'entreprise → dédup sur (organization.slug, name), jamais reference/slug.
+  # `per_page` est verrouillé à 10 côté serveur ; `contract_type` est refusé en query
+  # (422) → filtré côté client via `contract_types`. `locations` est un mapping
+  # YAML natif (sérialisé en JSON par le fetch), pas une chaîne.
+  - name: "WTTJ - Intern NL"
+    type: wttj
+    country: "NL"
+    params:
+      job_title: "intern"
+      locations:
+        country: "Netherlands"
+        country_code: "NL"
+        label: "Pays-Bas"
+        latitude: 52.25
+        longitude: 5.75
+      contract_types: [internship, apprenticeship]
+      pages: 3
+
+  - name: "WTTJ - Developer NL"
+    type: wttj
+    country: "NL"
+    params:
+      job_title: "developer"
+      locations:
+        country: "Netherlands"
+        country_code: "NL"
+        label: "Pays-Bas"
+        latitude: 52.25
+        longitude: 5.75
+      contract_types: [internship, apprenticeship]
+      pages: 2
+
+  - name: "WTTJ - Software engineering internship NL"
+    type: wttj
+    country: "NL"
+    params:
+      job_title: "software engineering internship"
+      locations:
+        country: "Netherlands"
+        country_code: "NL"
+        label: "Pays-Bas"
+        latitude: 52.25
+        longitude: 5.75
+      contract_types: [internship, apprenticeship]
+      pages: 2
+
+  # --- WTTJ FR (désactivée par défaut, activer avec --with fr) ---
+  - name: "WTTJ - Stage développeur FR"
+    type: wttj
+    group: fr
+    optional: true
+    country: "FR"
+    params:
+      job_title: "stage développeur"
+      locations:
+        country: "France"
+        country_code: "FR"
+        label: "France"
+        latitude: 46.6
+        longitude: 2.3
+      pages: 3
+
+  - name: "WTTJ - Stage data FR"
+    type: wttj
+    group: fr
+    optional: true
+    country: "FR"
+    params:
+      job_title: "stage data"
+      locations:
+        country: "France"
+        country_code: "FR"
+        label: "France"
+        latitude: 46.6
+        longitude: 2.3
+      pages: 2
+
   # --- HelloWork (FR uniquement — désactivée par défaut, activer avec --with fr) ---
   - name: "HelloWork - Développeur informatique (Stage)"
     type: hellowork

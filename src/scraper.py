@@ -247,6 +247,216 @@ def normalize_hellowork(job: dict, source: dict) -> dict:
     }
 
 
+def fetch_wttj(source: dict) -> list[dict]:
+    """Scrape Welcome to the Jungle : liste (API publique v3, sans auth) + fetch détail.
+
+    Pièges vérifiés (voir CLAUDE.md) :
+    - l'API répète chaque offre une fois par bureau de l'entreprise → dédup sur
+      `(organization.slug, name)`, jamais sur `reference`/`slug`, AVANT la boucle détail
+    - `per_page` est verrouillé à 10 côté serveur, `contract_type`/`query`/`per_page`
+      sont refusés en query (422) → `contract_types` est filtré côté client
+    """
+    defaults = get_search().source_defaults("wttj")
+    params = {**defaults, **(source.get("params", {}) or {})}
+    pages = params.pop("pages", 3)
+    delay = params.pop("delay", 0.3)
+    contract_types = [c.lower() for c in (params.pop("contract_types", []) or [])]
+    max_offers = params.pop("max_offers", 0)
+    locations = params.pop("locations", None)
+    if locations is not None:
+        if isinstance(locations, dict):
+            locations = [locations]
+        params["locations"] = json.dumps(locations, ensure_ascii=False)
+
+    headers = {"User-Agent": _BROWSER_UA}
+    raw: list[dict] = []
+    page_count = None
+    for page in range(1, pages + 1):
+        query = {**params, "page": page}
+        try:
+            resp = requests.get(
+                "https://api.welcometothejungle.com/api/v3/public/jobs",
+                params=query,
+                headers=headers,
+                timeout=15,
+            )
+            resp.raise_for_status()
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 422:
+                print(f"    WTTJ 422 : {e.response.text[:200]}")
+            raise
+        payload = resp.json()
+        data = payload.get("data") or []
+        if page_count is None:
+            page_count = payload.get("metadata", {}).get("page_count", pages)
+        if not data:
+            break
+        raw.extend(data)
+        if page > page_count:
+            break
+
+    seen_keys: set[tuple[str, str]] = set()
+    unique: list[dict] = []
+    for job in raw:
+        status = job.get("status")
+        if status not in (None, "published"):
+            continue
+        contract_type = str(job.get("contract_type") or "").lower()
+        if contract_types and contract_type not in contract_types:
+            continue
+        org = job.get("organization") or {}
+        org_slug = org.get("slug")
+        slug = job.get("slug")
+        if not org_slug or not slug:
+            continue
+        name = (job.get("name") or "").strip().lower()
+        key = (org_slug, name)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        unique.append(job)
+        if max_offers and len(unique) >= max_offers:
+            break
+
+    print(
+        f"    WTTJ : {len(raw)} résultat(s) bruts → {len(unique)} offre(s) uniques (dédup bureaux)."
+    )
+
+    jobs: list[dict] = []
+    for job in unique:
+        org = job.get("organization") or {}
+        org_slug = org.get("slug")
+        slug = job.get("slug")
+        url = f"https://www.welcometothejungle.com/fr/companies/{org_slug}/jobs/{slug}"
+        try:
+            time.sleep(delay)
+            resp = requests.get(
+                f"https://api.welcometothejungle.com/api/v3/organizations/{org_slug}/jobs/{slug}",
+                headers=headers,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            detail = resp.json().get("job") or {}
+            merged = dict(job)
+            for k, v in detail.items():
+                if v not in (None, "", []):
+                    merged[k] = v
+            merged["url"] = url
+            jobs.append(merged)
+        except Exception as e:
+            print(f"    Erreur détail WTTJ {url} : {e} — offre conservée avec les données de liste.")
+            job["url"] = url
+            jobs.append(job)
+
+    return jobs
+
+
+def _wttj_text_list(value) -> list[str]:
+    """Tolère une liste d'objets `{"name": ...}` ou de chaînes.
+
+    `name` peut lui-même être un dict multilingue (`{"fr": ..., "en": ...}`)
+    plutôt qu'une chaîne — on privilégie le français, puis l'anglais.
+    """
+    result = []
+    for x in value or []:
+        if isinstance(x, str):
+            result.append(x)
+        elif isinstance(x, dict) and x.get("name"):
+            name = x["name"]
+            if isinstance(name, dict):
+                name = name.get("fr") or name.get("en") or next(iter(name.values()), "")
+            if name:
+                result.append(name)
+    return result
+
+
+def normalize_wttj(job: dict, source: dict) -> dict:
+    """Normalise une offre WTTJ (liste + détail fusionnés) au format offre du pipeline."""
+    url = job.get("url", "")
+    org = job.get("organization") or {}
+    company = org.get("name", "")
+
+    office = job.get("office") or {}
+    offices = job.get("offices") or []
+    if not office and offices:
+        office = offices[0] or {}
+    city = office.get("city") or ""
+    country_code = office.get("country_code") or ""
+    if not city:
+        # `office.city` peut exister avec la valeur None : on retente sur les
+        # autres bureaux avant de retomber sur le pays de la source.
+        for other in offices:
+            other = other or {}
+            if other.get("city"):
+                city = other["city"]
+                country_code = country_code or (other.get("country_code") or "")
+                break
+    if city and country_code:
+        location = f"{city}, {country_code}"
+    else:
+        location = city or country_code or source.get("country", "")
+
+    remote_raw = job.get("remote")
+    remote = bool(remote_raw) and str(remote_raw).lower() not in ("no", "none", "false", "0", "unknown")
+
+    duration_min = job.get("contract_duration_min")
+    duration_max = job.get("contract_duration_max")
+    start_date = str(job.get("start_date") or "")[:10]
+
+    header_bits = []
+    if duration_min or duration_max:
+        if duration_min and duration_max and duration_min != duration_max:
+            header_bits.append(f"Durée : {duration_min}-{duration_max} mois")
+        else:
+            header_bits.append(f"Durée : {duration_min or duration_max} mois")
+    if start_date:
+        header_bits.append(f"Début : {start_date}")
+
+    desc_parts = []
+    if header_bits:
+        desc_parts.append(f"<p><strong>{' — '.join(header_bits)}</strong></p>")
+    for field in ("description",):
+        if job.get(field):
+            desc_parts.append(f"<h3>{field}</h3>" + job[field])
+    profile_text = job.get("profile") or job.get("looking_for_candidate_description")
+    if profile_text:
+        desc_parts.append("<h3>profile</h3>" + profile_text)
+    if job.get("recruitment_process"):
+        desc_parts.append("<h3>recruitment_process</h3>" + job["recruitment_process"])
+    if job.get("company_description"):
+        desc_parts.append("<h3>company_description</h3>" + job["company_description"])
+    description = "\n".join(desc_parts)
+
+    date_published = str(job.get("published_at") or "")[:10] or str(job.get("updated_at") or "")[:10] or str(date.today())
+
+    tags: list[str] = []
+    if duration_min or duration_max:
+        if duration_min and duration_max and duration_min != duration_max:
+            tags.append(f"durée: {duration_min}-{duration_max} mois")
+        else:
+            tags.append(f"durée: {duration_min or duration_max} mois")
+    if start_date:
+        tags.append(f"début: {start_date}")
+    tags.extend(_wttj_text_list(job.get("skills")))
+    tags.extend(_wttj_text_list(job.get("tools")))
+    tags = list(dict.fromkeys(tags))[:20]
+
+    return {
+        "id": make_offer_id(url),
+        "title": (job.get("name", "") or "").strip(),
+        "company": company,
+        "location": location,
+        "description": description,
+        "url": url,
+        "date_published": date_published,
+        "date_scraped": str(date.today()),
+        "source": source.get("name", ""),
+        "country": source.get("country", ""),
+        "tags": tags,
+        "remote": remote,
+    }
+
+
 # Mots parasites retirés des titres avant comparaison fuzzy inter-sources
 @functools.lru_cache(maxsize=4)
 def _title_noise_re(noise_words: tuple, extra_regex: str) -> re.Pattern:
@@ -385,6 +595,9 @@ def scrape_all(
                     (normalize_hellowork(j, source), j.get("url", ""))
                     for j in raw_jobs
                 ]
+            elif source_type == "wttj":
+                raw_jobs = fetch_wttj(source)
+                candidates = [(normalize_wttj(j, source), j.get("url", "")) for j in raw_jobs]
             else:
                 entries = parse_feed(source)
                 candidates = [

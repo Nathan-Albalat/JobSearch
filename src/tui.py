@@ -261,6 +261,7 @@ HELP_TEXT = """\
   [b #7aa2f7]r[/]                  Recharger les données depuis le disque
   [b #7aa2f7]S / s / ^S[/]         Lancer scrape + filtre + rapport (spinner dans la barre de statut)
                      (`s` = statut « envoyée » dans l'onglet Suivi uniquement)
+  [b #7aa2f7]^S[/]                 Idem, en incluant aussi les sources FR-only (groupe 'fr', ex: HelloWork, WTTJ FR)
   [b #7aa2f7]c[/]                  Ouvrir la Claude Console (recharge crédit API)
   [b #7aa2f7]?[/]                  Cette aide
   [b #7aa2f7]q[/]                  Quitter

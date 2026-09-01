@@ -47,7 +47,11 @@ Le pipeline se déroule en 3 étapes :
 |---|---|
 | `python main.py --scrape` | Lance les étapes 1-2-3 (collecte + filtre + rapport) |
 | `python main.py --scrape --threshold 7` | Idem avec un seuil de pertinence de 7/10 |
+| `python main.py --scrape --with fr` | Inclut aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR), désactivées par défaut |
+| `python main.py --scrape --without fr` | Désactive un groupe même s'il est activé par défaut dans `search.yaml` (`sources.enabled_groups`) |
 | `python main.py --generate <offer_id>` | Génère la candidature pour une offre spécifique |
+| `python main.py --mark-duplicate <offer_id> <target_id>` | Marque `<offer_id>` comme doublon manuel de `<target_id>` (une offre déjà candidatée) |
+| `python main.py --unmark-duplicate <offer_id>` | Annule un marquage de doublon |
 
 ### Modules en isolation (pour debug)
 
@@ -74,11 +78,15 @@ python main.py --tui
 
 | Onglet | Rôle |
 |---|---|
-| **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à ajouter à la file de génération — les lignes cochées sont **surlignées en vert**. Les offres de la dernière session de scrape sont **surlignées en bleu foncé** ; la période affichée (tout / dernière session / 7 derniers jours / 30 derniers jours) se filtre avec `d`/`D`. |
+| **1 · Offres** | Tableau des offres filtrées, triable par score, avec panneau de détail. Tu coches les offres à ajouter à la file de génération — les lignes cochées sont **surlignées en vert**. Les offres de la dernière session de scrape sont **surlignées en bleu foncé** ; la période affichée (tout / dernière session / 7 derniers jours / 30 derniers jours) se filtre avec `d`/`D`. La colonne `✓` est une cascade à 4 états : `▶` cochée > `⧉` doublon manuel confirmé > `✓` déjà candidatée > `?` doublon suspecté (même entreprise déjà candidatée, non tranché) — `m` pour confirmer/annuler via une modale. |
 | **2 · Génération** | La file de génération, persistée entre deux lancements de la TUI dans `data/gen_queue.json`. Coche des lignes avec `espace` pour restreindre `g`/`L` à ce sous-ensemble — sans rien coché, `g`/`L` traitent toutes les offres en attente. `x` retire des lignes de la file. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. |
 | **3 · Candidatures** | Liste des dossiers `output/candidatures/`, aperçu de la lettre/CV, **régénération des PDF après retouche manuelle**. |
-| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Chaque statut a sa propre couleur : **envoyée** en jaune, **réponse reçue** en ambre, **entretien** en violet, **acceptée** en vert, **refusée** en rouge, **annulée** en gris foncé avec texte atténué. |
-| **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. Les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé ». |
+| **4 · Suivi** | Statuts et notes des candidatures (`applications.json`). Chaque statut a sa propre couleur : **envoyée** en jaune, **réponse reçue** en ambre, **entretien** en violet, **acceptée** en vert, **refusée** en rouge, **annulée** en gris foncé avec texte atténué. Le panneau de droite affiche la timeline individuelle de la candidature sous le curseur, reconstruite depuis son `history` (journal statut → date/heure), avec l'écart en jours entre chaque événement — les dates déduites des anciens champs ponctuels (avant l'existence de `history`) sont suffixées d'un `~`. |
+| **5 · Stats** | Métriques de retour (taux d'acceptation, taux de réponse, délai moyen), répartition des statuts, localisation des stages, et histogramme des candidatures au cours du temps. Les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé ». Aussi : un rendu arborescent du parcours des candidatures (flux de statuts) et une répartition mensuelle des statuts atteints. `f` exporte le diagramme de Sankey correspondant en HTML autonome (`output/stats/flux.html`), ouvert dans le navigateur. |
+
+### Offres en doublon
+
+La déduplication automatique ne peut pas attraper tous les doublons inter-sources (ex. la même offre republiée sous un titre légèrement différent sur un autre board). Plutôt que de deviner, le pipeline suit le principe « **la machine suggère, l'utilisateur confirme** » : les offres d'une entreprise déjà candidatée sont signalées par un `?` dans l'onglet Offres, et la touche `m` ouvre une liste des candidatures à cette entreprise (ou d'autres) pour confirmer en une pression — rien n'est jamais marqué automatiquement.
 
 ### Workflow de retouche d'une lettre
 
@@ -97,17 +105,19 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 |---|---|---|
 | Global | `1`/`2`/`3`/`4`/`5` | Changer d'onglet (Offres / Génération / Candidatures / Suivi / Stats) |
 | Global | `r` | Recharger les données depuis le disque |
-| Global | `S` / `s` / `Ctrl+S` | Lancer scrape + filtre + rapport (spinner + étape + chrono dans la barre de statut). `s` ne déclenche le scrape qu'en dehors de l'onglet Suivi, où il vaut « envoyée » |
+| Global | `S` / `s` | Lancer scrape + filtre + rapport (spinner + étape + chrono dans la barre de statut). `s` ne déclenche le scrape qu'en dehors de l'onglet Suivi, où il vaut « envoyée » ; `s` est un alias de `S` |
+| Global | `Ctrl+S` | Idem, en incluant aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR) — équivalent de `python main.py --scrape --with fr` |
 | Global | `c` | Ouvrir la Claude Console (recharger le crédit API) |
 | Global | `?` | Afficher l'aide (liste des raccourcis) |
 | Global | `q` | Quitter |
 | Offres | `espace` | Cocher/décocher l'offre pour génération |
 | Offres | `o` | Ouvrir l'offre dans le navigateur |
 | Offres | `+`/`-` | Ajuster le seuil de score affiché |
-| Offres | `h` | Masquer/afficher les offres déjà candidatées |
+| Offres | `h` | Masquer/afficher les offres déjà candidatées (et les doublons marqués) |
 | Offres | `d` | Cycler la période affichée (tout · session · 7j · 30j) |
 | Offres | `D` | Choisir une session de scrape précise |
 | Offres | `g` | Aller à l'onglet Génération |
+| Offres | `m` | Marquer/démarquer l'offre comme doublon d'une candidature existante (modale ; la machine suggère via l'entreprise, l'utilisateur confirme) |
 | Génération | `espace` | Cocher/décocher une offre de la file (filtre optionnel pour `g`/`L`) |
 | Génération | `g` | Générer lettre + CV (lignes cochées, sinon toutes les offres en attente) |
 | Génération | `L` | Générer la **lettre seule** (sans CV — 1 appel Sonnet au lieu de 2) |
@@ -121,6 +131,7 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 | Suivi | `s`/`a`/`i`/`j`/`v`/`z` | Statut → sent / answered / interview / rejected / accepted / cancelled |
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
+| Stats | `f` | Exporter le diagramme de Sankey du flux de statuts (HTML, ouvert dans le navigateur) |
 
 ---
 
@@ -183,6 +194,24 @@ Pour un vrai changement de sujet (ex. passer d'une recherche de stage à une rec
   url: "https://lien-vers-le-flux.rss"
   type: rss
   country: "NL"  # Code pays ISO
+```
+
+### Welcome to the Jungle (WTTJ)
+Type `wttj` — pas de clé API nécessaire (API publique v3). Les entrées NL sont actives par défaut, les entrées FR vivent dans le groupe `fr` (`--with fr`). Pivoter vers un autre pays/une autre requête ne touche que la config :
+```yaml
+- name: "WTTJ - Intern NL"
+  type: wttj
+  country: "NL"
+  params:
+    job_title: "intern"
+    locations:
+      country: "Netherlands"
+      country_code: "NL"
+      label: "Pays-Bas"
+      latitude: 52.25
+      longitude: 5.75
+    contract_types: [internship, apprenticeship]
+    pages: 3
 ```
 
 ### Mettre à jour ton CV

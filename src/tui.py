@@ -36,8 +36,16 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
+from textual.widgets.data_table import RowDoesNotExist
 from textual.widgets.option_list import Option
 
+from src.duplicates import (
+    _normalize_company,
+    clear_duplicate,
+    load_offer,
+    mark_duplicate,
+    suggest_targets,
+)
 from src.filter import strip_html
 from src.flow import DEFAULT_FLOW_PATH, by_month_status, flow_tree, write_flow_html
 from src.report import load_filtered_offers
@@ -216,16 +224,10 @@ class HighlightDataTable(DataTable):
 SENT_HIGHLIGHT_COLOR = "#1e4620"
 # Surlignage des offres de la dernière session de scrape (onglet Offres) — bleu foncé, modifiable ici.
 NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
-# Surlignage des candidatures annulées (onglet Suivi) — gris foncé, modifiable ici.
-CANCELLED_HIGHLIGHT_COLOR = "#2b2b2b"
-# Surlignage des candidatures avec réponse reçue, décision non tombée (onglet Suivi) — ambre, modifiable ici.
-ANSWERED_HIGHLIGHT_COLOR = "#6b4310"
-# Surlignage des candidatures en entretien (onglet Suivi) — violet, modifiable ici.
-INTERVIEW_HIGHLIGHT_COLOR = "#46326b"
-# Surlignage des candidatures acceptées (onglet Suivi) — vert, modifiable ici.
-ACCEPTED_HIGHLIGHT_COLOR = "#1e4620"
-# Surlignage des candidatures refusées (onglet Suivi) — rouge, modifiable ici.
-REJECTED_HIGHLIGHT_COLOR = "#870000"
+# Surlignage des doublons confirmés (onglet Offres) — gris, teinte de `cancelled`.
+DUPLICATE_HIGHLIGHT_COLOR = "#2b2b2b"
+# Surlignage des doublons suspectés (onglet Offres) — violet sobre, pas de teinte fluo.
+SUSPECTED_HIGHLIGHT_COLOR = "#3b2a4a"
 # Statuts considérés comme « en attente de réponse » (candidature envoyée, décision non tombée).
 # Ne pilote plus l'affichage (voir TRACK_STATUS_STYLES ci-dessous) : conservé comme définition
 # métier, pendant de RESPONSE_STATUSES dans src/tracker.py.
@@ -259,7 +261,7 @@ HELP_TEXT = """\
 [b]Raccourcis globaux[/b]
   [b #7aa2f7]1 / 2 / 3 / 4 / 5[/]  Onglets : Offres · Génération · Candidatures · Suivi · Stats
   [b #7aa2f7]r[/]                  Recharger les données depuis le disque
-  [b #7aa2f7]S / s / ^S[/]         Lancer scrape + filtre + rapport (spinner dans la barre de statut)
+  [b #7aa2f7]S / s[/]              Lancer scrape + filtre + rapport (spinner dans la barre de statut)
                      (`s` = statut « envoyée » dans l'onglet Suivi uniquement)
   [b #7aa2f7]^S[/]                 Idem, en incluant aussi les sources FR-only (groupe 'fr', ex: HelloWork, WTTJ FR)
   [b #7aa2f7]c[/]                  Ouvrir la Claude Console (recharge crédit API)
@@ -271,10 +273,12 @@ HELP_TEXT = """\
   [b #7aa2f7]espace[/]  Cocher / décocher l'offre pour génération
   [b #7aa2f7]o[/]       Ouvrir l'offre dans le navigateur
   [b #7aa2f7]+ / -[/]   Augmenter / diminuer le seuil de score
-  [b #7aa2f7]h[/]       Masquer / afficher les offres déjà candidatées
+  [b #7aa2f7]h[/]       Masquer / afficher les offres déjà candidatées (et les doublons marqués)
   [b #7aa2f7]d[/]       Cycler la période affichée (tout · session · 7j · 30j)
   [b #7aa2f7]D[/]       Choisir une session de scrape précise
   [b #7aa2f7]g[/]       Passer à l'onglet Génération
+  [b #7aa2f7]m[/]       Marquer/démarquer l'offre comme doublon d'une candidature existante
+                     (`?` = entreprise déjà candidatée, à vérifier — pas forcément un doublon)
   (les offres de la dernière session sont surlignées en bleu)
 
 [b]Onglet Génération[/b]
@@ -397,6 +401,85 @@ class SessionPickerScreen(ModalScreen[str]):
         self.dismiss(event.option.id)
 
 
+class DuplicatePickerScreen(ModalScreen[str]):
+    """Choix de l'offre candidatée dont l'offre courante est un doublon.
+
+    `same_company` et `others` : deux listes distinctes de (offer_id, label)
+    calculées par l'appelant (`action_mark_duplicate`). Les options de
+    `same_company` sont numérotées 1-9 et sélectionnables directement au
+    clavier.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Annuler"),
+        *[Binding(str(n), f"pick_number({n})", show=False) for n in range(1, 10)],
+    ]
+
+    def __init__(
+        self,
+        same_company: list[tuple[str, str]],
+        others: list[tuple[str, str]],
+        title: str,
+        company: str = "",
+    ) -> None:
+        super().__init__()
+        self._same_company = same_company
+        self._others = others
+        self._title = title
+        self._company = company
+        self._numbered_ids = [offer_id for offer_id, _ in same_company[:9]]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dup-box"):
+            yield Label(f"{self._title} (entrée pour valider · 1-9 pour la même entreprise · échap pour annuler) :")
+            options: list[Option | None] = []
+            if self._same_company:
+                options.append(Option(f"── Même entreprise ({self._company}) ──", disabled=True))
+                for i, (offer_id, label) in enumerate(self._same_company, start=1):
+                    prefix = f"{i}. " if i <= 9 else ""
+                    options.append(Option(f"{prefix}{label}", id=offer_id))
+            if self._same_company and self._others:
+                options.append(None)
+            if self._others:
+                options.append(Option("── Autres entreprises ──", disabled=True))
+                for offer_id, label in self._others:
+                    options.append(Option(label, id=offer_id))
+            option_list = OptionList(*options)
+            yield option_list
+
+    def action_pick_number(self, n: int) -> None:
+        if n <= len(self._numbered_ids):
+            self.dismiss(self._numbered_ids[n - 1])
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    """Confirmation oui/non générique (utilisée pour le garde-fou inter-entreprises)."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss_no", "Annuler"),
+        Binding("y", "dismiss_yes", "Confirmer", show=False),
+        Binding("n", "dismiss_no", "Annuler", show=False),
+    ]
+
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="confirm-box"):
+            yield Label(self._message)
+            yield Label("[y] Confirmer   [n / échap] Annuler")
+
+    def action_dismiss_yes(self) -> None:
+        self.dismiss(True)
+
+    def action_dismiss_no(self) -> None:
+        self.dismiss(False)
+
+
 class StageTUI(App):
     TITLE = "Pipeline de stage"
 
@@ -459,7 +542,27 @@ class StageTUI(App):
         max-height: 90%;
         align: center middle;
     }
-    HelpScreen, NoteScreen, ManualEntryScreen, SessionPickerScreen { align: center middle; }
+    #dup-box {
+        background: $surface;
+        border: round $accent;
+        padding: 1 2;
+        width: 90%;
+        max-width: 110;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    #confirm-box {
+        background: $surface;
+        border: round $error;
+        padding: 1 2;
+        width: 90%;
+        max-width: 110;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    HelpScreen, NoteScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen { align: center middle; }
     #bottom-bar { dock: bottom; height: 2; }
     #status-bar { height: 1; background: $panel; color: $text-muted; }
     """
@@ -490,6 +593,7 @@ class StageTUI(App):
         Binding("plus,equals_sign", "threshold(1)", show=False),
         Binding("minus", "threshold(-1)", show=False),
         Binding("h", "toggle_hide_done", show=False),
+        Binding("m", "mark_duplicate", show=False),
         Binding("d", "cycle_period", show=False),
         Binding("D", "pick_session", show=False),
         Binding("n", "edit_note", show=False),
@@ -620,15 +724,24 @@ class StageTUI(App):
             return (None, (date.today() - timedelta(days=30)).isoformat())
         return (None, None)
 
+    def _suspected_companies(self) -> set[str]:
+        """Entreprises normalisées ayant déjà une candidature — pour l'indicateur `?`."""
+        return {
+            _normalize_company(a.get("company", ""))
+            for a in load_applications()
+            if a.get("company")
+        }
+
     def refresh_offers(self) -> None:
         table = self.query_one("#offers-table", HighlightDataTable)
         applied = self._applied_ids()
+        suspected_companies = self._suspected_companies()
         latest_session = self._latest_session()
         exact_date, min_date = self._period_cutoff()
         rows = [
             o for o in self.offers.values()
             if o["filter_result"].get("score", 0) >= self.threshold
-            and not (self.hide_done and o["id"] in applied)
+            and not (self.hide_done and (o["id"] in applied or o.get("duplicate_of")))
             and (exact_date is None or o.get("date_scraped", "") == exact_date)
             and (min_date is None or o.get("date_scraped", "") >= min_date)
         ]
@@ -638,26 +751,47 @@ class StageTUI(App):
             for o in rows if latest_session and o.get("date_scraped", "") == latest_session
         }
         table.row_styles.update({
+            o["id"]: Style(bgcolor=SUSPECTED_HIGHLIGHT_COLOR)
+            for o in rows
+            if not o.get("duplicate_of")
+            and o["id"] not in applied
+            and _normalize_company(o.get("company", "")) in suspected_companies
+        })
+        table.row_styles.update({
+            o["id"]: Style(bgcolor=DUPLICATE_HIGHLIGHT_COLOR)
+            for o in rows if o.get("duplicate_of")
+        })
+        table.row_styles.update({
             o["id"]: Style(color="black", bgcolor="green3")
             for o in rows if o["id"] in self.selected
         })
-        table.clear()
-        for o in rows:
-            selected = o["id"] in self.selected
-            mark = "▶" if selected else ("✓" if o["id"] in applied else "")
-            table.add_row(
-                *_cells([
-                    mark,
-                    o["filter_result"].get("score", "?"),
-                    o.get("title", "")[:50],
-                    (o.get("company", "") or "?")[:24],
-                    o.get("location", "")[:20],
-                    o.get("country", ""),
-                    o.get("source", "")[:18],
-                    o.get("date_scraped", ""),
-                ]),
-                key=o["id"],
-            )
+        with self._keep_cursor("offers-table"):
+            table.clear()
+            for o in rows:
+                selected = o["id"] in self.selected
+                if selected:
+                    mark = "▶"
+                elif o.get("duplicate_of"):
+                    mark = "⧉"
+                elif o["id"] in applied:
+                    mark = "✓"
+                elif _normalize_company(o.get("company", "")) in suspected_companies:
+                    mark = "?"
+                else:
+                    mark = ""
+                table.add_row(
+                    *_cells([
+                        mark,
+                        o["filter_result"].get("score", "?"),
+                        o.get("title", "")[:50],
+                        (o.get("company", "") or "?")[:24],
+                        o.get("location", "")[:20],
+                        o.get("country", ""),
+                        o.get("source", "")[:18],
+                        o.get("date_scraped", ""),
+                    ]),
+                    key=o["id"],
+                )
         hidden = " · candidatées masquées" if self.hide_done else ""
         if self.period == "session":
             period_txt = f" · session {exact_date}" if exact_date else ""
@@ -667,8 +801,11 @@ class StageTUI(App):
             period_txt = " · 30 derniers jours"
         else:
             period_txt = ""
+        n_duplicates = sum(1 for o in rows if o.get("duplicate_of"))
+        dup_txt = f" · {n_duplicates} doublon(s)" if n_duplicates else ""
         self.sub_title = (
-            f"seuil ≥ {self.threshold}{period_txt} · {len(rows)} offre(s){hidden} · {len(self.selected)} cochée(s)"
+            f"seuil ≥ {self.threshold}{period_txt} · {len(rows)} offre(s){hidden}"
+            f" · {len(self.selected)} cochée(s){dup_txt}"
         )
         self.update_detail()
 
@@ -954,6 +1091,24 @@ class StageTUI(App):
     def _active_tab(self) -> str:
         return self.query_one(TabbedContent).active
 
+    @contextlib.contextmanager
+    def _keep_cursor(self, table_id: str):
+        """Préserve la ligne sous le curseur pendant une reconstruction de table.
+
+        `DataTable.clear()` + `add_row()` ramène le curseur en haut : sans ça, changer
+        le statut d'une candidature (ou cocher une offre) faisait sauter la sélection
+        sur la première ligne, obligeant à retrouver sa place à chaque action.
+        """
+        previous = self._current_row_key(table_id)
+        yield
+        if previous is None:
+            return
+        table = self.query_one(f"#{table_id}", DataTable)
+        try:
+            table.move_cursor(row=table.get_row_index(previous))
+        except (KeyError, RowDoesNotExist):
+            pass  # la ligne a disparu de la liste (filtrée, supprimée…)
+
     def _current_row_key(self, table_id: str) -> str | None:
         table = self.query_one(f"#{table_id}", DataTable)
         if table.row_count == 0:
@@ -981,6 +1136,28 @@ class StageTUI(App):
             parts += ["", "[green]✅ " + " · ".join(fr["points_forts"]) + "[/green]"]
         if fr.get("points_faibles"):
             parts += ["[yellow]⚠️ " + " · ".join(fr["points_faibles"]) + "[/yellow]"]
+        target_id = o.get("duplicate_of")
+        if target_id:
+            target_app = next((a for a in load_applications() if a["offer_id"] == target_id), None)
+            if target_app:
+                # `\[⧉]` : le crochet littéral serait sinon interprété comme balise Rich.
+                parts += [
+                    "",
+                    f"[magenta]⧉ Doublon de {target_id} — {target_app.get('company', '?')} · "
+                    f"{target_app.get('title', '?')} ({target_app.get('status', '?')})[/magenta]",
+                ]
+            else:
+                parts += ["", f"[magenta]⧉ Doublon de {target_id}[/magenta]"]
+        else:
+            suspects = suggest_targets(o, load_applications())
+            if suspects:
+                # `\[?]` : le crochet littéral serait sinon interprété comme balise Rich.
+                parts += ["", "[#b39ddb]\\[?] Doublon possible de :[/#b39ddb]"]
+                for a in suspects:
+                    parts.append(
+                        f"[#b39ddb]   {a['offer_id']} — {a.get('company', '?')} · "
+                        f"{a.get('title', '?')} ({a.get('status', '?')})[/#b39ddb]"
+                    )
         desc = strip_html(o.get("description", ""), max_chars=1200)
         if desc:
             parts += ["", "[dim]" + desc + "[/dim]"]
@@ -992,6 +1169,8 @@ class StageTUI(App):
         elif event.data_table.id == "letters-table":
             self._preview_cv = False
             self.update_letter_preview()
+        elif event.data_table.id == "track-table":
+            self.update_track_detail()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.data_table.id == "letters-table":
@@ -1020,6 +1199,85 @@ class StageTUI(App):
             return
         self.hide_done = not self.hide_done
         self.refresh_offers()
+
+    def action_mark_duplicate(self) -> None:
+        if self._active_tab() != "offers":
+            return
+        oid = self._current_row_key("offers-table")
+        if not oid:
+            return
+        offer = self.offers.get(oid)
+        if not offer:
+            return
+
+        if offer.get("duplicate_of"):
+            try:
+                clear_duplicate(oid)
+            except ValueError as e:
+                self.notify_status(f"Erreur : {e}")
+                return
+            offer.pop("duplicate_of", None)
+            self.refresh_offers()
+            self.notify_status(f"Marquage doublon retiré pour {oid}.")
+            return
+
+        apps = load_applications()
+        matches = suggest_targets(offer, apps)
+        company_norm = _normalize_company(offer.get("company", ""))
+        same_company = [a for a in matches]
+        others = [
+            a for a in apps
+            if _normalize_company(a.get("company", "")) != company_norm
+        ]
+        candidates = same_company + others
+        if not candidates:
+            self.notify_status("Aucune candidature existante à proposer comme cible.")
+            return
+
+        def _label(a: dict) -> str:
+            title = (a.get("title", "") or "?")[:70]
+            return f"{a.get('company', '?')} — {title} ({a.get('status', '?')})"
+
+        same_company_opts = [(a["offer_id"], _label(a)) for a in same_company]
+        others_opts = [(a["offer_id"], _label(a)) for a in others]
+        apps_by_id = {a["offer_id"]: a for a in candidates}
+        offer_title = offer.get("title", "") or "?"
+        offer_company = offer.get("company", "") or "?"
+        modal_title = f"Marquer « {offer_title} » ({offer_company}) comme doublon de :"
+
+        def _apply(target_id: str) -> None:
+            try:
+                mark_duplicate(oid, target_id)
+            except ValueError as e:
+                self.notify_status(f"Erreur : {e}")
+                return
+            self.offers[oid]["duplicate_of"] = target_id
+            self.refresh_offers()
+            self.notify_status(f"{oid} marquée comme doublon de {target_id}.")
+
+        def _pick(target_id: str | None) -> None:
+            if not target_id:
+                return
+            target_app = apps_by_id.get(target_id, {})
+            target_company = target_app.get("company", "") or "?"
+            if _normalize_company(target_company) != company_norm:
+                message = (
+                    f"« {offer_company} » ≠ « {target_company} » — "
+                    "confirmer le marquage comme doublon malgré des entreprises différentes ?"
+                )
+
+                def _confirm(ok: bool) -> None:
+                    if ok:
+                        _apply(target_id)
+
+                self.push_screen(ConfirmScreen(message), _confirm)
+                return
+            _apply(target_id)
+
+        self.push_screen(
+            DuplicatePickerScreen(same_company_opts, others_opts, modal_title, offer_company),
+            _pick,
+        )
 
     def action_cycle_period(self) -> None:
         if self._active_tab() != "offers":
@@ -1336,7 +1594,7 @@ class StageTUI(App):
             # Toast et non barre de statut : celle-ci est réécrite par le spinner à chaque tick.
             self.notify("Un scrape est déjà en cours.", title="Scrape", severity="warning")
             return
-        self._start_spinner("Scrape des sources…")
+        self._start_spinner(label)
         self.notify("Scrape + filtre + rapport lancés (plusieurs minutes).", title="Scrape")
         self.run_scrape(include_groups=include_groups)
 

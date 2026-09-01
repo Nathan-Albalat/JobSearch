@@ -38,6 +38,7 @@ from src.generator import generate
 from src.notifier import send_notification
 from src.manual import from_file, from_url
 from src.tracker import load_applications, mark_status, render_applications_table, STATUSES
+from src.duplicates import mark_duplicate, clear_duplicate
 
 
 def cmd_scrape(
@@ -178,6 +179,8 @@ Exemples :
   python main.py --generate 0151e52f
   python main.py --from-url https://example.com/jobs/stage-dev
   python main.py --from-file ~/Downloads/offre_wttj.html --url-source "https://..." --company "Criteo"
+  python main.py --mark-duplicate dcd4359a c52e7b97   # marque dcd4359a comme doublon de c52e7b97
+  python main.py --unmark-duplicate dcd4359a          # annule le marquage
         """,
     )
 
@@ -222,6 +225,17 @@ Exemples :
         nargs=2,
         metavar=("OFFER_ID", "STATUS"),
         help=f"Met à jour le statut d'une candidature ({', '.join(STATUSES)})",
+    )
+    group.add_argument(
+        "--mark-duplicate",
+        nargs=2,
+        metavar=("OFFER_ID", "TARGET_ID"),
+        help="Marque OFFER_ID comme doublon de TARGET_ID (offre déjà candidatée)",
+    )
+    group.add_argument(
+        "--unmark-duplicate",
+        metavar="OFFER_ID",
+        help="Annule le marquage doublon de OFFER_ID",
     )
     parser.add_argument(
         "--location",
@@ -319,6 +333,20 @@ Exemples :
         except (KeyError, ValueError) as e:
             sys.exit(f"Erreur : {e}")
         print(f"Candidature {offer_id} ({app['company']}) → statut : {status}")
+    elif args.mark_duplicate:
+        offer_id, target_id = args.mark_duplicate
+        try:
+            mark_duplicate(offer_id, target_id)
+        except ValueError as e:
+            sys.exit(f"Erreur : {e}")
+        print(f"Offre {offer_id} marquée comme doublon de {target_id}.")
+    elif args.unmark_duplicate:
+        offer_id = args.unmark_duplicate
+        try:
+            clear_duplicate(offer_id)
+        except ValueError as e:
+            sys.exit(f"Erreur : {e}")
+        print(f"Marquage doublon retiré pour {offer_id}.")
 
 
 if __name__ == "__main__":

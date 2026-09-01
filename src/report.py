@@ -31,8 +31,15 @@ def render_report(offers: list[dict], threshold: int | None = None, data_dir: st
         if f.endswith(".json")
     ) if os.path.isdir(offers_dir) else len(offers)
 
-    pertinent = [o for o in offers if o["filter_result"].get("score", 0) >= threshold]
+    pertinent = [
+        o for o in offers
+        if o["filter_result"].get("score", 0) >= threshold and not o.get("duplicate_of")
+    ]
     non_pertinent = [o for o in offers if o["filter_result"].get("score", 0) < threshold]
+    duplicates = [
+        o for o in offers
+        if o["filter_result"].get("score", 0) >= threshold and o.get("duplicate_of")
+    ]
 
     pertinent.sort(key=lambda o: o["filter_result"].get("score", 0), reverse=True)
 
@@ -92,6 +99,15 @@ def render_report(offers: list[dict], threshold: int | None = None, data_dir: st
         lines.append(f"## Offres non pertinentes ({len(non_pertinent)})")
         lines.append("")
         lines.append(f"> {len(non_pertinent)} offre(s) écartée(s) (score < {threshold}) — non listées en détail.")
+        lines.append("")
+
+    if duplicates:
+        lines.append(f"## Doublons marqués ({len(duplicates)})")
+        lines.append("")
+        lines.append(
+            f"> {len(duplicates)} offre(s) pertinente(s) mais marquée(s) comme doublon "
+            "d'une candidature existante (`duplicate_of`) — exclues de la liste à candidater."
+        )
         lines.append("")
 
     tracking = render_tracking_section(data_dir)

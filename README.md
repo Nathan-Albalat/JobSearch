@@ -47,7 +47,11 @@ Step 4 — Application : Claude generates cover letter + adapted CV
 |---|---|
 | `python main.py --scrape` | Run steps 1-2-3 (collect + filter + report) |
 | `python main.py --scrape --threshold 7` | Same with relevance threshold of 7/10 |
+| `python main.py --scrape --with fr` | Also include FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR), disabled by default |
+| `python main.py --scrape --without fr` | Exclude a group even if enabled by default in `search.yaml` (`sources.enabled_groups`) |
 | `python main.py --generate <offer_id>` | Generate application for a specific offer |
+| `python main.py --mark-duplicate <offer_id> <target_id>` | Mark `<offer_id>` as a manual duplicate of `<target_id>` (an offer you already applied to) |
+| `python main.py --unmark-duplicate <offer_id>` | Undo a duplicate marking |
 
 ### Modules in Isolation (for debugging)
 
@@ -74,11 +78,15 @@ python main.py --tui
 
 | Tab | Role |
 |---|---|
-| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to add to the generation queue — checked rows are **highlighted in green**. Offers from the latest scrape session are **highlighted in dark blue**; the displayed period (all / latest session / last 7 days / last 30 days) can be filtered with `d`/`D`. |
+| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to add to the generation queue — checked rows are **highlighted in green**. Offers from the latest scrape session are **highlighted in dark blue**; the displayed period (all / latest session / last 7 days / last 30 days) can be filtered with `d`/`D`. The `✓` column is a 4-state cascade: `▶` checked > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company already applied to, not yet resolved) — press `m` to confirm/undo via a picker. |
 | **2 · Generation** | The generation queue, persisted across TUI restarts in `data/gen_queue.json`. Check rows with `space` to restrict `g`/`L` to that subset — with nothing checked, `g`/`L` process all pending offers. `x` removes rows from the queue. Launches letter + CV generation (or letter only) as a background task. |
 | **3 · Applications** | List of `output/candidatures/` directories, letter/CV preview, **PDF regeneration after manual editing**. |
-| **4 · Tracking** | Statuses and notes of applications (`applications.json`). Each status has its own colour: **sent** in yellow, **answered** in amber, **interview** in purple, **accepted** in green, **rejected** in red, **cancelled** in dark grey with dimmed text. |
-| **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. Cancelled applications are excluded from the rates and average response time, counted separately in a "Cancelled" category. |
+| **4 · Tracking** | Statuses and notes of applications (`applications.json`). Each status has its own colour: **sent** in yellow, **answered** in amber, **interview** in purple, **accepted** in green, **rejected** in red, **cancelled** in dark grey with dimmed text. The right-hand panel shows the individual timeline of the application under the cursor, rebuilt from its `history` (status → datetime log), with the day gap between each event — dates inferred from the old point-in-time fields (before `history` existed) are suffixed with `~`. |
+| **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. Cancelled applications are excluded from the rates and average response time, counted separately in a "Cancelled" category. Also: a tree view of the application journey (status flow) and a monthly breakdown of statuses reached. Press `f` to export the corresponding Sankey diagram as a self-contained HTML file (`output/stats/flux.html`), opened in your browser. |
+
+### Duplicate Offers
+
+Automated deduplication can't catch every cross-source repost (e.g. the same internship reappearing under a slightly different title on another job board). Rather than guess, the pipeline follows the principle "**the machine suggests, the user confirms**": offers from a company you already applied to are flagged with `?` in the Offers tab, and pressing `m` opens a picker of your applications to that company (or others) to confirm the match in one keystroke — nothing is ever auto-marked.
 
 ### Cover Letter Editing Workflow
 
@@ -97,17 +105,19 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 |---|---|---|
 | Global | `1`/`2`/`3`/`4`/`5` | Switch tab (Offers / Generation / Applications / Tracking / Stats) |
 | Global | `r` | Reload data from disk |
-| Global | `S` / `s` / `Ctrl+S` | Run scrape + filter + report (spinner + current step + timer in the status bar). `s` only triggers the scrape outside the Tracking tab, where it means "sent" |
+| Global | `S` / `s` | Run scrape + filter + report (spinner + current step + timer in the status bar). `s` only triggers the scrape outside the Tracking tab, where it means "sent"; `s` is an alias of `S` |
+| Global | `Ctrl+S` | Same, also including FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR) — equivalent to `python main.py --scrape --with fr` |
 | Global | `c` | Open Claude Console (reload API credits) |
 | Global | `?` | Show help (list of shortcuts) |
 | Global | `q` | Quit |
 | Offers | `space` | Check/uncheck offer for generation |
 | Offers | `o` | Open offer in browser |
 | Offers | `+`/`-` | Adjust displayed score threshold |
-| Offers | `h` | Hide/show already-applied offers |
+| Offers | `h` | Hide/show already-applied offers (and marked duplicates) |
 | Offers | `d` | Cycle displayed period (all · latest session · 7 days · 30 days) |
 | Offers | `D` | Pick a specific scrape session |
 | Offers | `g` | Go to Generation tab |
+| Offers | `m` | Mark/unmark the offer as a duplicate of an existing application (picker; the machine suggests via company name, the user confirms) |
 | Generation | `space` | Check/uncheck an offer in the queue (optional filter for `g`/`L`) |
 | Generation | `g` | Generate letter + CV (checked rows, or all pending offers) |
 | Generation | `L` | Generate **letter only** (no CV — 1 Sonnet call instead of 2) |
@@ -121,6 +131,7 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 | Tracking | `s`/`a`/`i`/`j`/`v`/`z` | Status → sent / answered / interview / rejected / accepted / cancelled |
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
+| Stats | `f` | Export the status-flow Sankey diagram (HTML, opened in browser) |
 
 ---
 
@@ -183,6 +194,24 @@ Edit `config/sources.yaml` — add a block:
   url: "https://link-to-feed.rss"
   type: rss
   country: "NL"  # ISO country code
+```
+
+### Welcome to the Jungle (WTTJ)
+Type `wttj` — no API key needed (public v3 API). NL entries are active by default, FR entries live in the `fr` group (`--with fr`). Pivoting to another country/query is a config-only edit:
+```yaml
+- name: "WTTJ - Intern NL"
+  type: wttj
+  country: "NL"
+  params:
+    job_title: "intern"
+    locations:
+      country: "Netherlands"
+      country_code: "NL"
+      label: "Pays-Bas"
+      latitude: 52.25
+      longitude: 5.75
+    contract_types: [internship, apprenticeship]
+    pages: 3
 ```
 
 ### Update Your CV

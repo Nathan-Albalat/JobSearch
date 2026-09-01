@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from datetime import datetime
 
 import yaml
 from textual import work
@@ -59,6 +60,97 @@ def parse_csv(value: str, default: list[str] | None = None) -> list[str]:
 def _yaml_str(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+_MOIS_FR = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+_MOIS_EN = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
+
+
+def _ordinal_en(day: int) -> str:
+    if 11 <= day % 100 <= 13:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix}"
+
+
+def parse_disponibilite(value: str) -> dict:
+    """Dérive `debut_iso`/`texte_fr`/`texte_en` depuis une saisie libre de
+    date de disponibilité (JJ/MM/AAAA ou AAAA-MM-JJ). Vide si non renseignée ;
+    conservée telle quelle en texte (ISO vide) si le format n'est pas reconnu,
+    plutôt que de rejeter la saisie."""
+    value = (value or "").strip()
+    if not value:
+        return {"debut_iso": "", "texte_fr": "", "texte_en": ""}
+    dt = None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            dt = datetime.strptime(value, fmt)
+            break
+        except ValueError:
+            continue
+    if dt is None:
+        return {"debut_iso": "", "texte_fr": value, "texte_en": value}
+    return {
+        "debut_iso": dt.strftime("%Y-%m-%d"),
+        "texte_fr": f"{dt.day} {_MOIS_FR[dt.month - 1]} {dt.year}",
+        "texte_en": f"{_ordinal_en(dt.day)} {_MOIS_EN[dt.month - 1]} {dt.year}",
+    }
+
+
+def render_geo_notes(pays: list[str], region_ville: str) -> str:
+    """Décrit la géographie de l'utilisateur (injecté dans le prompt via
+    {geo_notes}) — dérivé des pays choisis, jamais des notes de l'exemple
+    livré (qui peuvent porter le contexte d'un tiers)."""
+    region_ville = (region_ville or "").strip()
+    if pays:
+        base = f"Priorité géographique : {', '.join(pays)}."
+    else:
+        base = "Aucune priorité géographique particulière renseignée."
+    if region_ville:
+        base = f"{base} Priorité locale : {region_ville}."
+    return base
+
+
+def render_geo_details(pays: list[str]) -> list[str]:
+    """Bloc réellement injecté dans le barème du prompt ({geo_details}) —
+    une entrée générique par pays choisi, jamais celles de l'exemple livré."""
+    if not pays:
+        return [
+            "**Zone non précisée** : à définir avant le premier scrape "
+            "(config/search.yaml → geo.details)."
+        ]
+    details = [f"**{p}** : zone prioritaire pour cette recherche." for p in pays]
+    details.append(
+        "**Reste** : à scorer normalement sur le contenu technique, sans bonus géographique."
+    )
+    return details
+
+
+def render_scoring_bonus(values: dict) -> list[str]:
+    """Dérivé des domaines et du pays prioritaire choisis — jamais ceux de
+    l'auteur d'origine (ex: « Pays-Bas »)."""
+    bonus = [f"Domaine {d}" for d in values.get("domaines", [])[:2]]
+    pays = values.get("pays") or []
+    if pays:
+        bonus.append(f"Localisation : {pays[0]}")
+    return bonus
+
+
+def render_scoring_malus(values: dict) -> list[str]:
+    """Dérivé du type de contrat (et, si applicable, de la durée minimale)
+    choisis à l'étape « sujet »."""
+    type_contrat = values.get("type_contrat") or "le contrat recherché"
+    malus = [f"Ne correspond pas au type de contrat recherché ({type_contrat})"]
+    if values.get("duree_applicable"):
+        malus.append(f"Durée inférieure à {values.get('duree_semaines')} semaines")
+    return malus
 
 
 def _section_span(lines: list[str], section: str) -> tuple[int, int] | None:
@@ -172,18 +264,28 @@ def render_search_yaml(values: dict) -> str:
         text = _set_scalar(
             text, "duree", "texte", _yaml_str(f"{values['duree_semaines']} semaines minimum")
         )
+    else:
+        # Pas de durée minimale (ex: CDI) : neutralise aussi le texte, sinon
+        # `duree.texte` continue de décrire une contrainte qui ne s'applique plus.
+        text = _set_scalar(text, "duree", "texte", _yaml_str(""))
+
+    dispo = parse_disponibilite(values.get("dispo_raw", ""))
+    text = _set_scalar(text, "disponibilite", "debut_iso", _yaml_str(dispo["debut_iso"]))
+    text = _set_scalar(text, "disponibilite", "texte_fr", _yaml_str(dispo["texte_fr"]))
+    text = _set_scalar(text, "disponibilite", "texte_en", _yaml_str(dispo["texte_en"]))
+
     text = _set_list(text, "geo", "priorite", values["pays"])
     region_ville = (values.get("region_ville") or "").strip()
-    if region_ville:
-        # Reste cohérent avec `geo.priorite`/`secondaire` : on ne touche pas à la
-        # géographie de pays ni à `geo.details` (barème), on précise seulement la
-        # contrainte de localité dans `notes`, elle aussi injectée dans le prompt.
-        current_notes = _get_scalar(text, "geo", "notes") or ""
-        addition = f"Priorité géographique locale : {region_ville}."
-        new_notes = f"{current_notes} {addition}".strip() if current_notes else addition
-        text = _set_scalar(text, "geo", "notes", _yaml_str(new_notes))
+    # `notes` et `details` sont tous deux réellement injectés dans le barème du prompt
+    # ({geo_notes}/{geo_details}) : on les régénère entièrement depuis les pays choisis,
+    # on ne les fait jamais hériter de l'exemple livré (qui peut porter le contexte d'un tiers).
+    text = _set_scalar(text, "geo", "notes", _yaml_str(render_geo_notes(values["pays"], region_ville)))
+    text = _set_list(text, "geo", "details", render_geo_details(values["pays"]))
+
     text = _set_list(text, "domaines", "liste", values["domaines"])
     text = _set_scalar(text, "scoring", "seuil", str(values["seuil"]))
+    text = _set_list(text, "scoring", "bonus", render_scoring_bonus(values))
+    text = _set_list(text, "scoring", "malus", render_scoring_malus(values))
     return text
 
 
@@ -387,6 +489,7 @@ SEARCH_DEFAULTS = {
     "domaines": ["Informatique générale"],
     "seuil": 6,
     "region_ville": "",
+    "dispo_raw": "",
 }
 
 
@@ -416,6 +519,8 @@ class SearchScreen(ModalScreen[dict | _Back]):
             yield Input(value=", ".join(v["pays"]), id="s-pays")
             yield Label("Région / Ville prioritaire (optionnel — laisser vide si sans importance) :")
             yield Input(value=v["region_ville"], id="s-region")
+            yield Label("Date de disponibilité (JJ/MM/AAAA, optionnel) :")
+            yield Input(value=v["dispo_raw"], placeholder="JJ/MM/AAAA", id="s-dispo")
             yield Label("Domaines visés (séparés par des virgules) :")
             yield Input(value=", ".join(v["domaines"]), id="s-domaines")
             yield Label("Seuil de score de pertinence (0-10) :")
@@ -437,6 +542,7 @@ class SearchScreen(ModalScreen[dict | _Back]):
         duree_app = self.query_one("#s-duree-app", Input).value.strip().lower() not in ("n", "non", "no")
         pays = parse_csv(self.query_one("#s-pays", Input).value, ["Pays-Bas"])
         region_ville = self.query_one("#s-region", Input).value.strip()
+        dispo_raw = self.query_one("#s-dispo", Input).value.strip()
         domaines = parse_csv(self.query_one("#s-domaines", Input).value, ["Informatique générale"])
         return {
             "type_contrat": contrat,
@@ -444,6 +550,7 @@ class SearchScreen(ModalScreen[dict | _Back]):
             "duree_semaines": duree_sem,
             "pays": pays,
             "region_ville": region_ville,
+            "dispo_raw": dispo_raw,
             "domaines": domaines,
             "seuil": seuil,
         }

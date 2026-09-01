@@ -513,7 +513,12 @@ class Search:
         label = sujet.get("type_contrat", "Stage")
         label = label[:1].upper() + label[1:] if label else label
         duree_txt = f", {duree.get('texte', '')}" if duree.get("applicable", True) else ""
-        return f"{label} recherché{duree_txt}, disponible à partir du {dispo.get('texte_fr', '')}"
+        # La date de disponibilité est optionnelle (`--setup` permet de la laisser vide) :
+        # sans cette garde, on injectait « disponible à partir du » suivi de rien dans le
+        # prompt de scoring — une phrase tronquée que le modèle devait interpréter.
+        dispo_txt = (dispo.get("texte_fr") or "").strip()
+        dispo_part = f", disponible à partir du {dispo_txt}" if dispo_txt else ""
+        return f"{label} recherché{duree_txt}{dispo_part}"
 
 
 # ---------------------------------------------------------------------------

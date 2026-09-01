@@ -1,7 +1,7 @@
 # search.yaml — Le SUJET de recherche (par opposition à profile.yaml, qui est
 # l'identité du candidat). Toutes les sections sont optionnelles : les clés
-# absentes retombent sur les valeurs par défaut de src/config.py (DEFAULTS),
-# qui correspondent au comportement actuel (stage tech, Pays-Bas en priorité).
+# absentes retombent sur les valeurs par défaut de jobsearch/config.py (DEFAULTS),
+# calibrées sur le sujet de l'auteur d'origine — à ajuster ci-dessous pour le tien.
 #
 # Pour changer de sujet de recherche (ex: passer d'un stage à un CDI, ou
 # changer de pays), voir la section « Changer de sujet de recherche » de
@@ -15,18 +15,19 @@ sujet:
   expertise_recruteur: "spécialisé dans les stages en informatique et ingénierie logicielle"
 
 duree:
-  min_semaines: 22
-  texte: "22 semaines minimum"
+  min_semaines: 12
+  texte: "12 semaines minimum"
   applicable: true   # false pour un CDI : neutralise les règles de durée
 
+# Renseignés automatiquement par `jobsearch --setup` (question « date de disponibilité »).
+# Laissés vides ici : ce fichier est un modèle, pas la config d'un candidat en particulier.
 disponibilite:
-  debut_iso: "2027-03-15"
-  texte_fr: "15 mars 2027"
-  texte_en: "March 15th 2027"
+  debut_iso: ""
+  texte_fr: ""
+  texte_en: ""
 
 geo:
   priorite:
-    - "Pays-Bas"
     - "Belgique"
     - "Suisse"
     - "Allemagne"
@@ -35,13 +36,12 @@ geo:
     - "Europe (hors pays frontaliers)"
   dernier_recours:
     - "Hors Europe"
-  notes: "Stage à l'étranger obligatoire. France possible seulement si aucune option étrangère viable."
+  notes: "Préciser ici les contraintes de mobilité (ex: télétravail accepté, présentiel obligatoire dans une zone donnée)."
   # ⚠️ `details` doit rester cohérent avec `priorite`/`secondaire` ci-dessus : c'est ce bloc
   # qui est réellement injecté dans le barème du prompt ({geo_details}). Changer `priorite`
   # sans réécrire `details` laisse l'ancienne géographie piloter le scoring — c'était
   # précisément l'incohérence de l'ancienne version (l'Italie était absente du prompt).
   details:
-    - "**Pays-Bas** : priorité absolue — Amsterdam, Eindhoven, Delft, Rotterdam, Utrecht sont toutes des villes tech majeures avec de nombreuses entreprises internationales"
     - "**Italie** : Milan, Turin, Bologne — marché tech en croissance"
     - "**Belgique** : Bruxelles, Gand, Louvain — bonne densité tech, proche géographiquement, stage facilité par la francophonie partielle"
     - "**Suisse** : Zurich, Lausanne, Bâle — excellent niveau technique, salaires de stage élevés, mais coût de la vie important"
@@ -63,12 +63,12 @@ scoring:
   bonus:
     - "Stack Python ou JS/TS"
     - "Domaine IA/ML ou Data"
-    - "Pays-Bas"
+    - "Localisation prioritaire"
     - "Entreprise internationale"
   malus:
     - "Exige expérience professionnelle > 1 an"
     - "Uniquement présentiel hors Europe"
-    - "Stage < 22 semaines"
+    - "Durée inférieure au minimum souhaité"
   titre_bonus:
     - "Junior"
     - "Intern"

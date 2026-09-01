@@ -191,7 +191,7 @@ Ce que ça fait : tous les 2 jours à 8h00, le pipeline tourne et les résultats
 - Mots-clés du pré-filtre (le levier le plus rapide pour pivoter vers un autre type de contrat — ex. remplacer `intern`/`internship` par `cdi`/`permanent`)
 - Modèles/tokens Claude et paramètres par défaut du scraping
 
-Pour un vrai changement de sujet (ex. passer d'une recherche de stage à une recherche de CDI), il faut aussi réécrire les 14 exemples few-shot de scoring dans `config/prompts/filter.txt` et repartir d'un dossier `data/` vierge — voir la section « Changer de sujet de recherche » dans `CLAUDE.md` pour la procédure complète en 5 étapes.
+Pour un vrai changement de sujet (ex. passer d'une recherche de stage à une recherche de CDI), il faut aussi repartir d'un dossier `data/` vierge — le prompt de scoring livré (`filter.txt`) contient désormais des exemples génériques qui s'adaptent à n'importe quel sujet via les placeholders, donc rien à réécrire à la main pour démarrer. Pour un scoring plus fin, remplacer ces exemples par 8-14 offres réelles représentatives de ta recherche dans `config/prompts/filter.txt` (prend le pas sur le défaut du paquet). Voir la section « Changer de sujet de recherche » dans `CLAUDE.md` pour la procédure complète.
 
 ### Modifier ton profil de candidat
 Édite `config/profile.yaml` — ce fichier ne contient que ton identité (formation, compétences techniques, langues), indépendante du sujet de recherche.

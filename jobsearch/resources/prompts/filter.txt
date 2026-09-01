@@ -41,96 +41,32 @@ Ta mission : évaluer la pertinence d'une offre de **{type_contrat}** (et non {t
 - Si l'offre exige un niveau bac+5 ou un diplôme déjà obtenu : pénaliser si le candidat est encore en formation
 - Privilégier la substance de la description sur le titre seul
 
-## Exemples de scoring avec descriptions réelles
+## Exemples de scoring (génériques)
 
-<!-- Ces 14 exemples (A→N) sont calibrés sur le sujet actuel (stage tech, Pays-Bas
-     en priorité). Si tu changes de sujet de recherche (config/search.yaml), ils
-     doivent être réécrits avec des offres représentatives du nouveau sujet —
-     c'est l'étape la plus coûteuse en temps humain d'un pivot. -->
+<!-- Ces exemples décrivent la FORME d'une offre pertinente ou non, sans offre
+     réelle : ils s'adaptent au sujet configuré via les placeholders. Le barème
+     détaillé ci-dessus porte déjà l'essentiel du signal, ils ne visent qu'à
+     illustrer comment le combiner. Pour un scoring plus fin, remplace-les par
+     de vraies offres représentatives de ta recherche, dans
+     ~/.jobsearch/config/prompts/filter.txt — un jeu d'une dizaine d'exemples
+     réels calibrés sur ton propre sujet fait généralement mieux que ces
+     modèles génériques. -->
 
 **Exemple A — Score 9/10**
-Titre : Machine Learning Engineer Intern
-Lieu : Amsterdam, Netherlands | Durée : 6 mois
-Description : We are looking for a Machine Learning intern to join our NLP research team for 6 months (minimum). You will work on large language model fine-tuning, embedding optimization and production deployment of ML pipelines. Our stack: Python 3.11, PyTorch, Hugging Face Transformers, FastAPI, Docker, PostgreSQL. We value curiosity over years of experience — strong Python fundamentals and genuine interest in NLP are enough to apply. You will ship real features, not toy projects.
-→ Domaine ML/NLP parfaitement aligné, Pays-Bas en priorité absolue, stack maîtrisée (Python/PyTorch/Docker), 6 mois ≥ 22 semaines, aucune exigence d'expérience.
+Une offre de {type_contrat} dont le domaine correspond directement à un des domaines visés par le candidat, située dans un pays prioritaire ({pays_prioritaires}), avec une durée compatible (≥ {duree_min_semaines} semaines) et une stack technique qui recouvre largement les compétences du candidat, sans exigence d'expérience professionnelle préalable incompatible.
+→ Correspondance quasi parfaite sur les cinq critères du barème (domaine, géo, durée, stack, type de contrat).
 
-**Exemple B — Score 8/10**
-Titre : Stage Développeur Backend Python/Django
-Lieu : Bruxelles, Belgique | Durée : 6 mois
-Description : Notre startup fintech cherche un stagiaire backend pour 6 mois. Vous développerez des API REST avec Django et FastAPI, écrirez des tests unitaires et intégration (pytest), et participerez aux code reviews hebdomadaires. Stack : Python 3.11, Django, FastAPI, PostgreSQL, Redis, Docker, GitHub Actions. Niveau requis : Bac+4/+5 en cours, une première expérience en Python est un plus mais pas exigée. Anglais B2 minimum.
-→ Backend Python maîtrisé, Belgique géo secondaire, 6 mois, stack quasi-identique aux compétences du candidat.
+**Exemple B — Score 6/10**
+Une offre dans un domaine adjacent (proche mais pas identique aux domaines visés), avec une stack partiellement maîtrisée, une localisation secondaire acceptable ou un remote large, et une durée légèrement inférieure à {duree_min_semaines} semaines mais non explicitement bloquante.
+→ Plusieurs critères favorables mais aucun n'est pleinement optimal — pertinent sans être idéal.
 
-**Exemple C — Score 7/10**
-Titre : Internship Data Engineer — Remote
-Lieu : Remote (Europe) | Durée : 5-6 mois
-Description : Join our data platform team as an intern. You'll build and maintain ETL pipelines using Apache Spark and dbt, work with cloud data warehouses (Snowflake, BigQuery), and help improve data quality monitoring. Required: Python proficiency, SQL knowledge, familiarity with cloud environments. Nice to have: Airflow, dbt, Kafka. This is a remote-first role open to candidates based anywhere in Europe. Duration: 5 months minimum, 6 preferred.
-→ Data engineering adjacent au profil Python/ML, remote Europe acceptable, durée 5 mois légèrement sous 22 semaines mais négociable.
+**Exemple C — Score 4/10**
+Une offre avec une composante technique réelle mais minoritaire (ex : support, analyse fonctionnelle, reporting), une localisation hors des zones prioritaires ou secondaires, ou une exigence d'expérience/diplôme au-delà du profil du candidat.
+→ Signal technique présent mais dilué par d'autres critères défavorables — score médian.
 
-**Exemple D — Score 6/10**
-Titre : Software Engineering Intern (Frontend Focus)
-Lieu : Berlin, Germany | Durée : 6 mois
-Description : We're growing our product team and looking for a frontend-leaning software intern. You'll work on our React/TypeScript web app, implement new features from Figma designs, write unit tests with Jest, and participate in our agile rituals. Our stack: React 18, TypeScript, GraphQL, Node.js, PostgreSQL. Experience with modern JavaScript required; TypeScript a plus. Berlin onsite, relocation support available.
-→ Frontend TypeScript pratiqué, Allemagne géo secondaire, 6 mois, mais domaine moins aligné que backend/data.
-
-**Exemple E — Score 5/10**
-Titre : Stage IT Analyst & Développement interne
-Lieu : Lyon, France | Durée : 6 mois
-Description : Au sein de la DSI, vous participerez à l'analyse des besoins métier, à la rédaction de spécifications fonctionnelles et à des développements Python ponctuels pour automatiser des reportings Excel. Vous contribuerez aussi au support N2 des utilisateurs. Bac+4/+5 en informatique. La connaissance de Power BI ou SQL est un plus. Poste basé à Lyon, pas de remote.
-→ Composante Python/SQL réelle mais minoritaire face au support IT et à l'analyse fonctionnelle, France hors géo prioritaire, score médian.
-
-**Exemple F — Score 3/10**
-Titre : Werkstudent Online Marketing & Analytics (m/w/d)
-Lieu : Hamburg, Germany | Durée : flexible
-Description : Wir suchen einen Werkstudenten für unser Digital Marketing Team. Aufgaben: Pflege und Auswertung von Google Analytics und Meta Ads, Erstellung von Performance-Reports, Unterstützung bei SEO-Maßnahmen und Content-Planung. Kenntnisse in Excel und grundlegendem Web-Tracking erwünscht. Marketing-Studium oder Wirtschaftsinformatik bevorzugt.
-→ Présence d'outils analytics mais rôle marketing non technique, pas de développement, Hambourg acceptable géographiquement mais domaine inadapté.
-
-**Exemple G — Score 2/10**
-Titre : PR-Consultant Online (all genders)
-Lieu : Mannheim, Allemagne
-Description : Als PR-Consultant (Intern) unterstützen Sie unser Kommunikationsteam bei der Pressearbeit, verfassen Pressemitteilungen und Fachartikel, pflegen Medienkontakte und koordinieren Events. Kenntnisse in Social Media Management und ein Gespür für Storytelling sind erwünscht. Keine technischen Anforderungen.
-→ Hors domaine informatique, aucune compétence technique requise, profil communication pure.
-
-**Exemple H — Score 1/10**
-Titre : Sales Development Intern — SaaS Startup
-Lieu : Remote (Global) | Durée : 3 mois
-Description : Join our sales team as an SDR intern. You'll prospect new B2B leads via LinkedIn and email, qualify inbound demo requests, and support account executives with CRM data entry (HubSpot). No technical skills required — we're looking for great communicators who are hungry to learn sales. Commission-based bonus available.
-→ Rôle commercial sans composante technique, durée 3 mois trop courte, CRM ≠ développement logiciel.
-
-**Exemple I — Score 0/10**
-Titre : Medical Device Testing Intern
-Lieu : Eindhoven, Netherlands
-Description : Support our regulatory affairs team in validating medical device software against IEC 62304 standards. Tasks include documentation review, test case execution from predefined scripts, and traceability matrix updates. No programming required. Biology, pharmacy or medical engineering background preferred.
-→ Test sur scripts prédéfinis sans développement, domaine médical hors compétences, malgré la localisation NL favorable.
-
-**Exemple J — Score 8/10**
-Titre : Embedded Software Intern (C/C++)
-Lieu : Eindhoven, Netherlands | Durée : 6 mois
-Description : Our R&D team is looking for an embedded software intern to help develop firmware for next-generation sensor platforms. You will write and test C/C++ code for ARM Cortex-M microcontrollers, implement communication protocols (I2C, SPI, UART), and contribute to our hardware-in-the-loop testing framework. Experience with STM32 or similar MCUs is a strong plus. Python scripting for test automation welcome. You'll work closely with hardware engineers in a multidisciplinary team. 6-month commitment required, possible extension.
-→ Systèmes embarqués C/STM32 directement dans les compétences du candidat, Pays-Bas prioritaire, durée 6 mois parfaite, équipe R&D multidisciplinaire proche du contexte académique.
-
-**Exemple K — Score 7/10**
-Titre : Stage Ingénieur IA / Computer Vision
-Lieu : Zurich, Switzerland | Durée : 5-6 mois
-Description : Rejoignez notre équipe de recherche appliquée pour travailler sur des modèles de vision par ordinateur destinés à l'inspection automatisée en milieu industriel. Vous travaillerez sur la collecte et l'annotation de données, l'entraînement et l'évaluation de modèles CNN et Transformer (PyTorch), et l'intégration dans un pipeline de production. Master ou fin de Bac+5 requis, connaissance de Python et des frameworks deep learning indispensable. Zurich onsite, logement facilité.
-→ Computer vision/deep learning aligné, Suisse géo acceptable, PyTorch maîtrisé, mais durée 5 mois légèrement courte et "fin de Bac+5" peut exclure un étudiant encore en cours.
-
-**Exemple L — Score 6/10**
-Titre : Cloud & DevOps Intern — AWS/GCP
-Lieu : Remote Europe | Durée : 6 mois
-Description : We're hiring a Cloud/DevOps intern to help our infrastructure team. You will provision cloud resources using Terraform and Ansible, build and maintain CI/CD pipelines (GitHub Actions, GitLab CI), monitor services with Prometheus and Grafana, and contribute to our Kubernetes migration. Required: Linux proficiency, scripting in Python or Bash, familiarity with at least one cloud provider. Docker and Kubernetes knowledge is a plus. Full remote within Europe, asynchronous-first culture.
-→ DevOps/cloud adjacent au profil (Docker/Python connus), remote Europe, 6 mois, mais spécialisation infrastructure plus éloignée du cœur logiciel/ML du candidat.
-
-**Exemple M — Score 4/10**
-Titre : Stagiaire Technicien Support Informatique
-Lieu : Paris, France | Durée : 4 mois
-Description : Au sein du service IT d'un groupe international, vous assurerez le support technique de niveau 1 et 2 (helpdesk, installation de postes, configuration réseau), participerez à la migration vers Windows 11 et rédigerez des procédures utilisateur. Bac+2/+3 minimum. Aucune connaissance en développement requise. Permis B souhaité pour interventions sur sites.
-→ IT Support sans développement logiciel, durée 4 mois sous le minimum, France hors géo prioritaire, niveau bac+2/+3 en dessous du profil.
-
-**Exemple N — Score 3/10**
-Titre : Internship Business Analyst — FinTech
-Lieu : London, UK | Durée : 6 mois
-Description : Join our product team as a Business Analyst intern. You will gather and document business requirements, create user stories, facilitate stakeholder workshops, and work with our development team to prioritize the backlog. Familiarity with SQL for basic data queries is a plus. No coding required. Strong communication skills essential. UK visa sponsorship not provided for interns.
-→ Rôle fonctionnel sans développement, seule la compétence SQL est tangente, UK post-Brexit avec restrictions visa, profil non technique dominant.
+**Exemple D — Score 1/10**
+Une offre hors du domaine informatique/ingénierie (ex : vente, marketing non technique, communication, support administratif), sans aucune exigence ni composante technique, quel que soit le type de contrat ou la localisation.
+→ Absence de correspondance sur le critère le plus déterminant (le domaine) : le reste du barème ne peut pas compenser.
 
 ## Considérations géographiques détaillées
 {geo_details}

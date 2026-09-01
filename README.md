@@ -191,7 +191,7 @@ Edit `config/search.yaml` (see the commented `config/search.example.yaml`):
 - Pre-filter keywords (the fastest lever to pivot to a different contract type — e.g. swap `intern`/`internship` for `permanent`/`full-time`)
 - Claude models/tokens and default scraping parameters
 
-To fully change subject (e.g. from internship search to full-time job search), also rewrite the 14 few-shot scoring examples in `config/prompts/filter.txt` and start from an empty `data/` folder — see "Changer de sujet de recherche" in `CLAUDE.md` for the full 5-step process.
+To fully change subject (e.g. from internship search to full-time job search), also start from an empty `data/` folder — the packaged `filter.txt` scoring prompt now ships with generic examples that adapt to any subject via placeholders, so there is nothing to rewrite by hand to get started. For a sharper scoring signal, replace those examples with 8-14 real offers representative of your search in `config/prompts/filter.txt` (takes priority over the package default). See "Changer de sujet de recherche" in `CLAUDE.md` for the full process.
 
 ### Change Your Candidate Profile
 Edit `config/profile.yaml` — this only holds your identity (education, technical skills, languages), independent of the search subject.

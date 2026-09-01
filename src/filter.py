@@ -10,7 +10,7 @@ import yaml
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from src.config import Search, fill_template, get_search
+from src.config import PATHS, Search, fill_template, get_search
 
 
 def load_profile_text(config_dir: str, search: Search | None = None) -> str:
@@ -250,8 +250,8 @@ def filter_batch(
 
 
 def filter_all(
-    config_dir: str = "config",
-    data_dir: str = "data",
+    config_dir: str = PATHS.config_dir,
+    data_dir: str = PATHS.data_dir,
     threshold: int | None = None,
     use_batch: bool = True,
 ) -> tuple[int, int]:

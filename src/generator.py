@@ -12,7 +12,7 @@ from src.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_p
 from src.cv_sync import sync_cv_master
 from src.letter_pdf import render_letter_pdf
 from src.tracker import record_generated
-from src.config import Search, fill_template, get_search  # noqa: F401 (fill_template ré-exporté)
+from src.config import PATHS, Search, fill_template, get_search  # noqa: F401 (fill_template ré-exporté)
 
 
 def load_offer(offer_id: str, data_dir: str) -> dict:
@@ -113,10 +113,10 @@ def generate_cv_adapt(
 
 def generate(
     offer_id: str,
-    config_dir: str = "config",
-    data_dir: str = "data",
-    cv_dir: str = "cv_master",
-    output_dir: str = "output",
+    config_dir: str = PATHS.config_dir,
+    data_dir: str = PATHS.data_dir,
+    cv_dir: str = PATHS.cv_dir,
+    output_dir: str = PATHS.output_dir,
     letter_only: bool = False,
 ) -> str:
     load_dotenv()
@@ -203,10 +203,10 @@ def generate(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Génère lettre + CV adapté pour une offre")
     parser.add_argument("offer_id", help="ID de l'offre (ex: 0151e52f)")
-    parser.add_argument("--config", default="config")
-    parser.add_argument("--data", default="data")
-    parser.add_argument("--cv", default="cv_master")
-    parser.add_argument("--output", default="output")
+    parser.add_argument("--config", default=PATHS.config_dir)
+    parser.add_argument("--data", default=PATHS.data_dir)
+    parser.add_argument("--cv", default=PATHS.cv_dir)
+    parser.add_argument("--output", default=PATHS.output_dir)
     parser.add_argument("--letter-only", action="store_true",
                         help="Génère uniquement la lettre (pas de CV adapté — économie d'un appel API)")
     args = parser.parse_args()

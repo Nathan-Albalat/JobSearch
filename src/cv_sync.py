@@ -1,6 +1,7 @@
 """Génère cv_master.md depuis cv_data.yaml (source de vérité unique)."""
 import os
 
+from src.config import PATHS
 from src.cv_pdf import load_cv_data
 
 
@@ -81,7 +82,7 @@ def generate_cv_master_md(cv_data: dict) -> str:
     return "\n".join(lines)
 
 
-def sync_cv_master(cv_dir: str = "cv_master") -> str:
+def sync_cv_master(cv_dir: str = PATHS.cv_dir) -> str:
     cv_data = load_cv_data(cv_dir)
     content = generate_cv_master_md(cv_data)
     path = os.path.join(cv_dir, "cv_master.md")

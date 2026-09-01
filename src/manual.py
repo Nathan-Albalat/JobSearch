@@ -14,6 +14,7 @@ from datetime import date
 import requests
 from bs4 import BeautifulSoup
 
+from src.config import PATHS
 from src.scraper import make_offer_id
 from src.generator import generate
 
@@ -257,7 +258,7 @@ def build_offer_stub(
     }
 
 
-def save_offer_stub(offer: dict, data_dir: str = "data") -> str:
+def save_offer_stub(offer: dict, data_dir: str = PATHS.data_dir) -> str:
     offers_dir = os.path.join(data_dir, "offers")
     os.makedirs(offers_dir, exist_ok=True)
     path = os.path.join(offers_dir, f"{offer['id']}.json")
@@ -280,7 +281,7 @@ def create_stub_from_file(
     url_source: str = "",
     title_override: str = "",
     company_override: str = "",
-    data_dir: str = "data",
+    data_dir: str = PATHS.data_dir,
 ) -> dict:
     """Extrait + sauvegarde le stub d'offre depuis un fichier HTML (sans générer la candidature)."""
     if not os.path.exists(path):
@@ -305,7 +306,7 @@ def create_stub_from_url(
     url: str,
     title_override: str = "",
     company_override: str = "",
-    data_dir: str = "data",
+    data_dir: str = PATHS.data_dir,
 ) -> dict:
     """Télécharge + extrait + sauvegarde le stub d'offre depuis une URL (sans générer la candidature)."""
     print(f"Téléchargement : {url}")
@@ -327,10 +328,10 @@ def from_file(
     url_source: str = "",
     title_override: str = "",
     company_override: str = "",
-    data_dir: str = "data",
-    config_dir: str = "config",
-    cv_dir: str = "cv_master",
-    output_dir: str = "output",
+    data_dir: str = PATHS.data_dir,
+    config_dir: str = PATHS.config_dir,
+    cv_dir: str = PATHS.cv_dir,
+    output_dir: str = PATHS.output_dir,
 ) -> str:
     try:
         offer = create_stub_from_file(path, url_source, title_override, company_override, data_dir)
@@ -345,10 +346,10 @@ def from_url(
     url: str,
     title_override: str = "",
     company_override: str = "",
-    data_dir: str = "data",
-    config_dir: str = "config",
-    cv_dir: str = "cv_master",
-    output_dir: str = "output",
+    data_dir: str = PATHS.data_dir,
+    config_dir: str = PATHS.config_dir,
+    cv_dir: str = PATHS.cv_dir,
+    output_dir: str = PATHS.output_dir,
 ) -> str:
     try:
         offer = create_stub_from_url(url, title_override, company_override, data_dir)

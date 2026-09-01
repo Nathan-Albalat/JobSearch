@@ -20,14 +20,16 @@ import json
 import os
 import re
 
+from src.config import PATHS
+
 APPLICATIONS_FILENAME = "applications.json"
 
 
-def _offer_path(offer_id: str, data_dir: str = "data") -> str:
+def _offer_path(offer_id: str, data_dir: str = PATHS.data_dir) -> str:
     return os.path.join(data_dir, "offers", f"{offer_id}.json")
 
 
-def load_offer(offer_id: str, data_dir: str = "data") -> dict | None:
+def load_offer(offer_id: str, data_dir: str = PATHS.data_dir) -> dict | None:
     """Lecture tolérante d'une offre — retourne None si absente/illisible.
 
     Contrairement à `generator.py` (l. 18-24), qui fait `sys.exit` sur une offre
@@ -43,7 +45,7 @@ def load_offer(offer_id: str, data_dir: str = "data") -> dict | None:
         return None
 
 
-def _load_applications_raw(data_dir: str = "data") -> list[dict]:
+def _load_applications_raw(data_dir: str = PATHS.data_dir) -> list[dict]:
     """Lecture minimale de applications.json, sans dépendre de src.tracker."""
     path = os.path.join(data_dir, APPLICATIONS_FILENAME)
     if not os.path.exists(path):
@@ -71,12 +73,12 @@ def _normalize_company(name: str) -> str:
     return name
 
 
-def _save_offer_file(offer_id: str, offer: dict, data_dir: str = "data") -> None:
+def _save_offer_file(offer_id: str, offer: dict, data_dir: str = PATHS.data_dir) -> None:
     with open(_offer_path(offer_id, data_dir), "w", encoding="utf-8") as f:
         json.dump(offer, f, ensure_ascii=False, indent=2)
 
 
-def mark_duplicate(offer_id: str, target_id: str, data_dir: str = "data") -> dict:
+def mark_duplicate(offer_id: str, target_id: str, data_dir: str = PATHS.data_dir) -> dict:
     """Marque `offer_id` comme doublon de `target_id` (écrit `duplicate_of`).
 
     Relit toujours l'offre complète depuis le disque avant mutation (jamais un
@@ -128,7 +130,7 @@ def mark_duplicate(offer_id: str, target_id: str, data_dir: str = "data") -> dic
     return offer
 
 
-def clear_duplicate(offer_id: str, data_dir: str = "data") -> dict:
+def clear_duplicate(offer_id: str, data_dir: str = PATHS.data_dir) -> dict:
     """Retire le marquage doublon d'une offre (annulation). Idempotent."""
     offer = load_offer(offer_id, data_dir)
     if offer is None:

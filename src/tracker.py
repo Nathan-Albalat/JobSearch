@@ -4,6 +4,8 @@ import os
 from collections import Counter
 from datetime import date, datetime
 
+from src.config import PATHS
+
 STATUSES = ["generated", "sent", "answered", "interview", "rejected", "accepted", "cancelled"]
 # Statuts indiquant qu'une réponse de l'entreprise a été reçue
 RESPONSE_STATUSES = {"answered", "interview", "rejected", "accepted"}
@@ -82,7 +84,7 @@ def _path(data_dir: str) -> str:
     return os.path.join(data_dir, "applications.json")
 
 
-def load_applications(data_dir: str = "data") -> list[dict]:
+def load_applications(data_dir: str = PATHS.data_dir) -> list[dict]:
     path = _path(data_dir)
     if not os.path.exists(path):
         return []
@@ -90,13 +92,13 @@ def load_applications(data_dir: str = "data") -> list[dict]:
         return json.load(f)
 
 
-def save_applications(apps: list[dict], data_dir: str = "data") -> None:
+def save_applications(apps: list[dict], data_dir: str = PATHS.data_dir) -> None:
     os.makedirs(data_dir, exist_ok=True)
     with open(_path(data_dir), "w", encoding="utf-8") as f:
         json.dump(apps, f, ensure_ascii=False, indent=2)
 
 
-def record_generated(offer: dict, data_dir: str = "data") -> None:
+def record_generated(offer: dict, data_dir: str = PATHS.data_dir) -> None:
     """Enregistre (ou met à jour) une candidature après génération de la lettre/CV."""
     apps = load_applications(data_dir)
     for app in apps:
@@ -128,7 +130,7 @@ def record_generated(offer: dict, data_dir: str = "data") -> None:
     save_applications(apps, data_dir)
 
 
-def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = "data") -> dict:
+def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = PATHS.data_dir) -> dict:
     if status not in STATUSES:
         raise ValueError(f"Statut invalide '{status}'. Valides : {', '.join(STATUSES)}")
     apps = load_applications(data_dir)
@@ -211,7 +213,7 @@ def _application_location(app: dict, data_dir: str) -> str:
     return "Inconnu"
 
 
-def compute_stats(data_dir: str = "data") -> dict:
+def compute_stats(data_dir: str = PATHS.data_dir) -> dict:
     """Statistiques des candidatures pour le panneau de stats de la TUI."""
     apps = load_applications(data_dir)
     by_status = Counter(a.get("status", "generated") for a in apps)
@@ -271,7 +273,7 @@ def compute_stats(data_dir: str = "data") -> dict:
     }
 
 
-def render_tracking_section(data_dir: str = "data") -> list[str]:
+def render_tracking_section(data_dir: str = PATHS.data_dir) -> list[str]:
     """Section markdown 'Suivi des candidatures' pour le rapport."""
     apps = load_applications(data_dir)
     if not apps:

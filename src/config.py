@@ -17,15 +17,20 @@ import yaml
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Racine des données/config du pipeline. Par défaut, la racine du dépôt (rien
+# ne bouge pour l'utilisateur actuel) — surchargeable pour lancer le pipeline
+# depuis n'importe quel répertoire, ou pointer vers un autre emplacement.
+JOBSEARCH_HOME = os.path.abspath(os.environ.get("JOBSEARCH_HOME") or PROJECT_ROOT)
+
 
 @dataclass(frozen=True)
 class Paths:
-    """Regroupe les chemins du pipeline. Chemins relatifs par défaut (comme aujourd'hui)."""
+    """Regroupe les chemins du pipeline, résolus en absolu depuis `JOBSEARCH_HOME`."""
 
-    config_dir: str = "config"
-    data_dir: str = "data"
-    cv_dir: str = "cv_master"
-    output_dir: str = "output"
+    config_dir: str = os.path.join(JOBSEARCH_HOME, "config")
+    data_dir: str = os.path.join(JOBSEARCH_HOME, "data")
+    cv_dir: str = os.path.join(JOBSEARCH_HOME, "cv_master")
+    output_dir: str = os.path.join(JOBSEARCH_HOME, "output")
 
     @property
     def prompts_dir(self) -> str:
@@ -49,7 +54,11 @@ class Paths:
         return os.path.join(self.offers_dir, f"{offer_id}.json")
 
     def absolute(self) -> "Paths":
-        """Variante en chemins absolus — réservée au `base_url` WeasyPrint."""
+        """Conservée pour compatibilité (`src/cv_pdf.py`) — les chemins sont déjà
+        absolus depuis `JOBSEARCH_HOME`, donc simple no-op. Reste utile si un
+        `Paths` est un jour reconstruit avec des chemins relatifs explicites."""
+        if os.path.isabs(self.config_dir) and os.path.isabs(self.data_dir):
+            return self
         return Paths(
             config_dir=os.path.join(PROJECT_ROOT, self.config_dir),
             data_dir=os.path.join(PROJECT_ROOT, self.data_dir),
@@ -212,7 +221,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
-def load_search(config_dir: str = "config") -> dict:
+def load_search(config_dir: str = PATHS.config_dir) -> dict:
     """Charge `search.yaml` fusionné au-dessus de DEFAULTS. Jamais d'exception si absent."""
     path = os.path.join(config_dir, "search.yaml")
     if not os.path.exists(path):
@@ -223,7 +232,7 @@ def load_search(config_dir: str = "config") -> dict:
 
 
 @functools.lru_cache(maxsize=8)
-def get_search(config_dir: str = "config") -> "Search":
+def get_search(config_dir: str = PATHS.config_dir) -> "Search":
     return Search(load_search(config_dir))
 
 
@@ -473,6 +482,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     print(f"PROJECT_ROOT   : {PROJECT_ROOT}")
+    print(f"JOBSEARCH_HOME : {JOBSEARCH_HOME}")
     print(f"PATHS          : {PATHS}")
     search = get_search(PATHS.config_dir)
     print(f"threshold      : {search.threshold}")

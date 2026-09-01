@@ -46,7 +46,7 @@ cv_master/
   cv_master.md          Résumé textuel du CV (utilisé par le prompt cover_letter)
 
 src/
-  config.py              Socle de configuration : chemins (`Paths`/`PATHS`) + valeurs (`Search`/`get_search()`) — lit config/search.yaml fusionné au-dessus de DEFAULTS, jamais rien au niveau module
+  config.py              Socle de configuration : chemins (`Paths`/`PATHS`, résolus en absolu depuis `JOBSEARCH_HOME`) + valeurs (`Search`/`get_search()`) — lit config/search.yaml fusionné au-dessus de DEFAULTS, jamais rien au niveau module
   tui.py                Interface TUI Textual (--tui) : revue des offres, génération, suivi
   scraper.py            Collecte RSS (feedparser) + API JSON (arbeitnow) + Adzuna + dédup fuzzy inter-sources
   scraper_jobspy.py     Source type "jobspy" : LinkedIn / Indeed via python-jobspy
@@ -199,6 +199,10 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts (HTML, ouvert dans le navigateur) |
 
 ---
+
+## Emplacement des données (`JOBSEARCH_HOME`)
+
+Le pipeline se lance depuis **n'importe quel répertoire** : tous les chemins (`config/`, `data/`, `cv_master/`, `output/`) sont résolus en absolu par `src/config.py` (`PATHS`), depuis la racine `JOBSEARCH_HOME`. Par défaut, `JOBSEARCH_HOME` vaut la racine du dépôt (`PROJECT_ROOT`) — rien ne change pour un usage courant, `python main.py --applications` fonctionne aussi bien depuis `Stage/Script` que depuis `/tmp`. Surchargeable via la variable d'environnement `JOBSEARCH_HOME` (utile pour tester sur une copie isolée). Voir `python -m src.config` pour afficher les chemins effectifs.
 
 ## Configuration du candidat
 

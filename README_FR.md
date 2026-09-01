@@ -23,6 +23,8 @@ bash setup.sh
 > **Note :** `setup.sh` ne remplace jamais un fichier existant.
 > Le pipeline le propose aussi automatiquement si un fichier de config est manquant au premier lancement.
 
+**Se lance depuis n'importe quel répertoire.** Tous les chemins (`config/`, `data/`, `cv_master/`, `output/`) se résolvent en absolu sous `JOBSEARCH_HOME`, qui vaut par défaut la racine du dépôt — `python main.py --applications` fonctionne de la même façon depuis le dépôt ou depuis n'importe où ailleurs. Surchargeable via la variable d'environnement `JOBSEARCH_HOME`. `python -m src.config` affiche les chemins effectifs.
+
 ---
 
 ## Workflow complet

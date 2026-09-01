@@ -4,7 +4,7 @@ import os
 import sys
 from datetime import date
 
-from src.config import get_search
+from src.config import PATHS, get_search
 from src.tracker import render_tracking_section
 
 
@@ -21,7 +21,7 @@ def load_filtered_offers(data_dir: str) -> list[dict]:
     return offers
 
 
-def render_report(offers: list[dict], threshold: int | None = None, data_dir: str = "data") -> str:
+def render_report(offers: list[dict], threshold: int | None = None, data_dir: str = PATHS.data_dir) -> str:
     if threshold is None:
         threshold = get_search().threshold
     offers_dir = os.path.join(data_dir, "offers")
@@ -120,9 +120,9 @@ def render_report(offers: list[dict], threshold: int | None = None, data_dir: st
 
 
 def generate_report(
-    data_dir: str = "data",
+    data_dir: str = PATHS.data_dir,
     threshold: int | None = None,
-    config_dir: str = "config",
+    config_dir: str = PATHS.config_dir,
 ) -> str:
     if threshold is None:
         threshold = get_search(config_dir).threshold

@@ -5,6 +5,10 @@
 
 set -e
 
+# Se placer dans le répertoire du script, pour fonctionner quel que soit le
+# répertoire courant depuis lequel setup.sh est appelé.
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 GRAY='\033[0;37m'

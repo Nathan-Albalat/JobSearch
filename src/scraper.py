@@ -12,7 +12,7 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
-from src.config import get_search
+from src.config import PATHS, get_search
 
 
 def load_sources(config_dir: str) -> list[dict]:
@@ -552,8 +552,8 @@ def save_offer(offer: dict, data_dir: str) -> None:
 
 
 def scrape_all(
-    config_dir: str = "config",
-    data_dir: str = "data",
+    config_dir: str = PATHS.config_dir,
+    data_dir: str = PATHS.data_dir,
     include_groups: set[str] | None = None,
 ) -> list[dict]:
     sources = load_sources(config_dir)

@@ -2,15 +2,17 @@ import argparse
 import os
 import sys
 
+from src.config import PROJECT_ROOT, PATHS
+
 
 def _check_setup() -> None:
     """Détecte les fichiers de config manquants et propose de lancer setup.sh."""
     required = {
-        ".env": ".env.example",
-        "config/profile.yaml": "config/profile.example.yaml",
-        "config/search.yaml": "config/search.example.yaml",
-        "cv_master/cv_data.yaml": "cv_master/cv_data.example.yaml",
-        "cv_master/cv_master.md": "cv_master/cv_master.example.md",
+        os.path.join(PROJECT_ROOT, ".env"): ".env.example",
+        os.path.join(PATHS.config_dir, "profile.yaml"): "config/profile.example.yaml",
+        os.path.join(PATHS.config_dir, "search.yaml"): "config/search.example.yaml",
+        os.path.join(PATHS.cv_dir, "cv_data.yaml"): "cv_master/cv_data.example.yaml",
+        os.path.join(PATHS.cv_dir, "cv_master.md"): "cv_master/cv_master.example.md",
     }
     missing = [f for f in required if not os.path.exists(f)]
     if not missing:
@@ -22,7 +24,7 @@ def _check_setup() -> None:
     print()
     answer = input("Lancer setup.sh pour les créer automatiquement ? [O/n] ").strip().lower()
     if answer in ("", "o", "oui", "y", "yes"):
-        os.system("bash setup.sh")
+        os.system(f"bash {os.path.join(PROJECT_ROOT, 'setup.sh')}")
         print()
         print("✓ Fichiers créés. Édite-les avant de relancer.")
         sys.exit(0)
@@ -68,7 +70,7 @@ def cmd_scrape(
     report_path = generate_report(threshold=threshold)
     print(f"→ Rapport généré : {report_path}\n")
 
-    all_filtered = load_filtered_offers("data")
+    all_filtered = load_filtered_offers(PATHS.data_dir)
     pertinent_offers = [
         o for o in all_filtered if o["filter_result"].get("score", 0) >= threshold
     ]
@@ -150,10 +152,10 @@ def cmd_letter_pdf(args) -> None:
         dept = args.dept
         title = args.title
 
-    cv_data = load_cv_data("cv_master")
+    cv_data = load_cv_data(PATHS.cv_dir)
     output = args.output or os.path.splitext(path)[0] + ".pdf"
     render_letter_pdf(
-        os.path.join("config", "templates", "cover_letter.html"),
+        os.path.join(PATHS.config_dir, "templates", "cover_letter.html"),
         cv_data,
         body,
         output_path=output,

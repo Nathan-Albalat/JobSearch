@@ -23,6 +23,8 @@ bash setup.sh
 > **Note:** `setup.sh` never overwrites an existing file.
 > The pipeline also suggests it automatically if a config file is missing at first launch.
 
+**Runs from any directory.** All paths (`config/`, `data/`, `cv_master/`, `output/`) resolve to an absolute location under `JOBSEARCH_HOME`, which defaults to the repository root — `python main.py --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m src.config` to display the effective paths.
+
 ---
 
 ## Complete Workflow

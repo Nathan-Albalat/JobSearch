@@ -58,10 +58,10 @@ from src.tracker import (
     load_applications,
     mark_status,
 )
-from src.config import get_search
+from src.config import PATHS, get_search
 
 
-QUEUE_PATH = os.path.join("data", "gen_queue.json")
+QUEUE_PATH = os.path.join(PATHS.data_dir, "gen_queue.json")
 
 
 def load_queue(path: str = QUEUE_PATH) -> list[str]:
@@ -682,7 +682,7 @@ class StageTUI(App):
     # ---------- data ----------
 
     def action_reload(self) -> None:
-        self.offers = {o["id"]: o for o in load_filtered_offers("data")}
+        self.offers = {o["id"]: o for o in load_filtered_offers(PATHS.data_dir)}
         self.selected &= set(self.offers)
         self._persist_queue()
         self.refresh_offers()
@@ -826,7 +826,7 @@ class StageTUI(App):
                 )
 
     def _candidature_dirs(self) -> list[str]:
-        base = os.path.join("output", "candidatures")
+        base = os.path.join(PATHS.output_dir, "candidatures")
         if not os.path.isdir(base):
             return []
         dirs = [os.path.join(base, d) for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
@@ -899,7 +899,7 @@ class StageTUI(App):
         """Retrouve entreprise/titre/lieu pour le rendu PDF : offre JSON via l'id du dossier,
         sinon commentaires de lettre.md, sinon nom du dossier."""
         offer_id = os.path.basename(folder).rsplit("_", 1)[-1]
-        offer_path = os.path.join("data", "offers", f"{offer_id}.json")
+        offer_path = os.path.join(PATHS.data_dir, "offers", f"{offer_id}.json")
         if os.path.exists(offer_path):
             with open(offer_path, encoding="utf-8") as f:
                 o = json.load(f)
@@ -978,7 +978,7 @@ class StageTUI(App):
         widget.update("\n".join(parts))
 
     def refresh_stats(self) -> None:
-        stats = compute_stats("data")
+        stats = compute_stats(PATHS.data_dir)
         header = self.query_one("#stats-header", Static)
         return_text = self.query_one("#stats-return-text", Static)
         status_bars = self.query_one("#stats-status-bars", Static)
@@ -1410,8 +1410,8 @@ class StageTUI(App):
 
             info = self._letter_offer_info(folder)
             render_letter_pdf(
-                os.path.join("config", "templates", "cover_letter.html"),
-                load_cv_data("cv_master"),
+                os.path.join(PATHS.config_dir, "templates", "cover_letter.html"),
+                load_cv_data(PATHS.cv_dir),
                 open(md, encoding="utf-8").read(),
                 output_path=os.path.join(folder, "lettre.pdf"),
                 company_name=info["company"],
@@ -1477,7 +1477,7 @@ class StageTUI(App):
         offer = {**offer, "filter_result": {"score": 10, "reason": "Ajout manuel via TUI"}}
         # Le stub sauvegardé par create_stub_from_file/url n'a pas filter_result :
         # load_filtered_offers l'ignorerait sinon dès le prochain rechargement (r).
-        save_offer(offer, "data")
+        save_offer(offer, PATHS.data_dir)
 
         def _register() -> None:
             self.offers[offer["id"]] = offer
@@ -1603,7 +1603,7 @@ class StageTUI(App):
 
     def action_scrape_fr(self) -> None:
         """`Ctrl+S` : scrape incluant les sources FR-only (groupe 'fr', ex: HelloWork)."""
-        from src.config import get_search
+        from src.config import PATHS, get_search
 
         groups = set(get_search().enabled_groups) | {"fr"}
         self._launch_scrape(groups, "Scrape des sources (+ FR)…")

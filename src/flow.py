@@ -7,6 +7,7 @@ import os
 from collections import Counter
 from html import escape
 
+from src.config import PATHS
 from src.tracker import STATUS_COLORS, STATUSES, _STATUS_LABELS, ensure_history
 
 # Rang (colonne) de chaque statut dans le diagramme de flux. accepted/rejected/cancelled
@@ -21,7 +22,7 @@ STATUS_RANK = {
     "cancelled": 4,
 }
 
-DEFAULT_FLOW_PATH = os.path.join("output", "stats", "flux.html")
+DEFAULT_FLOW_PATH = os.path.join(PATHS.output_dir, "stats", "flux.html")
 
 
 def build_transitions(apps: list[dict]) -> dict[tuple[str, str], int]:

@@ -39,17 +39,17 @@ from textual.widgets import (
 from textual.widgets.data_table import RowDoesNotExist
 from textual.widgets.option_list import Option
 
-from src.duplicates import (
+from jobsearch.duplicates import (
     _normalize_company,
     clear_duplicate,
     load_offer,
     mark_duplicate,
     suggest_targets,
 )
-from src.filter import strip_html
-from src.flow import DEFAULT_FLOW_PATH, by_month_status, flow_tree, write_flow_html
-from src.report import load_filtered_offers
-from src.tracker import (
+from jobsearch.filter import strip_html
+from jobsearch.flow import DEFAULT_FLOW_PATH, by_month_status, flow_tree, write_flow_html
+from jobsearch.report import load_filtered_offers
+from jobsearch.tracker import (
     STATUS_COLORS,
     STATUSES,
     _STATUS_LABELS,
@@ -58,7 +58,7 @@ from src.tracker import (
     load_applications,
     mark_status,
 )
-from src.config import PATHS, get_search
+from jobsearch.config import PATHS, get_search
 
 
 QUEUE_PATH = os.path.join(PATHS.data_dir, "gen_queue.json")
@@ -1405,8 +1405,8 @@ class StageTUI(App):
             self.notify_status("Pas de lettre.md dans ce dossier.")
             return
         try:
-            from src.cv_pdf import load_cv_data
-            from src.letter_pdf import render_letter_pdf
+            from jobsearch.cv_pdf import load_cv_data
+            from jobsearch.letter_pdf import render_letter_pdf
 
             info = self._letter_offer_info(folder)
             render_letter_pdf(
@@ -1435,7 +1435,7 @@ class StageTUI(App):
             self.notify_status("Pas de cv_adapte.html dans ce dossier.")
             return
         try:
-            from src.cv_pdf import write_cv_pdf
+            from jobsearch.cv_pdf import write_cv_pdf
 
             write_cv_pdf(open(html_path, encoding="utf-8").read(), os.path.join(folder, "cv_adapte.pdf"))
         except Exception as e:
@@ -1457,7 +1457,7 @@ class StageTUI(App):
 
     @work(thread=True)
     def add_manual_entry(self, data: dict) -> None:
-        from src.manual import create_stub_from_file, create_stub_from_url
+        from jobsearch.manual import create_stub_from_file, create_stub_from_url
 
         try:
             if data["file"]:
@@ -1472,7 +1472,7 @@ class StageTUI(App):
             self.call_from_thread(self.notify_status, f"Erreur extraction : {type(e).__name__}: {e}")
             return
 
-        from src.scraper import save_offer
+        from jobsearch.scraper import save_offer
 
         offer = {**offer, "filter_result": {"score": 10, "reason": "Ajout manuel via TUI"}}
         # Le stub sauvegardé par create_stub_from_file/url n'a pas filter_result :
@@ -1542,7 +1542,7 @@ class StageTUI(App):
 
     @work(thread=True, exclusive=True)
     def run_generation(self, offer_ids: list[str], letter_only: bool = False) -> None:
-        from src.generator import generate
+        from jobsearch.generator import generate
 
         for oid in offer_ids:
             buffer = io.StringIO()
@@ -1553,7 +1553,7 @@ class StageTUI(App):
                 self.gen_checked.discard(oid)
             except SystemExit:
                 out = buffer.getvalue().strip()
-                self.gen_status[oid] = ("❌", out.splitlines()[-1] if out else "erreur (voir python -m src.generator " + oid + ")")
+                self.gen_status[oid] = ("❌", out.splitlines()[-1] if out else "erreur (voir python -m jobsearch.generator " + oid + ")")
             except Exception as e:
                 self.gen_status[oid] = ("❌", f"{type(e).__name__}: {e}".replace("\n", " ")[:120])
             self.call_from_thread(self.refresh_gen)
@@ -1570,9 +1570,9 @@ class StageTUI(App):
     def run_scrape(self, include_groups: set[str] | None = None) -> None:
         buffer = io.StringIO()
         try:
-            from src.filter import filter_all
-            from src.report import generate_report
-            from src.scraper import scrape_all
+            from jobsearch.filter import filter_all
+            from jobsearch.report import generate_report
+            from jobsearch.scraper import scrape_all
 
             with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                 new = scrape_all(include_groups=include_groups)
@@ -1603,7 +1603,7 @@ class StageTUI(App):
 
     def action_scrape_fr(self) -> None:
         """`Ctrl+S` : scrape incluant les sources FR-only (groupe 'fr', ex: HelloWork)."""
-        from src.config import PATHS, get_search
+        from jobsearch.config import PATHS, get_search
 
         groups = set(get_search().enabled_groups) | {"fr"}
         self._launch_scrape(groups, "Scrape des sources (+ FR)…")
@@ -1645,7 +1645,7 @@ class StageTUI(App):
             for app in apps:
                 if app["offer_id"] == oid:
                     app["notes"] = note
-            from src.tracker import save_applications
+            from jobsearch.tracker import save_applications
             save_applications(apps)
             self.refresh_track()
             self.notify_status(f"Note enregistrée pour {oid}.")
@@ -1668,7 +1668,7 @@ def _warn_if_empty_home() -> bool:
     """Garde-fou : n'affiche jamais silencieusement « 0 offre » si les données existent
     encore dans le dépôt (ancien emplacement) mais n'ont pas été copiées vers `JOBSEARCH_HOME`.
     Retourne True si la TUI doit s'arrêter avant de se lancer."""
-    from src.config import PACKAGE_ROOT, JOBSEARCH_HOME
+    from jobsearch.config import PACKAGE_ROOT, JOBSEARCH_HOME
 
     home_offers = os.path.isdir(PATHS.offers_dir) and any(
         f.endswith(".json") for f in os.listdir(PATHS.offers_dir)
@@ -1687,8 +1687,8 @@ def _warn_if_empty_home() -> bool:
         print(f"    Le dépôt contient encore {legacy_count} offre(s) dans {legacy_offers_dir}")
         print("    (données pas encore migrées vers le nouvel emplacement, pas perdues).")
         print()
-        print("    Lance d'abord :  python main.py --migrate         (aperçu, n'écrit rien)")
-        print("    Puis :           python main.py --migrate --apply (copie réelle)")
+        print("    Lance d'abord :  jobsearch --migrate         (aperçu, n'écrit rien)")
+        print("    Puis :           jobsearch --migrate --apply (copie réelle)")
         return True
     return False
 

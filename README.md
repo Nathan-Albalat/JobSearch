@@ -11,21 +11,24 @@
 ## Installation
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+# Recommended: install as an isolated CLI tool
+pipx install git+https://github.com/<you>/jobsearch
 
-# 2. Create configuration files from examples
-bash setup.sh
-# → Automatically copies .example files to their final names
-# → Indicates which files to edit next
+# Or, for local development (inside this repo's venv):
+pip install -e .
 ```
 
+WeasyPrint (PDF rendering) requires a system dependency: Pango/Cairo — `brew install pango` on macOS. This is the main installation pitfall; without it, `--letter-pdf` / `--generate` will fail at the PDF step even though everything else works.
+
+Either way, you get a global `jobsearch` command. First launch (`jobsearch --scrape`, `--tui`, …) detects that `JOBSEARCH_HOME` (`~/.jobsearch/` by default) is missing its configuration and offers to run `setup.sh`, which copies `.example` files from the package to their final names there and tells you which ones to edit next.
+
 > **Note:** `setup.sh` never overwrites an existing file.
-> The pipeline also suggests it automatically if a config file is missing at first launch.
 
-**Runs from any directory.** Two separate roots: the code and the resources shipped with it (prompts, HTML templates, fonts) live in the repository/package; your personal config (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) and your data (`data/`, `output/`) live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` — `python main.py --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m src.config` to display the effective paths.
+**Runs from any directory.** Two separate roots: the code and its default resources (prompts, HTML templates, fonts) live in the package (`jobsearch/resources/`, accessed via `importlib.resources` so they're found however the package was installed); your personal config (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) and your data (`data/`, `output/`) live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` — `jobsearch --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m jobsearch.config` to display the effective paths.
 
-**Upgrading from an older version where data lived inside the repo?** Run `python main.py --migrate` for a dry run (prints what would be copied, writes nothing), then `python main.py --migrate --apply` to actually copy your config and data to `JOBSEARCH_HOME`. This only ever copies — it never moves or deletes the originals in the repository; the command verifies file counts and checksums after copying and tells you where the originals are so you can remove them yourself once you're satisfied.
+**Prompts and HTML templates are editable content, not fixed resources.** The 3 scoring/generation prompts (`config/prompts/*.txt`) and the 2 HTML templates (`config/templates/cover_letter.html`, `cv_en.html`) are resolved with priority given to `JOBSEARCH_HOME/config/`, falling back automatically to the package defaults if you haven't customized them — no action required on an existing install. To customize them, copy the defaults into `JOBSEARCH_HOME/config/prompts/` / `.../templates/` (or run `jobsearch --migrate --apply`, which copies them there without ever overwriting an existing file) and edit the copies. Only the fonts always stay in the package.
+
+**Upgrading from an older version where data lived inside the repo?** Run `jobsearch --migrate` for a dry run (prints what would be copied, writes nothing), then `jobsearch --migrate --apply` to actually copy your config and data to `JOBSEARCH_HOME`. This only ever copies — it never moves or deletes the originals in the repository; the command verifies file counts and checksums after copying and tells you where the originals are so you can remove them yourself once you're satisfied.
 
 ---
 
@@ -49,24 +52,24 @@ Step 4 — Application : Claude generates cover letter + adapted CV
 
 | Command | Description |
 |---|---|
-| `python main.py --scrape` | Run steps 1-2-3 (collect + filter + report) |
-| `python main.py --scrape --threshold 7` | Same with relevance threshold of 7/10 |
-| `python main.py --scrape --with fr` | Also include FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR), disabled by default |
-| `python main.py --scrape --without fr` | Exclude a group even if enabled by default in `search.yaml` (`sources.enabled_groups`) |
-| `python main.py --generate <offer_id>` | Generate application for a specific offer |
-| `python main.py --mark-duplicate <offer_id> <target_id>` | Mark `<offer_id>` as a manual duplicate of `<target_id>` (an offer you already applied to) |
-| `python main.py --unmark-duplicate <offer_id>` | Undo a duplicate marking |
-| `python main.py --migrate` | Dry run: shows what would be copied from the repo to `JOBSEARCH_HOME`, writes nothing |
-| `python main.py --migrate --apply` | Actually copies personal config and data to `JOBSEARCH_HOME` (never overwrites, never deletes the originals) |
+| `jobsearch --scrape` | Run steps 1-2-3 (collect + filter + report) |
+| `jobsearch --scrape --threshold 7` | Same with relevance threshold of 7/10 |
+| `jobsearch --scrape --with fr` | Also include FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR), disabled by default |
+| `jobsearch --scrape --without fr` | Exclude a group even if enabled by default in `search.yaml` (`sources.enabled_groups`) |
+| `jobsearch --generate <offer_id>` | Generate application for a specific offer |
+| `jobsearch --mark-duplicate <offer_id> <target_id>` | Mark `<offer_id>` as a manual duplicate of `<target_id>` (an offer you already applied to) |
+| `jobsearch --unmark-duplicate <offer_id>` | Undo a duplicate marking |
+| `jobsearch --migrate` | Dry run: shows what would be copied from the repo to `JOBSEARCH_HOME`, writes nothing |
+| `jobsearch --migrate --apply` | Actually copies personal config and data to `JOBSEARCH_HOME` (never overwrites, never deletes the originals) |
 
 ### Modules in Isolation (for debugging)
 
 | Command | Description |
 |---|---|
-| `python -m src.scraper` | Collect only (without filter or report) |
-| `python -m src.filter` | Filter already-collected offers |
-| `python -m src.report` | Generate report from already-filtered offers |
-| `python -m src.generator <offer_id>` | Generate application for an offer |
+| `python -m jobsearch.scraper` | Collect only (without filter or report) |
+| `python -m jobsearch.filter` | Filter already-collected offers |
+| `python -m jobsearch.report` | Generate report from already-filtered offers |
+| `python -m jobsearch.generator <offer_id>` | Generate application for an offer |
 
 ---
 
@@ -75,7 +78,7 @@ Step 4 — Application : Claude generates cover letter + adapted CV
 Instead of chaining commands, you can control everything from a terminal interface:
 
 ```bash
-python main.py --tui
+jobsearch --tui
 ```
 
 **Important principle:** the TUI is just a **view** on the pipeline's files. It creates almost no hidden state: reports, `data/offers/*.json` and `data/applications.json` remain readable and editable without it. So you can resume work anytime (scrape Monday, review Wednesday) — the TUI re-reads current state on startup and with the `r` key. The one exception is the Generation tab's queue, persisted in `data/gen_queue.json`.
@@ -112,7 +115,7 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 | Global | `1`/`2`/`3`/`4`/`5` | Switch tab (Offers / Generation / Applications / Tracking / Stats) |
 | Global | `r` | Reload data from disk |
 | Global | `S` / `s` | Run scrape + filter + report (spinner + current step + timer in the status bar). `s` only triggers the scrape outside the Tracking tab, where it means "sent"; `s` is an alias of `S` |
-| Global | `Ctrl+S` | Same, also including FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR) — equivalent to `python main.py --scrape --with fr` |
+| Global | `Ctrl+S` | Same, also including FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR) — equivalent to `jobsearch --scrape --with fr` |
 | Global | `c` | Open Claude Console (reload API credits) |
 | Global | `?` | Show help (list of shortcuts) |
 | Global | `q` | Quit |
@@ -145,13 +148,13 @@ The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer t
 
 ```bash
 # Run the complete pipeline
-python main.py --scrape
+jobsearch --scrape
 
 # → The report is generated in data/rapport_YYYY-MM-DD.md
 # → Read the report, note the ID of interesting offers
 
 # Generate application for an offer
-python main.py --generate 0151e52f
+jobsearch --generate 0151e52f
 
 # → Files are in output/candidatures/<company-name>_<id>/
 #   - lettre.md     : cover letter ready to review/adapt
@@ -172,7 +175,7 @@ crontab -e
 Add this line (adjust the path if needed):
 
 ```
-0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (only if you use a venv) && python main.py --scrape >> data/cron.log 2>&1
+0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (only if you use a venv) && jobsearch --scrape >> data/cron.log 2>&1
 ```
 
 What it does: every 2 days at 8:00 AM, the pipeline runs and results are appended to `data/cron.log`.
@@ -221,7 +224,7 @@ Type `wttj` — no API key needed (public v3 API). NL entries are active by defa
 ```
 
 ### Update Your CV
-Edit `cv_master/cv_data.yaml` — this is **the** source of truth (structured data: experiences, projects, skills, personal info). This file feeds both the "master" CV and the adapted CV generated by Claude. The file `cv_master/cv_master.md` is **auto-regenerated** from the YAML (via `python -m src.cv_sync`, and with each application generation) — don't edit it by hand.
+Edit `cv_master/cv_data.yaml` — this is **the** source of truth (structured data: experiences, projects, skills, personal info). This file feeds both the "master" CV and the adapted CV generated by Claude. The file `cv_master/cv_master.md` is **auto-regenerated** from the YAML (via `python -m jobsearch.cv_sync`, and with each application generation) — don't edit it by hand.
 
 ### Adjust Prompts
 - `config/prompts/filter.txt` — modify scoring criteria
@@ -234,8 +237,8 @@ PDF appearance is controlled by two HTML templates in `config/templates/`:
 
 | Template | Used For | Rendered By |
 |---|---|---|
-| `cv_en.html` | The CV (master and adapted) | `src/cv_pdf.py` |
-| `cover_letter.html` | The cover letter | `src/letter_pdf.py` |
+| `cv_en.html` | The CV (master and adapted) | `jobsearch/cv_pdf.py` |
+| `cover_letter.html` | The cover letter | `jobsearch/letter_pdf.py` |
 
 **How it works:** each template contains `{{NAME}}` markers that the code replaces with real values, then WeasyPrint converts the HTML to PDF. You can freely modify the CSS (colors, fonts, margins, layout) as long as you **preserve the `{{...}}` markers** where content must appear.
 
@@ -245,14 +248,14 @@ PDF appearance is controlled by two HTML templates in `config/templates/`:
 **Available Markers — Letter (`cover_letter.html`) :**
 `{{FULL_NAME}}`, `{{SENDER_LOCATION}}`, `{{EMAIL}}`, `{{COMPANY_NAME}}`, `{{COMPANY_LOCATION}}`, `{{COMPANY_DEPT_LINE}}`, `{{POSITION_TITLE}}`, `{{DATE}}`, `{{SALUTATION}}`, `{{BODY}}`, `{{CLOSING_WORD}}`, `{{SIGNATURE_IMG}}`, `{{ACCENT_COLOR}}`/`{{ACCENT_LIGHT}}`.
 
-**Accent Color:** controlled by `personal.accent_enabled` in `cv_data.yaml` (green if `true`, gray if `false`). Hex values are injected into `{{ACCENT_COLOR}}` / `{{ACCENT_LIGHT}}` — to change the tint, modify them in `src/cv_pdf.py` / `src/letter_pdf.py`.
+**Accent Color:** controlled by `personal.accent_enabled` in `cv_data.yaml` (green if `true`, gray if `false`). Hex values are injected into `{{ACCENT_COLOR}}` / `{{ACCENT_LIGHT}}` — to change the tint, modify them in `jobsearch/cv_pdf.py` / `jobsearch/letter_pdf.py`.
 
 **Fonts:** `.ttf` files (DM Sans, DM Serif Display) are in `config/templates/fonts/` and loaded via `@font-face`. PDF generation therefore works offline. To change fonts, drop the `.ttf` in this folder and adjust the `@font-face` rules at the top of the template.
 
 **Letter Signature:** the image `files/letter/signature.png` is inserted automatically via `{{SIGNATURE_IMG}}` (if the file exists). Its size is controlled with the CSS rule `.cl-signature` (property `height`) in `cover_letter.html`. ⚠️ Keep it small enough so the letter **fits on one page**.
 
 **Test a template change** (without consuming API):
-- Letter: `python main.py --letter-pdf <a letter.md> --company "Test"` — or press `p` in the TUI on an existing application.
+- Letter: `jobsearch --letter-pdf <a letter.md> --company "Test"` — or press `p` in the TUI on an existing application.
 - Master CV: `python files/cv/generate_cv.py` → `files/cv/cv_nathan_albalat_en.pdf`.
 - Adapted CV of an existing application: press `u` in the TUI.
 
@@ -271,7 +274,7 @@ WTTJ is blocked from direct scraping. Workflow:
 3. Run the command:
 
 ```bash
-python main.py --from-file ~/Downloads/offre_wttj.html \
+jobsearch --from-file ~/Downloads/offre_wttj.html \
                --url-source "https://www.welcometothejungle.com/fr/companies/..." \
                --company "Company Name"
 ```
@@ -283,7 +286,7 @@ The `--url-source` argument is optional but useful — it's included in the gene
 For sites accessible without JavaScript (no CloudFront):
 
 ```bash
-python main.py --from-url https://www.somesite.com/jobs/stage-dev-python
+jobsearch --from-url https://www.somesite.com/jobs/stage-dev-python
 ```
 
 ### Overrides if Extraction Fails
@@ -291,7 +294,7 @@ python main.py --from-url https://www.somesite.com/jobs/stage-dev-python
 If the title or company isn't extracted correctly automatically:
 
 ```bash
-python main.py --from-file offre.html \
+jobsearch --from-file offre.html \
                --title "Python Developer Intern" \
                --company "Criteo"
 ```
@@ -335,10 +338,10 @@ If the variable is empty or missing, no notification is sent.
 → Normal if the pipeline has run recently — offers are deduplicated. Wait 48 hours or add new sources to `sources.yaml`.
 
 **"No filtered offers found" at report time**
-→ The filter must have run first. Run `python main.py --scrape` in complete order.
+→ The filter must have run first. Run `jobsearch --scrape` in complete order.
 
 **Report contains few relevant offers**
-→ Lower the threshold: `python main.py --scrape --threshold 5`
+→ Lower the threshold: `jobsearch --scrape --threshold 5`
 
 **offer_id not found for --generate**
 → The ID is the JSON filename without `.json` in `data/offers/` (e.g., `0151e52f`)

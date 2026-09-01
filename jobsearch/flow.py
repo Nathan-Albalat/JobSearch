@@ -7,8 +7,8 @@ import os
 from collections import Counter
 from html import escape
 
-from src.config import PATHS
-from src.tracker import STATUS_COLORS, STATUSES, _STATUS_LABELS, ensure_history
+from jobsearch.config import PATHS
+from jobsearch.tracker import STATUS_COLORS, STATUSES, _STATUS_LABELS, ensure_history
 
 # Rang (colonne) de chaque statut dans le diagramme de flux. accepted/rejected/cancelled
 # partagent le rang terminal 4 : ce sont les trois issues finales d'une candidature.

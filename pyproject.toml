@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobsearch"
+version = "0.1.0"
+description = "Pipeline automatisé de recherche de stage/emploi : collecte d'offres, filtrage par scoring Claude, rapport, lettre de motivation et CV adaptés."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "anthropic",
+    "feedparser",
+    "requests",
+    "beautifulsoup4",
+    "pyyaml",
+    "python-dotenv",
+    "jinja2",
+    "weasyprint",
+    "python-jobspy",
+    "textual",
+]
+
+[project.scripts]
+jobsearch = "jobsearch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["jobsearch*"]
+
+[tool.setuptools.package-data]
+jobsearch = [
+    "resources/prompts/*.txt",
+    "resources/templates/*.html",
+    "resources/templates/fonts/*.ttf",
+]

@@ -20,7 +20,7 @@ import json
 import os
 import re
 
-from src.config import PATHS
+from jobsearch.config import PATHS
 
 APPLICATIONS_FILENAME = "applications.json"
 

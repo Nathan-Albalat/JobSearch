@@ -4,8 +4,8 @@ import os
 import sys
 from datetime import date
 
-from src.config import PATHS, get_search
-from src.tracker import render_tracking_section
+from jobsearch.config import PATHS, get_search
+from jobsearch.tracker import render_tracking_section
 
 
 def load_filtered_offers(data_dir: str) -> list[dict]:
@@ -130,7 +130,7 @@ def generate_report(
     offers = load_filtered_offers(data_dir)
     if not offers:
         print(
-            "Aucune offre filtrée trouvée. Lance d'abord : python -m src.filter",
+            "Aucune offre filtrée trouvée. Lance d'abord : python -m jobsearch.filter",
             file=sys.stderr,
         )
         sys.exit(1)

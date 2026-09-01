@@ -11,21 +11,24 @@
 ## Installation
 
 ```bash
-# 1. Installer les dépendances
-pip install -r requirements.txt
+# Recommandé : installation comme outil CLI isolé
+pipx install git+https://github.com/<toi>/jobsearch
 
-# 2. Créer les fichiers de configuration depuis les exemples
-bash setup.sh
-# → Copie automatiquement les .example vers leurs noms définitifs
-# → Indique quels fichiers éditer ensuite
+# Ou, pour du développement local (dans le venv de ce dépôt) :
+pip install -e .
 ```
 
+WeasyPrint (rendu PDF) requiert une dépendance système : Pango/Cairo — `brew install pango` sur macOS. C'est le principal écueil d'installation : sans elle, `--letter-pdf` / `--generate` échouent à l'étape PDF alors que le reste fonctionne.
+
+Dans les deux cas, tu obtiens une commande globale `jobsearch`. Le premier lancement (`jobsearch --scrape`, `--tui`, …) détecte que `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut) n'a pas encore de configuration et propose de lancer `setup.sh`, qui copie les fichiers `.example` du paquet vers leurs noms définitifs et indique quels fichiers éditer ensuite.
+
 > **Note :** `setup.sh` ne remplace jamais un fichier existant.
-> Le pipeline le propose aussi automatiquement si un fichier de config est manquant au premier lancement.
 
-**Se lance depuis n'importe quel répertoire.** Deux racines distinctes : le code et les ressources livrées avec lui (prompts, templates HTML, polices) vivent dans le dépôt/paquet ; ta config personnelle (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) et tes données (`data/`, `output/`) vivent sous `JOBSEARCH_HOME`, qui vaut par défaut `~/.jobsearch/` — `python main.py --applications` fonctionne de la même façon depuis le dépôt ou depuis n'importe où ailleurs. Surchargeable via la variable d'environnement `JOBSEARCH_HOME`. `python -m src.config` affiche les chemins effectifs.
+**Se lance depuis n'importe quel répertoire.** Deux racines distinctes : le code et ses ressources par défaut (prompts, templates HTML, polices) vivent dans le paquet (`jobsearch/resources/`, accédées via `importlib.resources` pour être trouvées quel que soit le mode d'installation) ; ta config personnelle (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) et tes données (`data/`, `output/`) vivent sous `JOBSEARCH_HOME`, qui vaut par défaut `~/.jobsearch/` — `jobsearch --applications` fonctionne de la même façon depuis le dépôt ou depuis n'importe où ailleurs. Surchargeable via la variable d'environnement `JOBSEARCH_HOME`. `python -m jobsearch.config` affiche les chemins effectifs.
 
-**Tu mets à jour une installation antérieure où les données vivaient dans le dépôt ?** Lance `python main.py --migrate` pour un aperçu (affiche ce qui serait copié, n'écrit rien), puis `python main.py --migrate --apply` pour copier réellement ta config et tes données vers `JOBSEARCH_HOME`. Cette commande ne fait QUE des copies — elle ne déplace ni ne supprime jamais les originaux du dépôt ; elle vérifie le nombre de fichiers et les sommes de contrôle après la copie, et te dit où sont les originaux pour que tu puisses les supprimer toi-même une fois satisfait.
+**Les prompts et templates HTML sont du contenu éditable, pas des ressources figées.** Les 3 prompts de scoring/génération (`config/prompts/*.txt`) et les 2 templates HTML (`config/templates/cover_letter.html`, `cv_en.html`) sont résolus en priorité depuis `JOBSEARCH_HOME/config/`, avec repli automatique sur les défauts du paquet si tu n'as encore rien personnalisé — aucune action requise sur une installation existante. Pour les personnaliser, copie les défauts dans `JOBSEARCH_HOME/config/prompts/` / `.../templates/` (ou lance `jobsearch --migrate --apply`, qui les y copie sans jamais écraser un fichier existant) puis édite les copies. Seules les polices restent toujours dans le paquet.
+
+**Tu mets à jour une installation antérieure où les données vivaient dans le dépôt ?** Lance `jobsearch --migrate` pour un aperçu (affiche ce qui serait copié, n'écrit rien), puis `jobsearch --migrate --apply` pour copier réellement ta config et tes données vers `JOBSEARCH_HOME`. Cette commande ne fait QUE des copies — elle ne déplace ni ne supprime jamais les originaux du dépôt ; elle vérifie le nombre de fichiers et les sommes de contrôle après la copie, et te dit où sont les originaux pour que tu puisses les supprimer toi-même une fois satisfait.
 
 ---
 
@@ -49,24 +52,24 @@ Le pipeline se déroule en 3 étapes :
 
 | Commande | Description |
 |---|---|
-| `python main.py --scrape` | Lance les étapes 1-2-3 (collecte + filtre + rapport) |
-| `python main.py --scrape --threshold 7` | Idem avec un seuil de pertinence de 7/10 |
-| `python main.py --scrape --with fr` | Inclut aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR), désactivées par défaut |
-| `python main.py --scrape --without fr` | Désactive un groupe même s'il est activé par défaut dans `search.yaml` (`sources.enabled_groups`) |
-| `python main.py --generate <offer_id>` | Génère la candidature pour une offre spécifique |
-| `python main.py --mark-duplicate <offer_id> <target_id>` | Marque `<offer_id>` comme doublon manuel de `<target_id>` (une offre déjà candidatée) |
-| `python main.py --unmark-duplicate <offer_id>` | Annule un marquage de doublon |
-| `python main.py --migrate` | Aperçu à blanc : affiche ce qui serait copié du dépôt vers `JOBSEARCH_HOME`, n'écrit rien |
-| `python main.py --migrate --apply` | Copie réellement la config perso et les données vers `JOBSEARCH_HOME` (n'écrase jamais, ne supprime jamais les originaux) |
+| `jobsearch --scrape` | Lance les étapes 1-2-3 (collecte + filtre + rapport) |
+| `jobsearch --scrape --threshold 7` | Idem avec un seuil de pertinence de 7/10 |
+| `jobsearch --scrape --with fr` | Inclut aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR), désactivées par défaut |
+| `jobsearch --scrape --without fr` | Désactive un groupe même s'il est activé par défaut dans `search.yaml` (`sources.enabled_groups`) |
+| `jobsearch --generate <offer_id>` | Génère la candidature pour une offre spécifique |
+| `jobsearch --mark-duplicate <offer_id> <target_id>` | Marque `<offer_id>` comme doublon manuel de `<target_id>` (une offre déjà candidatée) |
+| `jobsearch --unmark-duplicate <offer_id>` | Annule un marquage de doublon |
+| `jobsearch --migrate` | Aperçu à blanc : affiche ce qui serait copié du dépôt vers `JOBSEARCH_HOME`, n'écrit rien |
+| `jobsearch --migrate --apply` | Copie réellement la config perso et les données vers `JOBSEARCH_HOME` (n'écrase jamais, ne supprime jamais les originaux) |
 
 ### Modules en isolation (pour debug)
 
 | Commande | Description |
 |---|---|
-| `python -m src.scraper` | Collecte uniquement (sans filtre ni rapport) |
-| `python -m src.filter` | Filtre les offres déjà collectées |
-| `python -m src.report` | Génère le rapport depuis les offres déjà filtrées |
-| `python -m src.generator <offer_id>` | Génère la candidature pour une offre |
+| `python -m jobsearch.scraper` | Collecte uniquement (sans filtre ni rapport) |
+| `python -m jobsearch.filter` | Filtre les offres déjà collectées |
+| `python -m jobsearch.report` | Génère le rapport depuis les offres déjà filtrées |
+| `python -m jobsearch.generator <offer_id>` | Génère la candidature pour une offre |
 
 ---
 
@@ -75,7 +78,7 @@ Le pipeline se déroule en 3 étapes :
 Plutôt que d'enchaîner les commandes, tu peux tout piloter depuis une interface dans le terminal :
 
 ```bash
-python main.py --tui
+jobsearch --tui
 ```
 
 **Principe important :** la TUI n'est qu'une **vue** sur les fichiers du pipeline. Elle ne crée quasiment aucun état caché : les rapports, `data/offers/*.json` et `data/applications.json` restent lisibles et modifiables sans elle. Tu peux donc reprendre le travail n'importe quand (scraper lundi, faire la revue mercredi) — la TUI relit l'état courant à l'ouverture et avec la touche `r`. Seule exception : la file de l'onglet Génération, persistée dans `data/gen_queue.json`.
@@ -112,7 +115,7 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 | Global | `1`/`2`/`3`/`4`/`5` | Changer d'onglet (Offres / Génération / Candidatures / Suivi / Stats) |
 | Global | `r` | Recharger les données depuis le disque |
 | Global | `S` / `s` | Lancer scrape + filtre + rapport (spinner + étape + chrono dans la barre de statut). `s` ne déclenche le scrape qu'en dehors de l'onglet Suivi, où il vaut « envoyée » ; `s` est un alias de `S` |
-| Global | `Ctrl+S` | Idem, en incluant aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR) — équivalent de `python main.py --scrape --with fr` |
+| Global | `Ctrl+S` | Idem, en incluant aussi les sources FR-only (groupe `fr`, ex. HelloWork, WTTJ FR) — équivalent de `jobsearch --scrape --with fr` |
 | Global | `c` | Ouvrir la Claude Console (recharger le crédit API) |
 | Global | `?` | Afficher l'aide (liste des raccourcis) |
 | Global | `q` | Quitter |
@@ -145,13 +148,13 @@ La colonne « PDF » affiche **« ⚠ à régénérer »** quand le `.md` est pl
 
 ```bash
 # Lancer le pipeline complet
-python main.py --scrape
+jobsearch --scrape
 
 # → Le rapport est généré dans data/rapport_YYYY-MM-DD.md
 # → Lire le rapport, noter l'ID des offres intéressantes
 
 # Générer la candidature pour une offre
-python main.py --generate 0151e52f
+jobsearch --generate 0151e52f
 
 # → Les fichiers sont dans output/candidatures/<nom-entreprise>_<id>/
 #   - lettre.md     : lettre de motivation prête à relire/adapter
@@ -172,7 +175,7 @@ crontab -e
 Ajouter cette ligne (adapter le chemin si nécessaire) :
 
 ```
-0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (seulement si vous utilisez une venv) && python main.py --scrape >> data/cron.log 2>&1
+0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (seulement si vous utilisez une venv) && jobsearch --scrape >> data/cron.log 2>&1
 ```
 
 Ce que ça fait : tous les 2 jours à 8h00, le pipeline tourne et les résultats sont ajoutés à `data/cron.log`.
@@ -221,7 +224,7 @@ Type `wttj` — pas de clé API nécessaire (API publique v3). Les entrées NL s
 ```
 
 ### Mettre à jour ton CV
-Édite `cv_master/cv_data.yaml` — c'est **la** source de vérité (données structurées : expériences, projets, compétences, infos perso). Ce fichier alimente à la fois le CV « master » et le CV adapté généré par Claude. Le fichier `cv_master/cv_master.md` est **régénéré automatiquement** depuis le YAML (via `python -m src.cv_sync`, et à chaque génération de candidature) — ne l'édite pas à la main.
+Édite `cv_master/cv_data.yaml` — c'est **la** source de vérité (données structurées : expériences, projets, compétences, infos perso). Ce fichier alimente à la fois le CV « master » et le CV adapté généré par Claude. Le fichier `cv_master/cv_master.md` est **régénéré automatiquement** depuis le YAML (via `python -m jobsearch.cv_sync`, et à chaque génération de candidature) — ne l'édite pas à la main.
 
 ### Ajuster les prompts
 - `config/prompts/filter.txt` — modifie les critères de scoring
@@ -234,8 +237,8 @@ L'apparence des PDF est contrôlée par deux templates HTML dans `config/templat
 
 | Template | Utilisé pour | Rendu par |
 |---|---|---|
-| `cv_en.html` | Le CV (master et adapté) | `src/cv_pdf.py` |
-| `cover_letter.html` | La lettre de motivation | `src/letter_pdf.py` |
+| `cv_en.html` | Le CV (master et adapté) | `jobsearch/cv_pdf.py` |
+| `cover_letter.html` | La lettre de motivation | `jobsearch/letter_pdf.py` |
 
 **Comment ça marche :** chaque template contient des marqueurs `{{NOM}}` que le code remplace par les vraies valeurs, puis WeasyPrint convertit le HTML en PDF. Tu peux modifier librement le CSS (couleurs, polices, marges, disposition) tant que tu **conserves les marqueurs** `{{...}}` là où le contenu doit apparaître.
 
@@ -245,14 +248,14 @@ L'apparence des PDF est contrôlée par deux templates HTML dans `config/templat
 **Marqueurs disponibles — Lettre (`cover_letter.html`) :**
 `{{FULL_NAME}}`, `{{SENDER_LOCATION}}`, `{{EMAIL}}`, `{{COMPANY_NAME}}`, `{{COMPANY_LOCATION}}`, `{{COMPANY_DEPT_LINE}}`, `{{POSITION_TITLE}}`, `{{DATE}}`, `{{SALUTATION}}`, `{{BODY}}`, `{{CLOSING_WORD}}`, `{{SIGNATURE_IMG}}`, `{{ACCENT_COLOR}}`/`{{ACCENT_LIGHT}}`.
 
-**Couleur d'accent :** contrôlée par `personal.accent_enabled` dans `cv_data.yaml` (vert si `true`, gris si `false`). Les valeurs hex sont injectées dans `{{ACCENT_COLOR}}` / `{{ACCENT_LIGHT}}` — pour changer la teinte, modifie-les dans `src/cv_pdf.py` / `src/letter_pdf.py`.
+**Couleur d'accent :** contrôlée par `personal.accent_enabled` dans `cv_data.yaml` (vert si `true`, gris si `false`). Les valeurs hex sont injectées dans `{{ACCENT_COLOR}}` / `{{ACCENT_LIGHT}}` — pour changer la teinte, modifie-les dans `jobsearch/cv_pdf.py` / `jobsearch/letter_pdf.py`.
 
 **Polices :** les fichiers `.ttf` (DM Sans, DM Serif Display) sont dans `config/templates/fonts/` et chargés via `@font-face`. La génération PDF fonctionne donc hors-ligne. Pour changer de police, dépose le `.ttf` dans ce dossier et ajuste les règles `@font-face` en tête de template.
 
 **Signature de la lettre :** l'image `files/letter/signature.png` est insérée automatiquement via `{{SIGNATURE_IMG}}` (si le fichier existe). Sa taille se règle avec la règle CSS `.cl-signature` (propriété `height`) dans `cover_letter.html`. ⚠️ Garde-la assez petite pour que la lettre **tienne sur une seule page**.
 
 **Tester une modif de template** (sans consommer d'API) :
-- Lettre : `python main.py --letter-pdf <une lettre.md> --company "Test"` — ou touche `p` dans la TUI sur une candidature existante.
+- Lettre : `jobsearch --letter-pdf <une lettre.md> --company "Test"` — ou touche `p` dans la TUI sur une candidature existante.
 - CV master : `python files/cv/generate_cv.py` → `files/cv/cv_nathan_albalat_en.pdf`.
 - CV adapté d'une candidature existante : touche `u` dans la TUI.
 
@@ -271,7 +274,7 @@ WTTJ est bloqué pour le scraping direct. Workflow :
 3. Lance la commande :
 
 ```bash
-python main.py --from-file ~/Downloads/offre_wttj.html \
+jobsearch --from-file ~/Downloads/offre_wttj.html \
                --url-source "https://www.welcometothejungle.com/fr/companies/..." \
                --company "Nom Entreprise"
 ```
@@ -283,7 +286,7 @@ L'argument `--url-source` est optionnel mais utile — il est inclus dans la let
 Pour les sites accessibles sans JavaScript (pas de CloudFront) :
 
 ```bash
-python main.py --from-url https://www.somesite.com/jobs/stage-dev-python
+jobsearch --from-url https://www.somesite.com/jobs/stage-dev-python
 ```
 
 ### Surcharges si l'extraction échoue
@@ -291,7 +294,7 @@ python main.py --from-url https://www.somesite.com/jobs/stage-dev-python
 Si le titre ou l'entreprise n'est pas bien extrait automatiquement :
 
 ```bash
-python main.py --from-file offre.html \
+jobsearch --from-file offre.html \
                --title "Stage Développeur Python" \
                --company "Criteo"
 ```
@@ -335,10 +338,10 @@ Si la variable est vide ou absente, aucune notification n'est envoyée.
 → Normal si le pipeline a déjà tourné récemment — les offres sont dédupliquées. Attends 48h ou ajoute de nouvelles sources dans `sources.yaml`.
 
 **"Aucune offre filtrée trouvée" au moment du rapport**
-→ Le filtre doit avoir tourné en premier. Lance `python main.py --scrape` dans l'ordre complet.
+→ Le filtre doit avoir tourné en premier. Lance `jobsearch --scrape` dans l'ordre complet.
 
 **Le rapport contient peu d'offres pertinentes**
-→ Baisse le seuil : `python main.py --scrape --threshold 5`
+→ Baisse le seuil : `jobsearch --scrape --threshold 5`
 
 **L'offre_id est introuvable pour --generate**
 → L'ID est le nom du fichier JSON sans `.json` dans `data/offers/` (ex: `0151e52f`)

@@ -14,9 +14,9 @@ from datetime import date
 import requests
 from bs4 import BeautifulSoup
 
-from src.config import PATHS
-from src.scraper import make_offer_id
-from src.generator import generate
+from jobsearch.config import PATHS
+from jobsearch.scraper import make_offer_id
+from jobsearch.generator import generate
 
 _BROWSER_HEADERS = {
     "User-Agent": (

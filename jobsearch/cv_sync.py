@@ -1,8 +1,8 @@
 """Génère cv_master.md depuis cv_data.yaml (source de vérité unique)."""
 import os
 
-from src.config import PATHS
-from src.cv_pdf import load_cv_data
+from jobsearch.config import PATHS
+from jobsearch.cv_pdf import load_cv_data
 
 
 def generate_cv_master_md(cv_data: dict) -> str:
@@ -15,7 +15,7 @@ def generate_cv_master_md(cv_data: dict) -> str:
         f"# CV — {personal.get('full_name', '')}",
         "",
         "<!-- FICHIER GÉNÉRÉ AUTOMATIQUEMENT depuis cv_data.yaml — ne pas éditer à la main. -->",
-        "<!-- Modifie cv_data.yaml puis lance : python -m src.cv_sync -->",
+        "<!-- Modifie cv_data.yaml puis lance : python -m jobsearch.cv_sync -->",
         "",
         "## Résumé",
         cv_data.get("summary", ""),

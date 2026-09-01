@@ -15,7 +15,7 @@ def fetch_jobspy(source: dict) -> list[dict]:
         print("    python-jobspy non installé (pip install python-jobspy) — source ignorée.")
         return []
 
-    from src.config import get_search
+    from jobsearch.config import get_search
 
     defaults = get_search().source_defaults("jobspy")
     params = {**defaults, **(source.get("params", {}) or {})}
@@ -51,7 +51,7 @@ def _clean(value) -> str:
 
 
 def _normalize_row(row, url: str, source: dict) -> dict:
-    from src.scraper import make_offer_id
+    from jobsearch.scraper import make_offer_id
 
     published = _clean(row.get("date_posted"))[:10] or str(date.today())
     return {

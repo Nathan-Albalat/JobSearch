@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
 
-from src.config import PATHS
+from jobsearch.config import PATHS
 
 
 def _build_body(pertinent: list[dict], threshold: int, report_path: str) -> str:
@@ -39,7 +39,7 @@ def _build_body(pertinent: list[dict], threshold: int, report_path: str) -> str:
         lines.append("")
     lines.append("─" * 50)
     lines.append("Pour générer une candidature :")
-    lines.append("  python main.py --generate <offer_id>")
+    lines.append("  jobsearch --generate <offer_id>")
     return "\n".join(lines)
 
 

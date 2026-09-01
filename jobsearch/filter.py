@@ -10,7 +10,7 @@ import yaml
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from src.config import PATHS, Search, fill_template, get_search
+from jobsearch.config import PATHS, Search, fill_template, get_search
 
 
 def load_profile_text(config_dir: str, search: Search | None = None) -> str:

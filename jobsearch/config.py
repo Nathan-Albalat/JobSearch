@@ -1,13 +1,14 @@
 """Socle de configuration du pipeline : chemins (`Paths`) et valeurs (`Search`).
 
 Ce module ne lit RIEN au niveau module (aucun `SEARCH = load_search()` global) :
-un `import src.config` doit toujours réussir, même si `config/search.yaml`
+un `import jobsearch.config` doit toujours réussir, même si `config/search.yaml`
 n'existe pas ou contient une faute de frappe. Les valeurs ne sont résolues
 qu'à l'appel explicite de `load_search()` / `get_search()`.
 """
 from __future__ import annotations
 
 import functools
+import importlib.resources
 import os
 import re
 import sys
@@ -16,6 +17,20 @@ from dataclasses import dataclass
 import yaml
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _package_resource_dir(*parts: str) -> str:
+    """Chemin d'une ressource livrée avec le paquet `jobsearch` (prompts, templates, polices).
+
+    Résolu via `importlib.resources` pour fonctionner aussi bien en mode
+    éditable (`pip install -e .`) qu'installé réellement — un chemin construit
+    à la main depuis `__file__` ne survivrait pas à une installation figée.
+    """
+    ref = importlib.resources.files("jobsearch")
+    for part in parts:
+        ref = ref / part
+    return str(ref)
+
 
 # Racine du paquet (code + ressources livrées : prompts, templates, polices).
 # Ces ressources voyagent avec le code, jamais avec les données utilisateur.
@@ -34,10 +49,14 @@ JOBSEARCH_HOME = os.path.abspath(
 class Paths:
     """Regroupe les chemins du pipeline.
 
-    Deux racines distinctes : les ressources livrées avec le code (prompts,
-    templates, polices) se résolvent depuis `PACKAGE_ROOT` et restent dans le
-    dépôt/paquet ; la configuration personnelle et les données se résolvent
-    depuis `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut).
+    Les prompts et templates HTML sont du CONTENU UTILISATEUR : ils sont
+    éditables (calibrage du scoring, charte graphique de la lettre/CV), donc
+    résolus en priorité depuis `JOBSEARCH_HOME/config/` — avec repli sur les
+    défauts livrés dans le paquet (`jobsearch/resources/`, via
+    `importlib.resources`) si l'utilisateur n'a encore rien personnalisé.
+    Seules les polices restent exclusivement dans le paquet (personne
+    n'édite une police). La configuration personnelle et les données se
+    résolvent depuis `JOBSEARCH_HOME` (`~/.jobsearch/` par défaut).
     """
 
     config_dir: str = os.path.join(JOBSEARCH_HOME, "config")
@@ -46,14 +65,34 @@ class Paths:
     output_dir: str = os.path.join(JOBSEARCH_HOME, "output")
 
     @property
+    def user_prompts_dir(self) -> str:
+        """Prompts personnalisés par l'utilisateur (prioritaires s'ils existent)."""
+        return os.path.join(self.config_dir, "prompts")
+
+    @property
+    def user_templates_dir(self) -> str:
+        """Templates HTML personnalisés par l'utilisateur (prioritaires s'ils existent)."""
+        return os.path.join(self.config_dir, "templates")
+
+    @property
+    def package_prompts_dir(self) -> str:
+        """Défauts de référence livrés avec le paquet — jamais dans `JOBSEARCH_HOME`."""
+        return _package_resource_dir("resources", "prompts")
+
+    @property
+    def package_templates_dir(self) -> str:
+        """Défauts de référence livrés avec le paquet (dont les polices, non surchargeables)."""
+        return _package_resource_dir("resources", "templates")
+
+    # Alias conservés pour compatibilité (`cv_pdf.py` : base_url WeasyPrint,
+    # les polices restant toujours dans le paquet quel que soit le template utilisé).
+    @property
     def prompts_dir(self) -> str:
-        """Ressource livrée avec le code — reste dans `PACKAGE_ROOT`, jamais dans `JOBSEARCH_HOME`."""
-        return os.path.join(PACKAGE_ROOT, "config", "prompts")
+        return self.package_prompts_dir
 
     @property
     def templates_dir(self) -> str:
-        """Ressource livrée avec le code — reste dans `PACKAGE_ROOT`, jamais dans `JOBSEARCH_HOME`."""
-        return os.path.join(PACKAGE_ROOT, "config", "templates")
+        return self.package_templates_dir
 
     @property
     def offers_dir(self) -> str:
@@ -65,17 +104,25 @@ class Paths:
         return os.path.join(self.config_dir, ".env")
 
     def prompt(self, name: str) -> str:
-        return os.path.join(self.prompts_dir, name)
+        """Résout un prompt : priorité à `JOBSEARCH_HOME/config/prompts/`, repli sur le paquet."""
+        user_path = os.path.join(self.user_prompts_dir, name)
+        if os.path.exists(user_path):
+            return user_path
+        return os.path.join(self.package_prompts_dir, name)
 
     def template(self, name: str) -> str:
-        return os.path.join(self.templates_dir, name)
+        """Résout un template HTML : priorité à `JOBSEARCH_HOME/config/templates/`, repli sur le paquet."""
+        user_path = os.path.join(self.user_templates_dir, name)
+        if os.path.exists(user_path):
+            return user_path
+        return os.path.join(self.package_templates_dir, name)
 
     def offer(self, offer_id: str) -> str:
         return os.path.join(self.offers_dir, f"{offer_id}.json")
 
     def absolute(self) -> "Paths":
-        """Conservée pour compatibilité (`src/cv_pdf.py`) — les chemins sont déjà
-        absolus depuis `JOBSEARCH_HOME`/`PACKAGE_ROOT`, donc simple no-op."""
+        """Conservée pour compatibilité (`jobsearch/cv_pdf.py`) — les chemins sont déjà
+        absolus depuis `JOBSEARCH_HOME`/le paquet, donc simple no-op."""
         return self
 
 
@@ -434,26 +481,26 @@ def unfilled_placeholders(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def load_profile_text(config_dir: str, search: "Search | None" = None) -> str:
-    """Réexport tardif pour éviter un import circulaire (défini dans src.filter)."""
-    from src.filter import load_profile_text as _impl
+    """Réexport tardif pour éviter un import circulaire (défini dans jobsearch.filter)."""
+    from jobsearch.filter import load_profile_text as _impl
 
     return _impl(config_dir, search=search)
 
 
 def load_sources(config_dir: str) -> list[dict]:
-    from src.scraper import load_sources as _impl
+    from jobsearch.scraper import load_sources as _impl
 
     return _impl(config_dir)
 
 
 def load_cv_data(cv_dir: str) -> dict:
-    from src.cv_pdf import load_cv_data as _impl
+    from jobsearch.cv_pdf import load_cv_data as _impl
 
     return _impl(cv_dir)
 
 
 def is_tech_offer(offer: dict, search: "Search | None" = None) -> bool:
-    from src.filter import is_tech_offer as _impl
+    from jobsearch.filter import is_tech_offer as _impl
 
     return _impl(offer, search=search)
 
@@ -466,7 +513,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.check_prompts:
-        from src.filter import build_system_prompt, load_profile_text as _load_profile_text
+        from jobsearch.filter import build_system_prompt, load_profile_text as _load_profile_text
 
         search = get_search(PATHS.config_dir)
         unknown_total: list[str] = []

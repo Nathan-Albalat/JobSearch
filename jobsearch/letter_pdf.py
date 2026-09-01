@@ -3,7 +3,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from src.cv_pdf import write_cv_pdf, _ABS_TEMPLATES_DIR
+from jobsearch.cv_pdf import write_cv_pdf, _ABS_TEMPLATES_DIR
 
 _SALUTATION_RE = re.compile(r"^(dear|to whom|madame|monsieur|madame,|hi |hello )", re.IGNORECASE)
 _CLOSING_RE = re.compile(

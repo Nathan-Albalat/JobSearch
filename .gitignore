@@ -1,5 +1,5 @@
 # NOTE (étape C) : la config perso et les données vivent désormais par défaut
-# dans ~/.jobsearch/ (JOBSEARCH_HOME), hors du dépôt — voir `python main.py --migrate`.
+# dans ~/.jobsearch/ (JOBSEARCH_HOME), hors du dépôt — voir `jobsearch --migrate`.
 # Les entrées ci-dessous restent en place tant que les originaux du dépôt n'ont
 # pas été supprimés manuellement par l'utilisateur (la migration ne fait que
 # copier, jamais déplacer) : elles évitent de committer par erreur ces fichiers
@@ -29,3 +29,8 @@ files/letter/signature.png
 
 # Claude Code settings (chemins spécifiques à la machine)
 .claude/
+
+# Métadonnées de build du paquet (pip install -e .)
+*.egg-info/
+build/
+dist/

@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 
-from src.config import PACKAGE_ROOT, PROJECT_ROOT, PATHS
+from jobsearch.config import PACKAGE_ROOT, PROJECT_ROOT, PATHS
 
 
 def _check_setup() -> None:
@@ -29,7 +29,7 @@ def _check_setup() -> None:
         else []
     )
     if legacy_offers:
-        from src.config import JOBSEARCH_HOME
+        from jobsearch.config import JOBSEARCH_HOME
 
         print(f"⚠️  {JOBSEARCH_HOME} vide ou absent — configuration manquante, MAIS le dépôt")
         print(f"    contient encore {len(legacy_offers)} offre(s) dans {legacy_offers_dir}.")
@@ -37,8 +37,8 @@ def _check_setup() -> None:
         print("    code/données : elles n'ont pas disparu, elles n'ont simplement pas encore été")
         print("    copiées vers leur nouvel emplacement.")
         print()
-        print("    Lance d'abord :  python main.py --migrate         (aperçu, n'écrit rien)")
-        print("    Puis :           python main.py --migrate --apply (copie réelle)")
+        print("    Lance d'abord :  jobsearch --migrate         (aperçu, n'écrit rien)")
+        print("    Puis :           jobsearch --migrate --apply (copie réelle)")
         sys.exit(1)
 
     print("⚠️  Première utilisation détectée — fichiers de configuration manquants :")
@@ -56,14 +56,14 @@ def _check_setup() -> None:
         sys.exit(1)
 
 
-from src.scraper import scrape_all
-from src.filter import filter_all
-from src.report import generate_report, load_filtered_offers
-from src.generator import generate
-from src.notifier import send_notification
-from src.manual import from_file, from_url
-from src.tracker import load_applications, mark_status, render_applications_table, STATUSES
-from src.duplicates import mark_duplicate, clear_duplicate
+from jobsearch.scraper import scrape_all
+from jobsearch.filter import filter_all
+from jobsearch.report import generate_report, load_filtered_offers
+from jobsearch.generator import generate
+from jobsearch.notifier import send_notification
+from jobsearch.manual import from_file, from_url
+from jobsearch.tracker import load_applications, mark_status, render_applications_table, STATUSES
+from jobsearch.duplicates import mark_duplicate, clear_duplicate
 
 
 def cmd_scrape(
@@ -71,7 +71,7 @@ def cmd_scrape(
     use_batch: bool = True,
     include_groups: set[str] | None = None,
 ) -> None:
-    from src.config import get_search
+    from jobsearch.config import get_search
 
     if threshold is None:
         threshold = get_search().threshold
@@ -102,7 +102,7 @@ def cmd_scrape(
         print("→ Notification email envoyée.\n")
 
     print("Ouvre le rapport, coche les offres qui t'intéressent, puis lance :")
-    print("  python main.py --generate <offer_id>")
+    print("  jobsearch --generate <offer_id>")
 
 
 def cmd_generate(offer_id: str, letter_only: bool = False) -> None:
@@ -152,8 +152,8 @@ def cmd_letter_pdf(args) -> None:
     import json
     import os
 
-    from src.cv_pdf import load_cv_data
-    from src.letter_pdf import render_letter_pdf
+    from jobsearch.cv_pdf import load_cv_data
+    from jobsearch.letter_pdf import render_letter_pdf
 
     path = args.letter_pdf
     if not os.path.exists(path):
@@ -199,14 +199,14 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Exemples :
-  python main.py --scrape
-  python main.py --scrape --threshold 7
-  python main.py --scrape --with fr   # inclut aussi les sources FR-only (HelloWork, WTTJ FR)
-  python main.py --generate 0151e52f
-  python main.py --from-url https://example.com/jobs/stage-dev
-  python main.py --from-file ~/Downloads/offre_wttj.html --url-source "https://..." --company "Criteo"
-  python main.py --mark-duplicate dcd4359a c52e7b97   # marque dcd4359a comme doublon de c52e7b97
-  python main.py --unmark-duplicate dcd4359a          # annule le marquage
+  jobsearch --scrape
+  jobsearch --scrape --threshold 7
+  jobsearch --scrape --with fr   # inclut aussi les sources FR-only (HelloWork, WTTJ FR)
+  jobsearch --generate 0151e52f
+  jobsearch --from-url https://example.com/jobs/stage-dev
+  jobsearch --from-file ~/Downloads/offre_wttj.html --url-source "https://..." --company "Criteo"
+  jobsearch --mark-duplicate dcd4359a c52e7b97   # marque dcd4359a comme doublon de c52e7b97
+  jobsearch --unmark-duplicate dcd4359a          # annule le marquage
         """,
     )
 
@@ -348,10 +348,10 @@ Exemples :
     if args.letter_pdf:
         cmd_letter_pdf(args)
     elif args.tui:
-        from src.tui import run_tui  # import paresseux : textual requis seulement ici
+        from jobsearch.tui import run_tui  # import paresseux : textual requis seulement ici
         run_tui()
     elif args.scrape:
-        from src.config import get_search
+        from jobsearch.config import get_search
 
         groups = (set(get_search().enabled_groups) | set(args.with_groups)) - set(args.without_groups)
         cmd_scrape(args.threshold, use_batch=not args.no_batch, include_groups=groups)
@@ -385,7 +385,7 @@ Exemples :
             sys.exit(f"Erreur : {e}")
         print(f"Marquage doublon retiré pour {offer_id}.")
     elif args.migrate:
-        from src.migrate import run_migrate
+        from jobsearch.migrate import run_migrate
 
         run_migrate(apply=args.apply)
 

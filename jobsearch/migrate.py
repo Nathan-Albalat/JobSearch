@@ -11,7 +11,7 @@ import os
 import shutil
 from dataclasses import dataclass, field
 
-from src.config import PACKAGE_ROOT, PATHS
+from jobsearch.config import PACKAGE_ROOT, PATHS
 
 
 @dataclass
@@ -40,6 +40,21 @@ def build_plan() -> list[MigrationItem]:
         MigrationItem("Résumé CV (cv_master.md)", "file",
                        os.path.join(PACKAGE_ROOT, "cv_master", "cv_master.md"),
                        os.path.join(PATHS.cv_dir, "cv_master.md")),
+        MigrationItem("Prompt de scoring (filter.txt)", "file",
+                       os.path.join(PATHS.package_prompts_dir, "filter.txt"),
+                       os.path.join(PATHS.user_prompts_dir, "filter.txt")),
+        MigrationItem("Prompt de lettre de motivation (cover_letter.txt)", "file",
+                       os.path.join(PATHS.package_prompts_dir, "cover_letter.txt"),
+                       os.path.join(PATHS.user_prompts_dir, "cover_letter.txt")),
+        MigrationItem("Prompt d'adaptation du CV (cv_adapt.txt)", "file",
+                       os.path.join(PATHS.package_prompts_dir, "cv_adapt.txt"),
+                       os.path.join(PATHS.user_prompts_dir, "cv_adapt.txt")),
+        MigrationItem("Template lettre (cover_letter.html)", "file",
+                       os.path.join(PATHS.package_templates_dir, "cover_letter.html"),
+                       os.path.join(PATHS.user_templates_dir, "cover_letter.html")),
+        MigrationItem("Template CV (cv_en.html)", "file",
+                       os.path.join(PATHS.package_templates_dir, "cv_en.html"),
+                       os.path.join(PATHS.user_templates_dir, "cv_en.html")),
         MigrationItem("Secrets (.env)", "file",
                        os.path.join(PACKAGE_ROOT, ".env"),
                        PATHS.env_path),
@@ -120,7 +135,7 @@ def dry_run(items: list[MigrationItem]) -> None:
     if not any_source:
         print("Aucune source trouvée dans le dépôt — rien à migrer.")
     else:
-        print("Pour copier réellement : python main.py --migrate --apply")
+        print("Pour copier réellement : jobsearch --migrate --apply")
 
 
 def _copy_file(item: MigrationItem, conflicts: list[str], copied: list[str]) -> None:

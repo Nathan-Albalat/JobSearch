@@ -4,7 +4,7 @@ import os
 from collections import Counter
 from datetime import date, datetime
 
-from src.config import PATHS
+from jobsearch.config import PATHS
 
 STATUSES = ["generated", "sent", "answered", "interview", "rejected", "accepted", "cancelled"]
 # Statuts indiquant qu'une réponse de l'entreprise a été reçue

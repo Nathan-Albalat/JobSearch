@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from src.config import PATHS
+from jobsearch.config import PATHS
 
 _ABS_TEMPLATES_DIR = PATHS.absolute().templates_dir + os.sep
 

@@ -12,7 +12,7 @@ import requests
 import yaml
 from dotenv import load_dotenv
 
-from src.config import PATHS, get_search
+from jobsearch.config import PATHS, get_search
 
 
 def load_sources(config_dir: str) -> list[dict]:
@@ -581,7 +581,7 @@ def scrape_all(
                     for j in raw_jobs
                 ]
             elif source_type == "jobspy":
-                from src.scraper_jobspy import fetch_jobspy
+                from jobsearch.scraper_jobspy import fetch_jobspy
                 candidates = [(o, o["url"]) for o in fetch_jobspy(source)]
             elif source_type == "adzuna":
                 raw_jobs = fetch_adzuna(source)

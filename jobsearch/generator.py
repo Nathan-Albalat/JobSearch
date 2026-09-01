@@ -7,12 +7,12 @@ from datetime import date
 
 from dotenv import load_dotenv
 
-from src.filter import load_profile_text, strip_html
-from src.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_pdf
-from src.cv_sync import sync_cv_master
-from src.letter_pdf import render_letter_pdf
-from src.tracker import record_generated
-from src.config import PATHS, Search, fill_template, get_search  # noqa: F401 (fill_template ré-exporté)
+from jobsearch.filter import load_profile_text, strip_html
+from jobsearch.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_pdf
+from jobsearch.cv_sync import sync_cv_master
+from jobsearch.letter_pdf import render_letter_pdf
+from jobsearch.tracker import record_generated
+from jobsearch.config import PATHS, Search, fill_template, get_search  # noqa: F401 (fill_template ré-exporté)
 
 
 def load_offer(offer_id: str, data_dir: str) -> dict:

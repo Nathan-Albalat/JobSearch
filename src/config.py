@@ -173,7 +173,15 @@ DEFAULTS: dict = {
             "max_tokens": 2048,
         },
     },
+    "sources": {
+        "enabled_groups": [],
+    },
     "source_defaults": {
+        "hellowork": {
+            "pages": 2,
+            "delay": 0.3,
+            "c": "Stage",
+        },
         "jobspy": {
             "sites": ["linkedin", "indeed"],
             "search_term": "software intern",
@@ -307,6 +315,11 @@ class Search:
     @property
     def generate_max_tokens(self) -> int:
         return int(self.get("models", "generate", "max_tokens", default=2048))
+
+    @property
+    def enabled_groups(self) -> list[str]:
+        groups = self.get("sources", "enabled_groups", default=[]) or []
+        return list(groups)
 
     def source_defaults(self, kind: str) -> dict:
         return dict(self.get("source_defaults", kind, default={}) or {})
@@ -465,3 +478,4 @@ if __name__ == "__main__":
     print(f"filter_model   : {search.filter_model}")
     print(f"generate_model : {search.generate_model}")
     print(f"prefilter kws  : {len(search.prefilter_keywords)} mot(s)-clé(s)")
+    print(f"enabled_groups : {search.enabled_groups}")

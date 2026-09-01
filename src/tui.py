@@ -469,8 +469,8 @@ class StageTUI(App):
         Binding("r", "reload", "Recharger"),
         Binding("c", "open_console", "Console API"),
         Binding("S", "scrape", "Scrape"),
-        # Alias : certains terminaux ne transmettent pas shift+lettre à Textual.
-        Binding("ctrl+s", "scrape", show=False),
+        # ^S : scrape incluant les sources FR-only (groupe 'fr', ex: HelloWork).
+        Binding("ctrl+s", "scrape_fr", show=False),
         Binding("1", "tab('offers')", show=False),
         Binding("2", "tab('gen')", show=False),
         Binding("3", "tab('letters')", show=False),
@@ -1308,7 +1308,7 @@ class StageTUI(App):
         )
 
     @work(thread=True, exclusive=True, group="scrape")
-    def run_scrape(self) -> None:
+    def run_scrape(self, include_groups: set[str] | None = None) -> None:
         buffer = io.StringIO()
         try:
             from src.filter import filter_all
@@ -1316,7 +1316,7 @@ class StageTUI(App):
             from src.scraper import scrape_all
 
             with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
-                new = scrape_all()
+                new = scrape_all(include_groups=include_groups)
                 self.call_from_thread(self._set_phase, f"Filtrage Claude ({len(new)} nouvelle(s))…")
                 filtered, pertinent = filter_all(threshold=self.threshold)
                 self.call_from_thread(self._set_phase, "Génération du rapport…")
@@ -1330,14 +1330,24 @@ class StageTUI(App):
         self.call_from_thread(self.action_reload)
         self.call_from_thread(self.notify_status, msg)
 
-    def action_scrape(self) -> None:
+    def _launch_scrape(self, include_groups: set[str] | None, label: str) -> None:
         if self._scrape_phase is not None:
             # Toast et non barre de statut : celle-ci est réécrite par le spinner à chaque tick.
             self.notify("Un scrape est déjà en cours.", title="Scrape", severity="warning")
             return
         self._start_spinner("Scrape des sources…")
         self.notify("Scrape + filtre + rapport lancés (plusieurs minutes).", title="Scrape")
-        self.run_scrape()
+        self.run_scrape(include_groups=include_groups)
+
+    def action_scrape(self) -> None:
+        self._launch_scrape(None, "Scrape des sources…")
+
+    def action_scrape_fr(self) -> None:
+        """`Ctrl+S` : scrape incluant les sources FR-only (groupe 'fr', ex: HelloWork)."""
+        from src.config import get_search
+
+        groups = set(get_search().enabled_groups) | {"fr"}
+        self._launch_scrape(groups, "Scrape des sources (+ FR)…")
 
     def action_sent_or_scrape(self) -> None:
         """`s` : statut « envoyée » dans l'onglet Suivi, lancement du scrape ailleurs."""

@@ -40,7 +40,11 @@ from src.manual import from_file, from_url
 from src.tracker import load_applications, mark_status, render_applications_table, STATUSES
 
 
-def cmd_scrape(threshold: int | None, use_batch: bool = True) -> None:
+def cmd_scrape(
+    threshold: int | None,
+    use_batch: bool = True,
+    include_groups: set[str] | None = None,
+) -> None:
     from src.config import get_search
 
     if threshold is None:
@@ -48,7 +52,7 @@ def cmd_scrape(threshold: int | None, use_batch: bool = True) -> None:
     print("=" * 50)
     print("ÉTAPE 1/3 — Collecte des offres")
     print("=" * 50)
-    new_offers = scrape_all()
+    new_offers = scrape_all(include_groups=include_groups)
     print(f"→ {len(new_offers)} nouvelle(s) offre(s) collectée(s).\n")
 
     print("=" * 50)
@@ -255,6 +259,22 @@ Exemples :
         help="Score minimum de pertinence (défaut: config/search.yaml, utilisé avec --scrape)",
     )
     parser.add_argument(
+        "--with",
+        dest="with_groups",
+        action="append",
+        default=[],
+        metavar="GROUP",
+        help="Active un groupe de sources optionnelles pour ce scrape (ex: --with fr pour HelloWork). Répétable.",
+    )
+    parser.add_argument(
+        "--without",
+        dest="without_groups",
+        action="append",
+        default=[],
+        metavar="GROUP",
+        help="Désactive un groupe de sources pour ce scrape, même s'il est activé par défaut. Répétable.",
+    )
+    parser.add_argument(
         "--url-source",
         default="",
         metavar="URL",
@@ -279,7 +299,10 @@ Exemples :
         from src.tui import run_tui  # import paresseux : textual requis seulement ici
         run_tui()
     elif args.scrape:
-        cmd_scrape(args.threshold, use_batch=not args.no_batch)
+        from src.config import get_search
+
+        groups = (set(get_search().enabled_groups) | set(args.with_groups)) - set(args.without_groups)
+        cmd_scrape(args.threshold, use_batch=not args.no_batch, include_groups=groups)
     elif args.generate:
         cmd_generate(args.generate, letter_only=args.letter_only)
     elif args.from_file:

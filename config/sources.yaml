@@ -76,5 +76,26 @@ sources:
       what: "software intern"
       pages: 2
 
+  # --- HelloWork (FR uniquement — désactivée par défaut, activer avec --with fr) ---
+  - name: "HelloWork - Développeur informatique (Stage)"
+    type: hellowork
+    group: fr
+    optional: true
+    country: "FR"
+    params:
+      k: "développeur informatique"
+      c: "Stage"
+      pages: 2
+
+  - name: "HelloWork - Data (Stage)"
+    type: hellowork
+    group: fr
+    optional: true
+    country: "FR"
+    params:
+      k: "data"
+      c: "Stage"
+      pages: 2
+
 # --- Sources à ajouter manuellement quand disponibles ---
 # APEC (404), Nationale-vacaturebank.nl (403), monsterboard.nl (pas de RSS public)

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import date, datetime
 
 import feedparser
@@ -146,6 +147,106 @@ def normalize_adzuna(job: dict, source: dict) -> dict:
     }
 
 
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
+
+
+def fetch_hellowork(source: dict) -> list[dict]:
+    """Scrape HelloWork : liste + fetch détail par offre pour le JSON-LD JobPosting.
+
+    Contrat stable : le JSON-LD `schema.org/JobPosting` embarqué dans chaque page
+    détail. Ne jamais basculer sur des sélecteurs CSS — ils cassent à chaque
+    refonte front (voir CLAUDE.md).
+    """
+    defaults = get_search().source_defaults("hellowork")
+    params = {**defaults, **(source.get("params", {}) or {})}
+    pages = params.pop("pages", 2)
+    delay = params.pop("delay", 0.3)
+
+    headers = {"User-Agent": _BROWSER_UA}
+    links: list[str] = []
+    for page in range(1, pages + 1):
+        query = {**params, "p": page}
+        resp = requests.get(
+            "https://www.hellowork.com/fr-fr/emploi/recherche.html",
+            params=query,
+            headers=headers,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        page_links = re.findall(r'href="(/fr-fr/emplois/\d+\.html)"', resp.text)
+        if not page_links:
+            break
+        links.extend(page_links)
+
+    links = list(dict.fromkeys(links))
+
+    jobs: list[dict] = []
+    for link in links:
+        url = f"https://www.hellowork.com{link}"
+        try:
+            time.sleep(delay)
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            job = None
+            for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>', resp.text, re.S):
+                try:
+                    data = json.loads(block.strip())
+                except json.JSONDecodeError:
+                    continue
+                if data.get("@type") == "JobPosting":
+                    job = data
+                    break
+            if job is None:
+                continue
+            job["url"] = url
+            jobs.append(job)
+        except Exception as e:
+            print(f"    Erreur sur l'offre HelloWork {url} : {e}")
+            continue
+
+    return jobs
+
+
+def normalize_hellowork(job: dict, source: dict) -> dict:
+    """Normalise un JSON-LD JobPosting HelloWork au format offre du pipeline."""
+    url = job.get("url", "")
+    org = job.get("hiringOrganization") or {}
+    company = org.get("name", "") if isinstance(org, dict) else ""
+
+    job_location = job.get("jobLocation")
+    if isinstance(job_location, list):
+        job_location = job_location[0] if job_location else {}
+    job_location = job_location or {}
+    address = job_location.get("address") or {}
+    locality = address.get("addressLocality") or address.get("addressRegion") or source.get("country", "")
+    country = address.get("addressCountry", "")
+    location = f"{locality}, {country}" if country else str(locality)
+
+    tags = job.get("skills", [])
+    if isinstance(tags, str):
+        tags = [tags]
+
+    date_published = str(job.get("datePosted", ""))[:10] or str(date.today())
+
+    return {
+        "id": make_offer_id(url),
+        "title": (job.get("title", "") or "").strip(),
+        "company": company,
+        "location": location,
+        "description": job.get("description", ""),
+        "url": url,
+        "date_published": date_published,
+        "date_scraped": str(date.today()),
+        "source": source.get("name", ""),
+        "country": source.get("country", "FR"),
+        "tags": tags or [],
+        "remote": False,
+    }
+
+
 # Mots parasites retirés des titres avant comparaison fuzzy inter-sources
 @functools.lru_cache(maxsize=4)
 def _title_noise_re(noise_words: tuple, extra_regex: str) -> re.Pattern:
@@ -240,14 +341,27 @@ def save_offer(offer: dict, data_dir: str) -> None:
         json.dump(offer, f, ensure_ascii=False, indent=2)
 
 
-def scrape_all(config_dir: str = "config", data_dir: str = "data") -> list[dict]:
+def scrape_all(
+    config_dir: str = "config",
+    data_dir: str = "data",
+    include_groups: set[str] | None = None,
+) -> list[dict]:
     sources = load_sources(config_dir)
     seen = load_seen_offers(data_dir)
     dedup_keys = load_existing_dedup_keys(data_dir)
     new_offers = []
 
+    groups = set(include_groups) if include_groups is not None else set(get_search().enabled_groups)
+
     for source in sources:
-        print(f"  Scraping : {source['name']}...")
+        if source.get("optional") and source.get("group") not in groups:
+            print(
+                f"  Ignorée : {source.get('name', '?')} — groupe '{source.get('group')}' non activé "
+                f"(--with {source.get('group')} pour l'inclure)."
+            )
+            continue
+
+        print(f"  Scraping : {source.get('name', '?')}...")
         source_type = source.get("type", "rss")
         try:
             if source_type == "api_json":
@@ -265,6 +379,12 @@ def scrape_all(config_dir: str = "config", data_dir: str = "data") -> list[dict]
                     (normalize_adzuna(j, source), j.get("redirect_url", ""))
                     for j in raw_jobs
                 ]
+            elif source_type == "hellowork":
+                raw_jobs = fetch_hellowork(source)
+                candidates = [
+                    (normalize_hellowork(j, source), j.get("url", ""))
+                    for j in raw_jobs
+                ]
             else:
                 entries = parse_feed(source)
                 candidates = [
@@ -272,7 +392,7 @@ def scrape_all(config_dir: str = "config", data_dir: str = "data") -> list[dict]
                     for e in entries
                 ]
         except Exception as e:
-            print(f"    Erreur sur {source['name']} : {e}")
+            print(f"    Erreur sur {source.get('name', '?')} : {e}")
             continue
 
         for offer, url in candidates:

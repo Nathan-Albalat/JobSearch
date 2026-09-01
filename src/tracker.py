@@ -2,7 +2,7 @@
 import json
 import os
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 
 STATUSES = ["generated", "sent", "answered", "interview", "rejected", "accepted", "cancelled"]
 # Statuts indiquant qu'une réponse de l'entreprise a été reçue
@@ -12,11 +12,70 @@ _STATUS_LABELS = {
     "generated": "📝 générée",
     "sent": "📤 envoyée",
     "answered": "📬 réponse reçue",
-    "interview": "🎙 entretien",
+    # 🎤 et non 🎙 : ce dernier est de largeur East_Asian_Width « Neutral » (1 cellule),
+    # seul de son espèce parmi ces libellés — son glyphe débordait sur l'espace suivant
+    # et désalignait la ligne « entretien » dans les rendus en colonnes.
+    "interview": "🎤 entretien",
     "rejected": "❌ refusée",
     "accepted": "✅ acceptée",
     "cancelled": "🚫 annulée",
 }
+
+# Couleurs de surlignage par statut, source de vérité unique pour la TUI (onglet Suivi)
+# et pour le rendu SVG du flux (src/flow.py). `generated` : pas de surlignage (None).
+STATUS_COLORS = {
+    "generated": None,          # pas de surlignage
+    "sent": "#584b00",          # jaune
+    "answered": "#6b4310",      # ambre
+    "interview": "#46326b",     # violet
+    "accepted": "#1e4620",      # vert
+    "rejected": "#870000",      # rouge
+    "cancelled": "#2b2b2b",     # gris
+}
+
+
+def _to_iso(value: str) -> str:
+    """Normalise une date/datetime stockée en chaîne ISO datetime.
+
+    Les dates ponctuelles existantes (`generated_at`, `sent_at`, `responded_at`) sont
+    stockées en date seule (`str(date.today())`, 10 caractères) : on complète à minuit.
+    """
+    value = str(value)
+    if len(value) == 10:
+        return value + "T00:00:00"
+    return value
+
+
+def ensure_history(app: dict) -> list[dict]:
+    """Historique de `app`, reconstruit depuis les dates existantes s'il est absent.
+
+    Ne modifie pas `app` : retourne une nouvelle liste. Les événements reconstruits
+    portent `"inferred": True` (heure inconnue → T00:00:00).
+    """
+    existing = app.get("history")
+    if existing:
+        return list(existing)
+
+    history: list[dict] = []
+    generated_at = app.get("generated_at")
+    if generated_at:
+        history.append({"status": "generated", "at": _to_iso(generated_at), "inferred": True})
+
+    sent_at = app.get("sent_at")
+    if sent_at:
+        history.append({"status": "sent", "at": _to_iso(sent_at), "inferred": True})
+
+    status = app.get("status")
+    responded_at = app.get("responded_at")
+    if responded_at and status in RESPONSE_STATUSES:
+        history.append({"status": status, "at": _to_iso(responded_at), "inferred": True})
+
+    if status == "cancelled":
+        ref = app.get("sent_at") or app.get("generated_at")
+        if ref:
+            history.append({"status": "cancelled", "at": _to_iso(ref), "inferred": True})
+
+    return history
 
 
 def _path(data_dir: str) -> str:
@@ -42,7 +101,15 @@ def record_generated(offer: dict, data_dir: str = "data") -> None:
     apps = load_applications(data_dir)
     for app in apps:
         if app["offer_id"] == offer.get("id"):
+            # Reconstruction avant mutation (voir mark_status) : sinon l'événement
+            # `generated` déduit porterait la date du jour au lieu de la date d'origine.
+            history = ensure_history(app)
             app["generated_at"] = str(date.today())
+            if not history or history[-1]["status"] != "generated":
+                history = history + [
+                    {"status": "generated", "at": datetime.now().isoformat(timespec="seconds")}
+                ]
+            app["history"] = history
             save_applications(apps, data_dir)
             return
     apps.append(
@@ -55,6 +122,7 @@ def record_generated(offer: dict, data_dir: str = "data") -> None:
             "sent_at": None,
             "status": "generated",
             "notes": "",
+            "history": [{"status": "generated", "at": datetime.now().isoformat(timespec="seconds")}],
         }
     )
     save_applications(apps, data_dir)
@@ -66,6 +134,11 @@ def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = "dat
     apps = load_applications(data_dir)
     for app in apps:
         if app["offer_id"] == offer_id:
+            # L'historique doit être reconstruit AVANT toute mutation : `ensure_history`
+            # déduit l'événement de réponse depuis `status` + `responded_at`. Reconstruire
+            # après la mise à jour réécrivait le passé avec le nouveau statut — un passage
+            # interview → rejected effaçait purement et simplement l'étape « entretien ».
+            history = ensure_history(app)
             app["status"] = status
             if status == "sent" and not app.get("sent_at"):
                 app["sent_at"] = str(date.today())
@@ -73,6 +146,11 @@ def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = "dat
                 app["responded_at"] = str(date.today())
             if note:
                 app["notes"] = (app.get("notes", "") + " | " + note).strip(" |")
+            if not history or history[-1]["status"] != status:
+                history = history + [
+                    {"status": status, "at": datetime.now().isoformat(timespec="seconds")}
+                ]
+            app["history"] = history
             save_applications(apps, data_dir)
             return app
     raise KeyError(f"Aucune candidature pour l'offre '{offer_id}'. Lance d'abord --generate.")

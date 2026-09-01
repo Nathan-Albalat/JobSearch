@@ -13,8 +13,9 @@ import json
 import os
 import subprocess
 import time
+import unicodedata
 import webbrowser
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from rich.style import Style
 from textual import work
@@ -38,8 +39,17 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from src.filter import strip_html
+from src.flow import DEFAULT_FLOW_PATH, by_month_status, flow_tree, write_flow_html
 from src.report import load_filtered_offers
-from src.tracker import compute_stats, load_applications, mark_status
+from src.tracker import (
+    STATUS_COLORS,
+    STATUSES,
+    _STATUS_LABELS,
+    compute_stats,
+    ensure_history,
+    load_applications,
+    mark_status,
+)
 from src.config import get_search
 
 
@@ -68,6 +78,22 @@ def _cells(values):
     return [str(v) for v in values]
 
 
+def _visible_width(text: str) -> int:
+    """Largeur d'affichage en cellules terminal — un émoji « large » en occupe 2.
+
+    `len()` compte 1 pour tous les émoji alors que la plupart en occupent 2 à l'écran.
+    Le mélange était visible dans « Parcours des candidatures » : 🎙 (entretien) est
+    de largeur Neutral, donc rendu sur 1 cellule là où 📝/📤/❌ en prennent 2 — la
+    ligne entretien se décalait d'un caractère vers la gauche.
+    """
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
+def _pad(text: str, width: int) -> str:
+    """Complète `text` à `width` cellules d'affichage (équivalent de `f'{t:<w}'`, émoji compris)."""
+    return text + " " * max(0, width - _visible_width(text))
+
+
 def _hbar(label, value, total, label_w, bar_w=22, style=None):
     """Une ligne de barre horizontale : label aligné + barre proportionnelle + valeur + %."""
     filled = round(bar_w * value / total) if total else 0
@@ -78,7 +104,7 @@ def _hbar(label, value, total, label_w, bar_w=22, style=None):
     pct = round(100 * value / total) if total else 0
     color = f"[{style}]" if style else ""
     close = "[/]" if style else ""
-    return f"{label:<{label_w}} {color}{bar}{close} {value:>2} ({pct:>3}%)"
+    return f"{_pad(str(label), label_w)} {color}{bar}{close} {value:>2} ({pct:>3}%)"
 
 
 def render_month_histogram(by_month, height=7, col_w=7):
@@ -103,6 +129,53 @@ def render_month_histogram(by_month, height=7, col_w=7):
     lines.append(f"{0:>{y_w}} └" + "─" * (col_w * len(months)))
     labels = "".join(_short_month(m).center(col_w) for m in months)
     lines.append(" " * (y_w + 2) + labels)
+    return "\n".join(lines)
+
+
+def render_flow_tree(tree: dict) -> str:
+    """Rendu arborescent de `src.flow.flow_tree` — barres via `_hbar`."""
+    if not tree:
+        return "[dim]Aucune donnée.[/dim]"
+    root_status, root_node = next(iter(tree.items()))
+    total = root_node["total"]
+    if not total:
+        return "[dim]Aucune donnée.[/dim]"
+    lines: list[str] = []
+
+    def walk(status: str, node: dict, depth: int) -> None:
+        prefix = "" if depth == 0 else " " * (4 * (depth - 1) + 1) + "└→ "
+        label = f"{prefix}{_STATUS_LABELS.get(status, status)}"
+        color = STATUS_COLORS.get(status)
+        lines.append(_hbar(label, node["total"], total, label_w=40, bar_w=16, style=color))
+        for child_status, child_node in node["children"].items():
+            walk(child_status, child_node, depth + 1)
+
+    walk(root_status, root_node, 0)
+    return "\n".join(lines)
+
+
+def render_month_status_bars(by_month, bar_w: int = 30) -> str:
+    """Barre segmentée par statut, une ligne par mois (`src.flow.by_month_status`)."""
+    if not by_month:
+        return "[dim]Aucune donnée temporelle.[/dim]"
+    max_total = max(sum(counter.values()) for counter in by_month.values())
+    lines = []
+    for month, counter in by_month.items():
+        total = sum(counter.values())
+        segments = []
+        for status in STATUSES:
+            v = counter.get(status, 0)
+            if v <= 0:
+                continue
+            n = max(1, round(bar_w * v / max_total)) if max_total else 0
+            color = STATUS_COLORS.get(status) or "#888888"
+            segments.append(f"[{color}]{'█' * n}[/]")
+        bar = "".join(segments)
+        lines.append(f"{_short_month(month):<6} {bar} {total}")
+    legend = "   ".join(
+        f"[{STATUS_COLORS[s]}]■[/] {_STATUS_LABELS[s]}" for s in STATUSES if STATUS_COLORS.get(s)
+    )
+    lines += ["", legend]
     return "\n".join(lines)
 
 
@@ -138,11 +211,9 @@ class HighlightDataTable(DataTable):
 
 
 # Surlignage des candidatures déjà envoyées (onglet Candidatures) — vert foncé, modifiable ici.
-# Valeur identique à ACCEPTED_HIGHLIGHT_COLOR mais usage distinct (onglet différent) : les deux
+# Valeur identique à STATUS_COLORS["accepted"] mais usage distinct (onglet différent) : les deux
 # constantes restent séparées pour qu'un futur ajustement de l'une n'affecte pas l'autre.
 SENT_HIGHLIGHT_COLOR = "#1e4620"
-# Surlignage des candidatures envoyées, en attente de réponse (onglet Suivi) — jaune, modifiable ici.
-PENDING_HIGHLIGHT_COLOR = "#584b00"
 # Surlignage des offres de la dernière session de scrape (onglet Offres) — bleu foncé, modifiable ici.
 NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
 # Surlignage des candidatures annulées (onglet Suivi) — gris foncé, modifiable ici.
@@ -160,15 +231,14 @@ REJECTED_HIGHLIGHT_COLOR = "#870000"
 # métier, pendant de RESPONSE_STATUSES dans src/tracker.py.
 PENDING_STATUSES = {"sent", "answered", "interview"}
 
-# Table de correspondance statut → style de ligne pour l'onglet Suivi. `generated` est absent
-# volontairement : une candidature pas encore envoyée n'a pas de surlignage.
+# Table de correspondance statut → style de ligne pour l'onglet Suivi, construite depuis
+# src/tracker.STATUS_COLORS (source de vérité unique, partagée avec src/flow.py) — modifiable
+# ici pour les couleurs. `generated` est filtré (None) : une candidature pas encore envoyée
+# n'a pas de surlignage. Couleur de texte : grey50 pour `cancelled`, white pour les autres.
 TRACK_STATUS_STYLES = {
-    "sent": Style(color="white", bgcolor=PENDING_HIGHLIGHT_COLOR),
-    "answered": Style(color="white", bgcolor=ANSWERED_HIGHLIGHT_COLOR),
-    "interview": Style(color="white", bgcolor=INTERVIEW_HIGHLIGHT_COLOR),
-    "accepted": Style(color="white", bgcolor=ACCEPTED_HIGHLIGHT_COLOR),
-    "rejected": Style(color="white", bgcolor=REJECTED_HIGHLIGHT_COLOR),
-    "cancelled": Style(color="grey50", bgcolor=CANCELLED_HIGHLIGHT_COLOR),
+    status: Style(color="grey50" if status == "cancelled" else "white", bgcolor=color)
+    for status, color in STATUS_COLORS.items()
+    if color is not None
 }
 
 CONSOLE_URL = "https://console.anthropic.com/settings/billing"
@@ -236,11 +306,14 @@ HELP_TEXT = """\
   [b #7aa2f7]o[/]  Ouvrir l'offre dans le navigateur
   (envoyée en jaune · réponse en ambre · entretien en violet ·
    acceptée en vert · refusée en rouge · annulée en gris)
+  (le panneau de droite affiche la timeline de la candidature sous le curseur)
 
 [b]Onglet Stats[/b]
   Retour de candidature (taux d'acceptation, taux de réponse,
-  délai moyen), localisation des stages, et histogramme des
-  candidatures au cours du temps (lecture seule).
+  délai moyen), localisation des stages, histogramme des
+  candidatures au cours du temps, parcours des candidatures
+  (arbre de statuts) et répartition mensuelle des statuts atteints.
+  [b #7aa2f7]f[/]  Exporter le diagramme de Sankey du flux (HTML, ouvert dans le navigateur)
 """
 
 
@@ -334,6 +407,12 @@ class StageTUI(App):
     }
     #offers-table { width: 55%; }
     #letters-table { width: 42%; }
+    #track-table { width: 60%; }
+    #track-detail {
+        width: 40%;
+        border-left: solid $accent;
+        padding: 0 1;
+    }
     #stats-header { padding: 1 1 0 1; height: auto; }
     .stats-section {
         border: round $accent;
@@ -419,6 +498,7 @@ class StageTUI(App):
         Binding("j", "set_status('rejected')", show=False),
         Binding("v", "set_status('accepted')", show=False),
         Binding("z", "set_status('cancelled')", show=False),
+        Binding("f", "export_flow", show=False),
     ]
 
     def __init__(self) -> None:
@@ -453,7 +533,9 @@ class StageTUI(App):
                     yield HighlightDataTable(id="letters-table", cursor_type="row")
                     yield VerticalScroll(Markdown("", id="letter-preview"), id="letter-detail")
             with TabPane("4 · Suivi", id="track"):
-                yield HighlightDataTable(id="track-table", cursor_type="row")
+                with Horizontal():
+                    yield HighlightDataTable(id="track-table", cursor_type="row")
+                    yield VerticalScroll(Static("", id="track-detail-text"), id="track-detail")
             with TabPane("5 · Stats", id="stats"):
                 with VerticalScroll(id="stats-scroll"):
                     yield Static("", id="stats-header")
@@ -464,6 +546,8 @@ class StageTUI(App):
                         yield Static("", id="stats-loc-text", classes="stats-left")
                         yield Static("", id="stats-loc-bars", classes="stats-right")
                     yield Static("", id="stats-months", classes="stats-section")
+                    yield Static("", id="stats-flow", classes="stats-section")
+                    yield Static("", id="stats-flow-months", classes="stats-section")
         # Barre de statut + Footer regroupés dans un conteneur docké : deux widgets
         # `dock: bottom` frères se superposent sur la même ligne (l'un masque l'autre).
         with Vertical(id="bottom-bar"):
@@ -486,6 +570,8 @@ class StageTUI(App):
         self.query_one("#stats-return").border_title = "Retour de candidature"
         self.query_one("#stats-loc").border_title = "Localisation des stages"
         self.query_one("#stats-months").border_title = "Candidatures au cours du temps"
+        self.query_one("#stats-flow").border_title = "Parcours des candidatures"
+        self.query_one("#stats-flow-months").border_title = "Statuts atteints par mois"
         self.action_reload()
 
     # ---------- data ----------
@@ -591,14 +677,15 @@ class StageTUI(App):
             oid: Style(color="black", bgcolor="green3")
             for oid in self.selected if oid in self.gen_checked
         }
-        table.clear()
-        for oid in sorted(self.selected):
-            o = self.offers.get(oid, {})
-            icon, info = self.gen_status.get(oid, ("·", "en attente — g pour lancer"))
-            mark = "▶" if oid in self.gen_checked else ""
-            table.add_row(
-                mark, icon, o.get("title", "?")[:50], (o.get("company", "") or "?")[:24], info[:120], key=oid
-            )
+        with self._keep_cursor("gen-table"):
+            table.clear()
+            for oid in sorted(self.selected):
+                o = self.offers.get(oid, {})
+                icon, info = self.gen_status.get(oid, ("·", "en attente — g pour lancer"))
+                mark = "▶" if oid in self.gen_checked else ""
+                table.add_row(
+                    mark, icon, o.get("title", "?")[:50], (o.get("company", "") or "?")[:24], info[:120], key=oid
+                )
 
     def _candidature_dirs(self) -> list[str]:
         base = os.path.join("output", "candidatures")
@@ -611,16 +698,13 @@ class StageTUI(App):
         import datetime
 
         table = self.query_one("#letters-table", HighlightDataTable)
-        # Préserve le dossier sous le curseur pour le restaurer après reconstruction
-        # (sinon `p`/`u` renvoient le curseur en haut → aperçu et surbrillance perdus).
-        previous = self._current_row_key("letters-table")
         status_by_offer = {a["offer_id"]: a["status"] for a in load_applications()}
         dirs = self._candidature_dirs()
 
         def _letter_row_style(folder: str):
             status = status_by_offer.get(os.path.basename(folder).rsplit("_", 1)[-1], "generated")
             if status == "cancelled":
-                return Style(color="grey50", bgcolor=CANCELLED_HIGHLIGHT_COLOR)
+                return Style(color="grey50", bgcolor=STATUS_COLORS["cancelled"])
             if status != "generated":
                 return Style(color="white", bgcolor=SENT_HIGHLIGHT_COLOR)
             return None
@@ -630,31 +714,27 @@ class StageTUI(App):
             for folder in dirs
             if (style := _letter_row_style(folder)) is not None
         }
-        table.clear()
-        for folder in dirs:
-            md = os.path.join(folder, "lettre.md")
-            pdf = os.path.join(folder, "lettre.pdf")
-            cv_pdf = os.path.join(folder, "cv_adapte.pdf")
-            mtime = ""
-            if os.path.exists(md):
-                mtime = datetime.datetime.fromtimestamp(os.path.getmtime(md)).strftime("%d/%m %H:%M")
-                # PDF plus vieux que le .md retouché → à régénérer
-                stale = os.path.exists(pdf) and os.path.getmtime(pdf) < os.path.getmtime(md)
-            else:
-                stale = False
-            table.add_row(
-                os.path.basename(folder)[:34],
-                "✓" if os.path.exists(md) else "—",
-                "⚠ à régénérer (p)" if stale else ("✓" if os.path.exists(pdf) else "—"),
-                "✓" if os.path.exists(cv_pdf) else "—",
-                mtime,
-                key=folder,
-            )
-        if previous is not None:
-            try:
-                table.move_cursor(row=table.get_row_index(previous))
-            except KeyError:
-                pass  # le dossier n'existe plus dans la liste
+        with self._keep_cursor("letters-table"):
+            table.clear()
+            for folder in dirs:
+                md = os.path.join(folder, "lettre.md")
+                pdf = os.path.join(folder, "lettre.pdf")
+                cv_pdf = os.path.join(folder, "cv_adapte.pdf")
+                mtime = ""
+                if os.path.exists(md):
+                    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(md)).strftime("%d/%m %H:%M")
+                    # PDF plus vieux que le .md retouché → à régénérer
+                    stale = os.path.exists(pdf) and os.path.getmtime(pdf) < os.path.getmtime(md)
+                else:
+                    stale = False
+                table.add_row(
+                    os.path.basename(folder)[:34],
+                    "✓" if os.path.exists(md) else "—",
+                    "⚠ à régénérer (p)" if stale else ("✓" if os.path.exists(pdf) else "—"),
+                    "✓" if os.path.exists(cv_pdf) else "—",
+                    mtime,
+                    key=folder,
+                )
         self.update_letter_preview(show_cv=self._preview_cv)
 
     def update_letter_preview(self, show_cv: bool = False) -> None:
@@ -704,20 +784,60 @@ class StageTUI(App):
             for a in apps
             if a["status"] in TRACK_STATUS_STYLES
         }
-        table.clear()
-        for app in apps:
-            table.add_row(
-                *_cells([
-                    app["offer_id"],
-                    app["status"],
-                    app["company"][:22],
-                    app["title"][:40],
-                    app.get("generated_at", "") or "",
-                    app.get("sent_at", "") or "",
-                    (app.get("notes", "") or "")[:40],
-                ]),
-                key=app["offer_id"],
-            )
+        with self._keep_cursor("track-table"):
+            table.clear()
+            for app in apps:
+                table.add_row(
+                    *_cells([
+                        app["offer_id"],
+                        app["status"],
+                        app["company"][:22],
+                        app["title"][:40],
+                        app.get("generated_at", "") or "",
+                        app.get("sent_at", "") or "",
+                        (app.get("notes", "") or "")[:40],
+                    ]),
+                    key=app["offer_id"],
+                )
+        self.update_track_detail()
+
+    def update_track_detail(self) -> None:
+        oid = self._current_row_key("track-table")
+        widget = self.query_one("#track-detail-text", Static)
+        app = next((a for a in load_applications() if a["offer_id"] == oid), None)
+        if not app:
+            widget.update("")
+            return
+        parts = [
+            f"[b]{app.get('company', '') or '?'}[/b]",
+            app.get("title", ""),
+            f"[dim]{app.get('url', '')}[/dim]",
+            "",
+        ]
+        history = ensure_history(app)
+        has_inferred = False
+        prev_dt = None
+        for event in history:
+            status = event["status"]
+            label = _STATUS_LABELS.get(status, status)
+            at = event["at"]
+            inferred = event.get("inferred", False)
+            has_inferred = has_inferred or inferred
+            suffix = "~" if inferred else ""
+            delta = ""
+            try:
+                cur_dt = datetime.fromisoformat(at)
+                if prev_dt is not None:
+                    delta = f"   (+{(cur_dt - prev_dt).days} j)"
+                prev_dt = cur_dt
+            except ValueError:
+                pass
+            line = f"{label}{suffix:<1}  {at[:10]}{delta}"
+            color = STATUS_COLORS.get(status)
+            parts.append(f"[{color}]{line}[/{color}]" if color else line)
+        if has_inferred:
+            parts += ["", "[dim]~ date déduite (heure inconnue, avant l'introduction de l'historique)[/dim]"]
+        widget.update("\n".join(parts))
 
     def refresh_stats(self) -> None:
         stats = compute_stats("data")
@@ -727,10 +847,12 @@ class StageTUI(App):
         loc_text = self.query_one("#stats-loc-text", Static)
         loc_bars = self.query_one("#stats-loc-bars", Static)
         months_widget = self.query_one("#stats-months", Static)
+        flow_widget = self.query_one("#stats-flow", Static)
+        flow_months_widget = self.query_one("#stats-flow-months", Static)
 
         if stats["total"] == 0:
             header.update("[b]Statistiques[/b]  [dim]— aucune candidature enregistrée pour l'instant.[/dim]")
-            for w in (return_text, status_bars, loc_text, loc_bars, months_widget):
+            for w in (return_text, status_bars, loc_text, loc_bars, months_widget, flow_widget, flow_months_widget):
                 w.update("")
             return
 
@@ -777,6 +899,18 @@ class StageTUI(App):
 
         # --- Section 3 : histogramme temporel ---
         months_widget.update(render_month_histogram(stats["by_month"]))
+
+        # --- Section 4 : parcours des candidatures (flux) ---
+        apps = load_applications()
+        tree = flow_tree(apps)
+        flow_widget.update(
+            # `[f]` doit être échappé : Rich l'interpréterait comme une balise de style
+            # inconnue et l'avalerait silencieusement (le raccourci disparaissait du rendu).
+            render_flow_tree(tree) + "\n\n[dim]\\[f] exporter le diagramme de Sankey (HTML)[/dim]"
+        )
+
+        # --- Section 5 : statuts atteints par mois ---
+        flow_months_widget.update(render_month_status_bars(by_month_status(apps)))
 
     # ---------- helpers ----------
 
@@ -1248,6 +1382,17 @@ class StageTUI(App):
             self.notify_status(f"Note enregistrée pour {oid}.")
 
         self.push_screen(NoteScreen(current), save)
+
+    def action_export_flow(self) -> None:
+        if self._active_tab() != "stats":
+            return
+        try:
+            path = write_flow_html(DEFAULT_FLOW_PATH, load_applications())
+            webbrowser.open("file://" + os.path.abspath(path))
+        except Exception as e:
+            self.notify_status(f"Erreur export Sankey : {type(e).__name__}: {e}")
+            return
+        self.notify_status(f"Diagramme de flux exporté : {path}")
 
 
 def run_tui() -> None:

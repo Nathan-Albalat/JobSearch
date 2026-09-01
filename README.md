@@ -1,389 +1,219 @@
-# User Guide — Job Search Pipeline
+# JobSearch
 
-## Prerequisites
+An automated pipeline that scrapes job/internship offers from RSS feeds and job board APIs, scores each one with Claude Haiku against your search criteria, generates a Markdown report, and — for the offers you pick — drafts a tailored cover letter and adapted CV PDF with Claude Sonnet.
 
-- Python 3.11+
-- An Anthropic API key (for filtering and generation phases)
-- macOS / Linux (cron commands are for macOS/Linux)
+**JobSearch is general-purpose**, not tied to tech: the setup wizard ships 7 sector presets (software, healthcare, law, sales, marketing, engineering, education) plus free-form input for anything else. Use it for an internship, a permanent job, or any other type of contract, in any country.
 
 ---
 
 ## Installation
 
 ```bash
-# Recommended: install as an isolated CLI tool
-pipx install git+https://github.com/<you>/jobsearch
-
-# Or, for local development (inside this repo's venv):
-pip install -e .
-```
-
-This base install works on any recent Python (3.11+, including 3.12/3.13/3.14) and covers every source except LinkedIn/Indeed. Those two go through `python-jobspy`, which is an **optional** extra:
-
-```bash
-# pipx, from a git source, with the jobspy extra, pinned to Python 3.11:
-pipx install "jobsearch[jobspy] @ git+https://github.com/<you>/jobsearch" --python python3.11
-
-# local dev, inside a Python 3.11 venv:
-pip install -e '.[jobspy]'
-```
-
-Why the extra and the Python ≤ 3.11 pin: `python-jobspy` pins `NUMPY==1.26.3`, which only ships wheels up to Python 3.11. `pipx` defaults to the newest Python found on the machine, so installing the base package with `python-jobspy` bundled in on a newer Python (3.12+) would make pip try to *compile* numpy from source and fail with a cryptic `ModuleNotFoundError: No module named 'genapi'` — an error that mentions neither jobspy nor the Python version. Moving `python-jobspy` to an optional extra keeps the base install light and compatible with any Python version; only the two `jobspy`-type sources in `config/sources.yaml` (LinkedIn/Indeed) need the extra and a 3.11 interpreter. If it's missing, those two sources are simply skipped with an explanatory message — not treated as an error, the rest of the scrape runs normally.
-
-WeasyPrint (PDF rendering) requires a system dependency: Pango/Cairo — `brew install pango` on macOS. This is the main installation pitfall; without it, `--letter-pdf` / `--generate` will fail at the PDF step even though everything else works.
-
-Either way, you get a global `jobsearch` command. Run the interactive setup wizard next:
-
-```bash
+pipx install git+https://github.com/Nathan-Albalat/JobSearch
 jobsearch --setup
+jobsearch --tui
 ```
 
-It's a standalone Textual app that walks you through 7 steps: an overview of what the tool does, your Anthropic API key (optional at this stage, with an optional — confirmed before it runs — minimal validation call), your search subject (contract type, minimum duration, priority countries, domains, score threshold), the pre-filter (pick a pre-filled keyword set for your field — software, healthcare, law, sales, marketing, engineering, education… — or type your own free-form keywords; this also drives the recruiter framing used in the scoring prompt), the scoring prompt (**not skippable**: the package ships a generic, parameterized default with no real offer examples baked in — the wizard fills it in with your search subject so your very first scrape isn't scored against someone else's search, refinable later from the Settings tab of the TUI, key `6`), your candidate profile, and a recap of what's configured vs. still optional (CV data, templates, Adzuna, SMTP). It never overwrites a file that already exists without asking first, and shows you the content before writing anything — safe to re-run.
+That's it — `jobsearch --setup` walks you through an interactive wizard (API key, search subject, scoring prompt, candidate profile), and `jobsearch --tui` opens the interactive interface.
 
-Any first launch of another command (`jobsearch --scrape`, `--tui`, …) before running `--setup` detects that `JOBSEARCH_HOME` (`~/.jobsearch/` by default) is missing its configuration and offers to run `setup.sh` instead, a lighter fallback that copies `.example` files from the package to their final names and tells you which ones to edit by hand.
+This works on any Python 3.11+ (including 3.12/3.13/3.14) and covers every source except LinkedIn/Indeed. A couple of things worth knowing:
 
-> **Note:** neither `--setup` nor `setup.sh` ever overwrites an existing file.
+- **LinkedIn / Indeed** go through the optional `[jobspy]` extra, which requires Python ≤ 3.11 (`python-jobspy` pins an old numpy with no wheels beyond 3.11):
+  ```bash
+  pipx install "jobsearch[jobspy] @ git+https://github.com/Nathan-Albalat/JobSearch" --python python3.11
+  ```
+  Without it, these two sources are simply skipped with an explanatory message — not an error, the rest of the scrape runs normally.
+- **WeasyPrint** (PDF rendering) needs Pango/Cairo installed at the system level: `brew install pango` on macOS. Without it, `--generate` / `--letter-pdf` fail at the PDF step, though everything else works.
 
-> **Checks (no API call):** `python -m jobsearch.config --check-prompts` fails if a placeholder is left unresolved in any of the 3 prompts. `python -m jobsearch.config --check-wizard-defaults` simulates two contrasted `--setup` profiles and fails if a value that's supposed to be derived from your answers (subject label, opposite contract type, title bonus, domain openness…) silently falls back to the value shipped in `config/search.example.yaml` (the original author's subject: tech internship, Netherlands).
+For local development instead of `pipx`, use `pip install -e .` (or `pip install -e '.[jobspy]'`) inside this repo's venv.
 
-**Runs from any directory.** Two separate roots: the code and its default resources (prompts, HTML templates, fonts) live in the package (`jobsearch/resources/`, accessed via `importlib.resources` so they're found however the package was installed); your personal config (`search.yaml`, `profile.yaml`, `sources.yaml`, `cv_data.yaml`, `.env`) and your data (`data/`, `output/`) live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` — `jobsearch --applications` works the same whether you run it from the repo or from anywhere else. Override with the `JOBSEARCH_HOME` environment variable if needed. Run `python -m jobsearch.config` to display the effective paths.
+### About the setup wizard
 
-**Prompts and HTML templates are editable content, not fixed resources.** The 3 scoring/generation prompts (`config/prompts/*.txt`) and the 2 HTML templates (`config/templates/cover_letter.html`, `cv_en.html`) are resolved with priority given to `JOBSEARCH_HOME/config/`, falling back automatically to the package defaults if you haven't customized them — no action required on an existing install. To customize them, copy the defaults into `JOBSEARCH_HOME/config/prompts/` / `.../templates/` (or run `jobsearch --migrate --apply`, which copies them there without ever overwriting an existing file) and edit the copies. Only the fonts always stay in the package.
+`jobsearch --setup` is a standalone Textual app in 7 steps: an overview of the tool, your Anthropic API key (optional at this stage), your search subject (contract type, minimum duration, priority countries, domains, score threshold), the pre-filter (pick a pre-filled keyword set for your sector, or type your own), the scoring prompt (pre-filled from your answers so your first scrape isn't scored against someone else's search), your candidate profile, and a recap of what's configured. It never overwrites an existing file without asking, and is safe to re-run.
 
-**Upgrading from an older version where data lived inside the repo?** Run `jobsearch --migrate` for a dry run (prints what would be copied, writes nothing), then `jobsearch --migrate --apply` to actually copy your config and data to `JOBSEARCH_HOME`. This only ever copies — it never moves or deletes the originals in the repository; the command verifies file counts and checksums after copying and tells you where the originals are so you can remove them yourself once you're satisfied.
+**Strongly recommended after setup:** personalize the scoring prompt and pre-filter keywords further from the Settings tab of the TUI (key `6`) with a few real offer examples from your own search — it meaningfully improves ranking accuracy.
+
+**Data location:** your config and data live under `JOBSEARCH_HOME`, which defaults to `~/.jobsearch/` (override with the `JOBSEARCH_HOME` environment variable). `jobsearch` works the same from any directory. Run `python -m jobsearch.config` to see the effective paths, or `python -m jobsearch.config --check-prompts` / `--check-wizard-defaults` for offline sanity checks.
+
+**Upgrading from an older, repo-local install?** Run `jobsearch --migrate` for a dry run, then `jobsearch --migrate --apply` to copy your config and data to `JOBSEARCH_HOME` (never overwrites, never deletes the originals).
 
 ---
 
-## Complete Workflow
-
-The pipeline unfolds in 3 steps:
-
-```
-Step 1 — Scrape    : Collects offers from RSS feeds
-Step 2 — Filter    : Claude scores each offer (0-10) based on your profile
-Step 3 — Report    : Generates a Markdown report with relevant offers
-
-            ↓ You read the report, check the offers you're interested in
-
-Step 4 — Application : Claude generates cover letter + adapted CV
-```
-
----
-
-## Main Commands
-
-| Command | Description |
-|---|---|
-| `jobsearch --setup` | Interactive first-install wizard (API key, search subject, scoring prompt, profile) |
-| `jobsearch --scrape` | Run steps 1-2-3 (collect + filter + report) |
-| `jobsearch --scrape --threshold 7` | Same with relevance threshold of 7/10 |
-| `jobsearch --scrape --with fr` | Also include FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR), disabled by default |
-| `jobsearch --scrape --without fr` | Exclude a group even if enabled by default in `search.yaml` (`sources.enabled_groups`) |
-| `jobsearch --generate <offer_id>` | Generate application for a specific offer |
-| `jobsearch --mark-duplicate <offer_id> <target_id>` | Mark `<offer_id>` as a manual duplicate of `<target_id>` (an offer you already applied to) |
-| `jobsearch --unmark-duplicate <offer_id>` | Undo a duplicate marking |
-| `jobsearch --migrate` | Dry run: shows what would be copied from the repo to `JOBSEARCH_HOME`, writes nothing |
-| `jobsearch --migrate --apply` | Actually copies personal config and data to `JOBSEARCH_HOME` (never overwrites, never deletes the originals) |
-
-### Modules in Isolation (for debugging)
-
-| Command | Description |
-|---|---|
-| `python -m jobsearch.scraper` | Collect only (without filter or report) |
-| `python -m jobsearch.filter` | Filter already-collected offers |
-| `python -m jobsearch.report` | Generate report from already-filtered offers |
-| `python -m jobsearch.generator <offer_id>` | Generate application for an offer |
-
----
-
-## Interactive Interface (TUI)
-
-Instead of chaining commands, you can control everything from a terminal interface:
+## The TUI
 
 ```bash
 jobsearch --tui
 ```
 
-**Important principle:** the TUI is just a **view** on the pipeline's files. It creates almost no hidden state: reports, `data/offers/*.json` and `data/applications.json` remain readable and editable without it. So you can resume work anytime (scrape Monday, review Wednesday) — the TUI re-reads current state on startup and with the `r` key. The one exception is the Generation tab's queue, persisted in `data/gen_queue.json`.
+The TUI is a **view** on the pipeline's files, not a database of its own: reports, `data/offers/*.json` and `data/applications.json` stay readable and editable without it, and it re-reads current state on startup and on `r`. The only thing it persists is the Generation tab's queue (`data/gen_queue.json`), so you can resume anytime — scrape Monday, review Wednesday.
 
-### The 6 Tabs
+### The 6 tabs
 
 | Tab | Role |
 |---|---|
-| **1 · Offers** | Table of filtered offers, sortable by score, with detail panel. You check offers to add to the generation queue — checked rows are **highlighted in green**. Offers from the latest scrape session are **highlighted in dark blue**; the displayed period (all / latest session / last 7 days / last 30 days) can be filtered with `d`/`D`. The `✓` column is a 4-state cascade: `▶` checked > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company already applied to, not yet resolved) — press `m` to confirm/undo via a picker. |
-| **2 · Generation** | The generation queue, persisted across TUI restarts in `data/gen_queue.json`. Check rows with `space` to restrict `g`/`L` to that subset — with nothing checked, `g`/`L` process all pending offers. `x` removes rows from the queue. Launches letter + CV generation (or letter only) as a background task. |
-| **3 · Applications** | List of `output/candidatures/` directories, letter/CV preview, **PDF regeneration after manual editing**. |
-| **4 · Tracking** | Statuses and notes of applications (`applications.json`). Each status has its own colour: **sent** in yellow, **answered** in amber, **interview** in purple, **accepted** in green, **rejected** in red, **cancelled** in dark grey with dimmed text. The right-hand panel shows the individual timeline of the application under the cursor, rebuilt from its `history` (status → datetime log), with the day gap between each event — dates inferred from the old point-in-time fields (before `history` existed) are suffixed with `~`. |
-| **5 · Stats** | Response metrics (acceptance rate, response rate, average response time), status breakdown, internship locations, and an applications-over-time histogram. Cancelled applications are excluded from the rates and average response time, counted separately in a "Cancelled" category. Also: a tree view of the application journey (status flow) and a monthly breakdown of statuses reached. Press `f` to export the corresponding Sankey diagram as a self-contained HTML file (`output/stats/flux.html`), opened in your browser. |
-| **6 · Settings** | Table listing every editable config file — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml` — with its role, **state** (customized / package default / missing) and last-modified date. Press `enter` on a row to open it in your editor: for a prompt/template still at the package default, the default is copied to your user config **before** opening it, so you never edit the files shipped with the package. Uses `$VISUAL`/`$EDITOR` if set (suspending the TUI for a terminal editor), otherwise falls back to `open`/`xdg-open`/`start` depending on your OS. Press `r` afterwards to reload — this also clears the cached `search.yaml` values, so a changed scoring threshold takes effect immediately. A banner on this tab reminds you that the shipped scoring prompt and keyword pre-filter are generic — personalizing them with real examples/keywords from your own search meaningfully improves ranking accuracy. |
+| **1 · Offers** | Table of scored offers, sortable, with a detail panel. Check offers (`space`) to queue them for generation — checked rows highlighted in green, offers from the latest scrape session in dark blue. The `✓` column cascades through 4 states: `▶` checked > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company, not yet resolved — press `m` to confirm). |
+| **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. |
+| **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. |
+| **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. |
+| **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations, an applications-over-time histogram, and a status-flow tree. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
+| **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`) with its state (customized / package default / missing). `enter` opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. |
 
-### Duplicate Offers
+### Cover letter editing workflow
 
-Automated deduplication can't catch every cross-source repost (e.g. the same internship reappearing under a slightly different title on another job board). Rather than guess, the pipeline follows the principle "**the machine suggests, the user confirms**": offers from a company you already applied to are flagged with `?` in the Offers tab, and pressing `m` opens a picker of your applications to that company (or others) to confirm the match in one keystroke — nothing is ever auto-marked.
+The main use of the Applications tab: press `e` to open `lettre.md` in your editor, edit and save, come back and press `p` to regenerate the PDF. The "PDF" column shows **"⚠ needs regeneration"** whenever the `.md` is newer than the PDF.
 
-### Cover Letter Editing Workflow
-
-This is the main use of the Applications tab:
-
-1. Go to tab **3 · Applications**, select the application.
-2. Press `e` → `lettre.md` opens in your default editor.
-3. Edit the text, save.
-4. Return to the TUI, press `p` → the PDF is regenerated from the `.md`.
-
-The "PDF" column displays **"⚠ needs regeneration"** when the `.md` is newer than the PDF, to spot at a glance what's left to do.
-
-### Keyboard Shortcuts (also accessible via `?` in the TUI)
+### Keyboard shortcuts (also via `?` in the TUI)
 
 | Context | Key | Action |
 |---|---|---|
-| Global | `1`/`2`/`3`/`4`/`5`/`6` | Switch tab (Offers / Generation / Applications / Tracking / Stats / Settings) |
+| Global | `1`-`6` | Switch tab |
 | Global | `r` | Reload data from disk |
-| Global | `S` / `s` | Run scrape + filter + report (spinner + current step + timer in the status bar). `s` only triggers the scrape outside the Tracking tab, where it means "sent"; `s` is an alias of `S` |
-| Global | `Ctrl+S` | Same, also including FR-only sources (group `fr`, e.g. HelloWork, WTTJ FR) — equivalent to `jobsearch --scrape --with fr` |
-| Global | `c` | Open Claude Console (reload API credits) |
-| Global | `?` | Show help (list of shortcuts) |
+| Global | `S` / `s` | Run scrape + filter + report |
+| Global | `Ctrl+S` | Same, also including FR-only sources (group `fr`) |
+| Global | `c` | Open the Claude Console (reload API credits) |
+| Global | `?` | Help |
 | Global | `q` | Quit |
-| Offers | `space` | Check/uncheck offer for generation |
-| Offers | `o` | Open offer in browser |
-| Offers | `+`/`-` | Adjust displayed score threshold |
+| Offers | `space` | Check/uncheck for generation |
+| Offers | `o` | Open in browser |
+| Offers | `+`/`-` | Adjust score threshold |
 | Offers | `h` | Hide/show already-applied offers (and marked duplicates) |
-| Offers | `d` | Cycle displayed period (all · latest session · 7 days · 30 days) |
-| Offers | `D` | Pick a specific scrape session |
+| Offers | `d` / `D` | Cycle / pick displayed period |
 | Offers | `g` | Go to Generation tab |
-| Offers | `m` | Mark/unmark the offer as a duplicate of an existing application (picker; the machine suggests via company name, the user confirms) |
-| Generation | `space` | Check/uncheck an offer in the queue (optional filter for `g`/`L`) |
-| Generation | `g` | Generate letter + CV (checked rows, or all pending offers) |
-| Generation | `L` | Generate **letter only** (no CV — 1 Sonnet call instead of 2) |
-| Generation | `x` | Remove from the queue (checked rows, or the row under the cursor) |
+| Offers | `m` | Mark/unmark as duplicate of an existing application |
+| Generation | `space` | Check/uncheck a queue row |
+| Generation | `g` | Generate letter + CV |
+| Generation | `L` | Generate letter only |
+| Generation | `A` | Add a manual offer (HTML file or URL) to the queue |
+| Generation | `x` | Remove from the queue |
 | Generation | `o` | Open application folder |
 | Applications | `enter` | Toggle letter ↔ CV preview |
 | Applications | `e` | Open `lettre.md` in editor |
-| Applications | `p` | Regenerate `lettre.pdf` from `lettre.md` |
-| Applications | `u` | Regenerate `cv_adapte.pdf` from `cv_adapte.html` |
-| Applications | `o` | Open application folder |
+| Applications | `p` | Regenerate `lettre.pdf` |
+| Applications | `u` | Regenerate `cv_adapte.pdf` |
+| Applications | `o` / `O` | Open folder / open offer in browser |
 | Tracking | `s`/`a`/`i`/`j`/`v`/`z` | Status → sent / answered / interview / rejected / accepted / cancelled |
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
-| Stats | `f` | Export the status-flow Sankey diagram (HTML, opened in browser) |
-| Settings | `enter` | Open the config file under the cursor in your editor (`$VISUAL`/`$EDITOR`, else `open`/`xdg-open`/`start`) |
+| Stats | `f` | Export the status-flow Sankey diagram |
+| Settings | `enter` | Open the config file under the cursor |
+
+### Duplicate offers
+
+Cross-source deduplication can't catch every repost. The pipeline follows "the machine suggests, the user confirms": offers from a company you already applied to are flagged `?`, and `m` opens a picker to confirm the match in one keystroke.
 
 ---
 
-## Example of a Typical Session
+## The CLI
 
 ```bash
-# Run the complete pipeline
-jobsearch --scrape
+jobsearch --setup                          # interactive first-install wizard
+jobsearch --scrape                         # collect + filter + report
+jobsearch --scrape --threshold 7           # custom relevance threshold
+jobsearch --scrape --with fr               # also include FR-only sources (HelloWork, WTTJ FR)
+jobsearch --scrape --without fr            # disable a group enabled by default
+jobsearch --generate <offer_id>            # generate letter + adapted CV for an offer
+jobsearch --generate <offer_id> --letter-only  # letter only (1 Sonnet call instead of 2)
+jobsearch --tui                            # interactive interface
+jobsearch --applications                   # tracking table
+jobsearch --mark <offer_id> <status>       # update an application's status
+jobsearch --mark-duplicate <offer_id> <target_id>  # mark as duplicate of an existing application
+jobsearch --unmark-duplicate <offer_id>
+jobsearch --migrate [--apply]              # copy config/data from a repo-local install to JOBSEARCH_HOME
+jobsearch --from-file <path.html> [--url-source URL] [--company NAME] [--title TITLE]
+jobsearch --from-url <url>
+jobsearch --letter-pdf <letter.md> --company "Name" [--title ...] [--location ...] [--dept ...] [--output out.pdf]
+```
 
-# → The report is generated in data/rapport_YYYY-MM-DD.md
-# → Read the report, note the ID of interesting offers
+Full option list and examples: `jobsearch --help`.
 
-# Generate application for an offer
-jobsearch --generate 0151e52f
+### Modules in isolation (debugging)
 
-# → Files are in output/candidatures/<company-name>_<id>/
-#   - lettre.md     : cover letter ready to review/adapt
-#   - cv_adapte.md  : CV reorganized by offer keywords
+```bash
+python -m jobsearch.scraper     # collect only
+python -m jobsearch.filter      # filter already-collected offers
+python -m jobsearch.report      # generate report from already-filtered offers
+python -m jobsearch.generator <offer_id>
+```
+
+### Manual application (WTTJ, LinkedIn, etc.)
+
+For offers on sites that can't be scraped automatically, save the page and generate the application directly:
+
+```bash
+# Save As "Complete Web Page" from your browser, then:
+jobsearch --from-file ~/Downloads/offer.html --url-source "https://..." --company "Company Name"
+
+# Or, for JS-free sites:
+jobsearch --from-url https://example.com/jobs/offer
+
+# Override extraction if it's wrong:
+jobsearch --from-file offer.html --title "Software Engineer Intern" --company "Criteo"
 ```
 
 ---
 
-## Automation Every 48 Hours (macOS/Linux)
+## Additional information
 
-To run scraping and filtering automatically every 48 hours:
+### The pipeline, step by step
+
+```
+Step 1 — Scrape       : collect offers from RSS feeds and APIs
+Step 2 — Filter       : Claude Haiku scores each offer (0-10) against your criteria
+Step 3 — Report       : Markdown report of the relevant offers
+
+            ↓ You read the report, note the offers you're interested in
+
+Step 4 — Application  : Claude Sonnet drafts a cover letter + adapted CV
+```
+
+### API cost
+
+Filtering uses Claude Haiku through the Message Batches API by default (−50% on tokens). Generation (letter + CV) uses Claude Sonnet, one-shot per offer. Reload credits at [console.anthropic.com](https://console.anthropic.com) if needed — scraping itself works without any credit.
+
+### Automation every 48 hours (macOS/Linux)
 
 ```bash
-# Open the cron editor
 crontab -e
 ```
 
-Add this line (adjust the path if needed):
-
 ```
-0 8 */2 * * cd "path/to/Script" && source venv/bin/activate (only if you use a venv) && jobsearch --scrape >> data/cron.log 2>&1
+0 8 */2 * * jobsearch --scrape >> ~/.jobsearch/data/cron.log 2>&1
 ```
 
-What it does: every 2 days at 8:00 AM, the pipeline runs and results are appended to `data/cron.log`.
+### Customization
 
----
+- **Search subject** — `search.yaml` (contract type, duration, geography, domains, score threshold, pre-filter keywords). For a real change of subject (e.g. internship → permanent job), also clear out `data/offers/` so old offers aren't scored against a stale subject.
+- **Candidate profile** — `profile.yaml` (education, skills, languages). Skills are free-form category/detail pairs, not tied to tech.
+- **CV data** — `cv_data.yaml`, the single source of truth for both the master CV and the adapted CV; `cv_master.md` is auto-regenerated from it, never edit it by hand.
+- **Prompts** — `config/prompts/{filter,cover_letter,cv_adapt}.txt`.
+- **PDF templates** — `config/templates/{cv_en,cover_letter}.html`, using `{{MARKER}}` placeholders replaced before WeasyPrint renders the PDF. Fonts are bundled locally (offline rendering); a signature image at `files/letter/signature.png` is inserted automatically if present.
+- **Sources** — add RSS feeds, or pivot the `wttj`/`hellowork` entries (country, job title, contract types) in `sources.yaml`.
 
-## Customization
+Any of these can be edited directly, or from the TUI's Settings tab (`6`).
 
-### Change Your Search Subject
-Edit `config/search.yaml` (see the commented `config/search.example.yaml`):
-- Contract type (internship, permanent, etc.), minimum duration, availability date
-- Geographic preferences, domains, score threshold, scoring bonus/malus
-- Pre-filter keywords (the fastest lever to pivot to a different contract type — e.g. swap `intern`/`internship` for `permanent`/`full-time`)
-- Claude models/tokens and default scraping parameters
+### Email notifications (optional)
 
-To fully change subject (e.g. from internship search to full-time job search), also start from an empty `data/` folder — the packaged `filter.txt` scoring prompt now ships with generic examples that adapt to any subject via placeholders, so there is nothing to rewrite by hand to get started. For a sharper scoring signal, replace those examples with 8-14 real offers representative of your search in `config/prompts/filter.txt` (takes priority over the package default). See "Changer de sujet de recherche" in `CLAUDE.md` for the full process.
-
-### Change Your Candidate Profile
-Edit `config/profile.yaml` — this only holds your identity (education, skills, languages), independent of the search subject. Skills are free-form category/detail pairs under `competences` (you name your own categories — not necessarily technical):
-```yaml
-competences:
-  Languages: [Python, C++]
-  Frameworks: [React, Django]
-```
-```yaml
-competences:
-  Areas of law: [Corporate law, Labor law]
-  Software: [Lexis, Dalloz]
-```
-The `jobsearch --setup` wizard's profile screen writes this format. The older fixed-key format (`competences_techniques` with `langages_maitrise`/`langages_pratiques`/`frameworks`/`outils`/`domaines_ml`) is still read for backward compatibility if `competences` is absent.
-
-### Add RSS Sources
-Edit `config/sources.yaml` — add a block:
-```yaml
-- name: "Descriptive Name"
-  url: "https://link-to-feed.rss"
-  type: rss
-  country: "NL"  # ISO country code
-```
-
-### Welcome to the Jungle (WTTJ)
-Type `wttj` — no API key needed (public v3 API). NL entries are active by default, FR entries live in the `fr` group (`--with fr`). Pivoting to another country/query is a config-only edit:
-```yaml
-- name: "WTTJ - Intern NL"
-  type: wttj
-  country: "NL"
-  params:
-    job_title: "intern"
-    locations:
-      country: "Netherlands"
-      country_code: "NL"
-      label: "Pays-Bas"
-      latitude: 52.25
-      longitude: 5.75
-    contract_types: [internship, apprenticeship]
-    pages: 3
-```
-
-### Update Your CV
-Edit `cv_master/cv_data.yaml` — this is **the** source of truth (structured data: experiences, projects, skills, personal info). This file feeds both the "master" CV and the adapted CV generated by Claude. The file `cv_master/cv_master.md` is **auto-regenerated** from the YAML (via `python -m jobsearch.cv_sync`, and with each application generation) — don't edit it by hand.
-
-### Adjust Prompts
-- `config/prompts/filter.txt` — modify scoring criteria
-- `config/prompts/cover_letter.txt` — adjust letter style/structure (to modify to change the date mentionned in the letter)
-- `config/prompts/cv_adapt.txt` — change how CV is reorganized
-
-### Customize PDF Templates (CV & Letter)
-
-PDF appearance is controlled by two HTML templates in `config/templates/`:
-
-| Template | Used For | Rendered By |
-|---|---|---|
-| `cv_en.html` | The CV (master and adapted) | `jobsearch/cv_pdf.py` |
-| `cover_letter.html` | The cover letter | `jobsearch/letter_pdf.py` |
-
-**How it works:** each template contains `{{NAME}}` markers that the code replaces with real values, then WeasyPrint converts the HTML to PDF. You can freely modify the CSS (colors, fonts, margins, layout) as long as you **preserve the `{{...}}` markers** where content must appear.
-
-**Available Markers — CV (`cv_en.html`) :**
-`{{FULL_NAME}}`, `{{HEADLINE}}`, `{{LOCATION}}`, `{{EMAIL}}`, `{{GITHUB}}`, `{{EXPERIENCE_ENTRIES}}`, `{{PROJECT_ENTRIES}}`, `{{EDU_SCHOOL}}`, `{{EDU_DATES}}`, `{{EDU_DETAIL}}`, `{{START_DATE}}`, `{{DURATION}}`, `{{MOBILITY}}`, `{{SKILLS_PROFICIENT}}`, `{{SKILLS_FAMILIAR}}`, `{{SKILLS_TOOLS}}`, `{{SKILLS_DOMAINS}}`, `{{LANG1_NAME}}`/`{{LANG1_LEVEL}}`, `{{LANG2_NAME}}`/`{{LANG2_LEVEL}}`, `{{OTHER_INFO}}`, `{{ACCENT_COLOR}}`/`{{ACCENT_LIGHT}}`.
-
-**Available Markers — Letter (`cover_letter.html`) :**
-`{{FULL_NAME}}`, `{{SENDER_LOCATION}}`, `{{EMAIL}}`, `{{COMPANY_NAME}}`, `{{COMPANY_LOCATION}}`, `{{COMPANY_DEPT_LINE}}`, `{{POSITION_TITLE}}`, `{{DATE}}`, `{{SALUTATION}}`, `{{BODY}}`, `{{CLOSING_WORD}}`, `{{SIGNATURE_IMG}}`, `{{ACCENT_COLOR}}`/`{{ACCENT_LIGHT}}`.
-
-**Accent Color:** controlled by `personal.accent_enabled` in `cv_data.yaml` (green if `true`, gray if `false`). Hex values are injected into `{{ACCENT_COLOR}}` / `{{ACCENT_LIGHT}}` — to change the tint, modify them in `jobsearch/cv_pdf.py` / `jobsearch/letter_pdf.py`.
-
-**Fonts:** `.ttf` files (DM Sans, DM Serif Display) are in `config/templates/fonts/` and loaded via `@font-face`. PDF generation therefore works offline. To change fonts, drop the `.ttf` in this folder and adjust the `@font-face` rules at the top of the template.
-
-**Letter Signature:** the image `files/letter/signature.png` is inserted automatically via `{{SIGNATURE_IMG}}` (if the file exists). Its size is controlled with the CSS rule `.cl-signature` (property `height`) in `cover_letter.html`. ⚠️ Keep it small enough so the letter **fits on one page**.
-
-**Test a template change** (without consuming API):
-- Letter: `jobsearch --letter-pdf <a letter.md> --company "Test"` — or press `p` in the TUI on an existing application.
-- Master CV: `python files/cv/generate_cv.py` → `files/cv/cv_nathan_albalat_en.pdf`.
-- Adapted CV of an existing application: press `u` in the TUI.
-
----
-
-## Manual Application (WTTJ, LinkedIn, etc.)
-
-For offers on non-automatically-scrappable sites (WTTJ, LinkedIn, Jobteaser…), two modes allow you to generate letter + CV directly from your browser session.
-
-### From an HTML File (Recommended for WTTJ)
-
-WTTJ is blocked from direct scraping. Workflow:
-
-1. Open the offer in your browser
-2. **File → Save As → "Complete Web Page"** → save as `.html`
-3. Run the command:
-
-```bash
-jobsearch --from-file ~/Downloads/offre_wttj.html \
-               --url-source "https://www.welcometothejungle.com/fr/companies/..." \
-               --company "Company Name"
-```
-
-The `--url-source` argument is optional but useful — it's included in the generated letter to reference the offer.
-
-### From a Direct URL (Simple Sites)
-
-For sites accessible without JavaScript (no CloudFront):
-
-```bash
-jobsearch --from-url https://www.somesite.com/jobs/stage-dev-python
-```
-
-### Overrides if Extraction Fails
-
-If the title or company isn't extracted correctly automatically:
-
-```bash
-jobsearch --from-file offre.html \
-               --title "Python Developer Intern" \
-               --company "Criteo"
-```
-
-### What it Does
-
-The program extracts the title, company, location and description from the page (via JSON-LD, `__NEXT_DATA__`, or HTML heuristics), then directly generates `lettre.md` + `cv_adapte.md` in `output/candidatures/` — without a filtering step.
-
----
-
-## Email Notifications (Optional)
-
-To receive a summary email each time new relevant offers are found:
-
-1. Enable 2-step verification on your Google account
-2. Generate an **App Password** at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
-3. Add these lines to your `.env`:
+Add to `.env` to receive a summary email after each `--scrape`:
 
 ```
 NOTIFY_EMAIL=your_email@gmail.com
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your_account@gmail.com
-SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx   # App Password 16 characters
+SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx   # Gmail App Password
 ```
 
-The pipeline automatically sends an email after each `--scrape` if `NOTIFY_EMAIL` is set.  
-If the variable is empty or missing, no notification is sent.
+### Troubleshooting
 
----
+| Symptom | Fix |
+|---|---|
+| "ANTHROPIC_API_KEY missing" | Check `.env` contains `ANTHROPIC_API_KEY=sk-ant-...` |
+| "Your credit balance is too low" | Reload at [console.anthropic.com](https://console.anthropic.com) — scraping still works without credits |
+| "0 new offer(s) collected" | Normal if the pipeline ran recently (dedup); wait 48h or add sources |
+| "No filtered offers found" at report time | Run `jobsearch --scrape` in full, the filter must run first |
+| Few relevant offers in the report | Lower the threshold: `jobsearch --scrape --threshold 5` |
+| `offer_id` not found for `--generate` | It's the JSON filename without `.json` in `data/offers/` |
 
-## Troubleshooting
-
-**"ANTHROPIC_API_KEY missing"**
-→ Check that the `.env` file exists at the root and contains `ANTHROPIC_API_KEY=sk-ant-...`
-
-**"Your credit balance is too low"**
-→ Reload credits at [console.anthropic.com](https://console.anthropic.com). Scraping (step 1) works without credits.
-
-**"0 new offer(s) collected"**
-→ Normal if the pipeline has run recently — offers are deduplicated. Wait 48 hours or add new sources to `sources.yaml`.
-
-**"No filtered offers found" at report time**
-→ The filter must have run first. Run `jobsearch --scrape` in complete order.
-
-**Report contains few relevant offers**
-→ Lower the threshold: `jobsearch --scrape --threshold 5`
-
-**offer_id not found for --generate**
-→ The ID is the JSON filename without `.json` in `data/offers/` (e.g., `0151e52f`)
-
----
-
-## License
+### License
 
 MIT — see [LICENSE](LICENSE).

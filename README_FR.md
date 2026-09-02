@@ -27,6 +27,14 @@ C'est tout — `jobsearch --setup` te guide dans un assistant interactif (clé A
 
 Pour du développement local plutôt que `pipx` : `pip install -e .` (ou `pip install -e '.[jobspy]'`) dans le venv de ce dépôt.
 
+### Mettre à jour
+
+```bash
+pipx upgrade jobsearch
+```
+
+Ta configuration et tes données sont préservées : elles vivent sous `~/.jobsearch/`, en dehors du paquet. Un prompt ou un template que tu as personnalisé garde ta version ; ceux que tu n'as jamais touchés récupèrent automatiquement les améliorations. L'extra `[jobspy]` est conservé — pipx mémorise la commande d'installation d'origine, tu n'as rien à repréciser.
+
 ### À propos de l'assistant d'installation
 
 `jobsearch --setup` est une app Textual autonome en 7 étapes : présentation de l'outil, ta clé API Anthropic (facultative à ce stade), ton sujet de recherche (type de contrat, durée minimale, pays prioritaires, domaines, seuil de score), le pré-filtre (jeu de mots-clés pré-rempli pour ton secteur, ou saisie libre), le prompt de scoring (pré-rempli avec tes réponses pour que ton premier scrape ne soit pas calibré sur la recherche de quelqu'un d'autre), ton profil de candidat, puis un récapitulatif de ce qui est configuré. Il n'écrase jamais un fichier existant sans demander, et se relance sans risque.

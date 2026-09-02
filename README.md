@@ -27,6 +27,14 @@ This works on any Python 3.11+ (including 3.12/3.13/3.14) and covers every sourc
 
 For local development instead of `pipx`, use `pip install -e .` (or `pip install -e '.[jobspy]'`) inside this repo's venv.
 
+### Updating
+
+```bash
+pipx upgrade jobsearch
+```
+
+Your config and data are preserved: they live under `~/.jobsearch/`, outside the package. A prompt or template you customised keeps your version; the ones you never touched pick up improvements automatically. The `[jobspy]` extra is preserved too — pipx remembers the original install spec, so there's nothing to re-specify.
+
 ### About the setup wizard
 
 `jobsearch --setup` is a standalone Textual app in 7 steps: an overview of the tool, your Anthropic API key (optional at this stage), your search subject (contract type, minimum duration, priority countries, domains, score threshold), the pre-filter (pick a pre-filled keyword set for your sector, or type your own), the scoring prompt (pre-filled from your answers so your first scrape isn't scored against someone else's search), your candidate profile, and a recap of what's configured. It never overwrites an existing file without asking, and is safe to re-run.

@@ -59,8 +59,8 @@ La TUI n'est qu'une **vue** sur les fichiers du pipeline, pas une base de donné
 
 | Onglet | Rôle |
 |---|---|
-| **1 · Offres** | Tableau des offres scorées, triable, avec panneau de détail. Coche les offres (`espace`) pour les mettre en file de génération — lignes cochées surlignées en vert, offres de la dernière session en bleu foncé. La colonne `✓` est une cascade à 4 états : `▶` cochée > `⧉` doublon manuel confirmé > `✓` déjà candidatée > `?` doublon suspecté (même entreprise, non tranché — `m` pour confirmer). |
-| **2 · Génération** | La file de génération, persistée dans `data/gen_queue.json`. Coche des lignes pour restreindre `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. |
+| **1 · Offres** | Tableau des offres scorées, triable, avec panneau de détail. Coche les offres (`espace`) pour les mettre en file de génération — lignes cochées surlignées en vert, offres de la dernière session en bleu foncé. La colonne `✓` est une cascade à 5 états : `▶` cochée > `⛔` marquée invalide (offre morte/fermée/mauvais type de contrat — `i` pour marquer, motif au choix) > `⧉` doublon manuel confirmé > `✓` déjà candidatée > `?` doublon suspecté (même entreprise, non tranché — `m` pour confirmer). |
+| **2 · Génération** | La file de génération, persistée dans `data/gen_queue.json`. Coche des lignes pour restreindre `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. `N` attache une note par offre (`gen_notes`) injectée dans les prompts lettre et CV ; `M` enregistre directement dans le suivi sans rien générer — aucun appel API, aucun dossier — pour les offres qui n'ont besoin ni de lettre ni de CV (formulaire en ligne, CV générique). `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature générée. |
 | **3 · Candidatures** | Parcours `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle. |
 | **4 · Suivi** | Statuts et notes de `applications.json` (envoyée / réponse reçue / entretien / acceptée / refusée / annulée, chacun colorisé). Le panneau de droite affiche la timeline de la candidature sélectionnée, reconstruite depuis son historique — dates déduites d'anciennes données suffixées d'un `~`. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation/réponse, délai moyen), répartition des statuts, localisation des offres, histogramme des candidatures au cours du temps, et arbre du parcours des statuts. `f` exporte le flux en diagramme de Sankey HTML autonome. |
@@ -84,16 +84,20 @@ L'usage principal de l'onglet Candidatures : `e` pour ouvrir `lettre.md` dans to
 | Offres | `espace` | Cocher/décocher pour génération |
 | Offres | `o` | Ouvrir dans le navigateur |
 | Offres | `+`/`-` | Ajuster le seuil de score |
-| Offres | `h` | Masquer/afficher les offres déjà candidatées (et doublons marqués) |
+| Offres | `h` | Masquer/afficher les offres déjà candidatées, les doublons et les invalides marqués |
 | Offres | `d` / `D` | Cycler / choisir la période affichée |
 | Offres | `g` | Aller à l'onglet Génération |
 | Offres | `m` | Marquer/démarquer comme doublon d'une candidature existante |
+| Offres | `i` | Marquer/démarquer comme invalide (motif au choix : fermée/annulée/mauvais type de contrat/autre ; retire aussi l'offre de la file de génération ; refusé si l'offre a déjà une candidature) |
 | Génération | `espace` | Cocher/décocher une ligne de la file |
 | Génération | `g` | Générer lettre + CV |
 | Génération | `L` | Générer la lettre seule |
 | Génération | `A` | Ajouter une offre manuelle (fichier HTML ou URL) à la file |
 | Génération | `x` | Retirer de la file |
-| Génération | `o` | Ouvrir le dossier de la candidature |
+| Génération | `N` | Éditer la note de génération de l'offre sous le curseur (`gen_notes`, injectée dans les prompts lettre et CV au prochain `g`/`L`) |
+| Génération | `M` | Enregistrer dans le suivi SANS générer (aucun appel API, aucun dossier — offres qui n'ont besoin ni de lettre ni de CV) |
+| Génération | `o` | Ouvrir l'offre dans le navigateur |
+| Génération | `O` | Ouvrir le dossier de la candidature générée |
 | Candidatures | `entrée` | Basculer l'aperçu lettre ↔ CV |
 | Candidatures | `e` | Ouvrir `lettre.md` dans l'éditeur |
 | Candidatures | `p` | Régénérer `lettre.pdf` |
@@ -109,6 +113,10 @@ L'usage principal de l'onglet Candidatures : `e` pour ouvrir `lettre.md` dans to
 
 La déduplication automatique ne peut pas attraper tous les doublons inter-sources. Le pipeline suit le principe « la machine suggère, l'utilisateur confirme » : les offres d'une entreprise déjà candidatée sont signalées `?`, et `m` ouvre une modale pour confirmer en une pression.
 
+### Offres invalides
+
+Marquer un doublon exige une candidature cible existante. Certaines offres meurent tout simplement d'elles-mêmes — fermées, annulées, ou dont le type de contrat ne convient finalement pas — sans rien à quoi les rattacher. `i` (onglet Offres) les marque comme invalides à la place : choisis un motif dans la modale, l'offre sort alors du bucket « à candidater » du rapport et de la file de génération, tout en restant visible avec un marqueur `⛔` (masquable aussi avec `h`). Refusé pour une offre ayant déjà une candidature — utilise plutôt le statut « annulée » (`z`, onglet Suivi) dans ce cas.
+
 ---
 
 ## La CLI
@@ -121,11 +129,15 @@ jobsearch --scrape --with fr               # inclut aussi les sources FR-only (H
 jobsearch --scrape --without fr            # désactive un groupe activé par défaut
 jobsearch --generate <offer_id>            # génère lettre + CV adapté pour une offre
 jobsearch --generate <offer_id> --letter-only  # lettre seule (1 appel Sonnet au lieu de 2)
+jobsearch --generate <offer_id> --notes "..."  # consigne ponctuelle injectée dans les prompts lettre et CV
+jobsearch --record <offer_id>              # enregistre dans le suivi sans rien générer (aucun appel API)
 jobsearch --tui                            # interface interactive
 jobsearch --applications                   # tableau de suivi
 jobsearch --mark <offer_id> <status>       # met à jour le statut d'une candidature
 jobsearch --mark-duplicate <offer_id> <target_id>  # marque comme doublon d'une candidature existante
 jobsearch --unmark-duplicate <offer_id>
+jobsearch --mark-invalid <offer_id> --reason closed|cancelled|contract|other  # écarte une offre morte/hors-sujet
+jobsearch --unmark-invalid <offer_id>
 jobsearch --migrate [--apply]              # copie la config/données d'une install dans le dépôt vers JOBSEARCH_HOME
 jobsearch --from-file <chemin.html> [--url-source URL] [--company NOM] [--title TITRE]
 jobsearch --from-url <url>

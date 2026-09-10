@@ -71,8 +71,15 @@ from jobsearch.report import generate_report, load_filtered_offers
 from jobsearch.generator import generate
 from jobsearch.notifier import send_notification
 from jobsearch.manual import from_file, from_url
-from jobsearch.tracker import load_applications, mark_status, render_applications_table, STATUSES
-from jobsearch.duplicates import mark_duplicate, clear_duplicate
+from jobsearch.tracker import load_applications, mark_status, render_applications_table, STATUSES, record_generated
+from jobsearch.duplicates import (
+    mark_duplicate,
+    clear_duplicate,
+    load_offer,
+    mark_invalid,
+    clear_invalid,
+    INVALID_REASONS,
+)
 
 
 def cmd_scrape(
@@ -114,18 +121,27 @@ def cmd_scrape(
     print("  jobsearch --generate <offer_id>")
 
 
-def cmd_generate(offer_id: str, letter_only: bool = False) -> None:
+def cmd_generate(offer_id: str, letter_only: bool = False, notes: str = "") -> None:
     print("=" * 50)
     mode = " (lettre seule)" if letter_only else ""
     print(f"Génération de candidature pour l'offre : {offer_id}{mode}")
     print("=" * 50)
-    folder = generate(offer_id, letter_only=letter_only)
+    folder = generate(offer_id, letter_only=letter_only, notes=notes)
     print(f"\nCandidature prête dans : {folder}")
     print(f"  - {folder}/lettre.md")
     print(f"  - {folder}/lettre.pdf")
     if not letter_only:
         print(f"  - {folder}/cv_adapte.html")
         print(f"  - {folder}/cv_adapte.pdf")
+
+
+def cmd_record(offer_id: str) -> None:
+    """Enregistre une offre dans le suivi sans générer ni lettre ni CV (pendant du `M` de la TUI)."""
+    offer = load_offer(offer_id)
+    if offer is None:
+        sys.exit(f"Erreur : offre '{offer_id}' introuvable dans {PATHS.data_dir}/offers/")
+    record_generated(offer, PATHS.data_dir)
+    print(f"Offre {offer_id} ({offer.get('company', '?')}) enregistrée dans le suivi — aucun fichier produit.")
 
 
 def cmd_from_file(args) -> None:
@@ -213,10 +229,14 @@ Exemples :
   jobsearch --scrape --threshold 7
   jobsearch --scrape --with fr   # inclut aussi les sources FR-only (HelloWork, WTTJ FR)
   jobsearch --generate 0151e52f
+  jobsearch --generate 0151e52f --notes "Insiste sur le projet X"
+  jobsearch --record 0151e52f    # enregistre dans le suivi, sans lettre ni CV
   jobsearch --from-url https://example.com/jobs/stage-dev
   jobsearch --from-file ~/Downloads/offre_wttj.html --url-source "https://..." --company "Criteo"
   jobsearch --mark-duplicate dcd4359a c52e7b97   # marque dcd4359a comme doublon de c52e7b97
   jobsearch --unmark-duplicate dcd4359a          # annule le marquage
+  jobsearch --mark-invalid dcd4359a --reason closed   # écarte une offre fermée/hors-sujet
+  jobsearch --unmark-invalid dcd4359a                 # annule le marquage
         """,
     )
 
@@ -230,6 +250,12 @@ Exemples :
         "--generate",
         metavar="OFFER_ID",
         help="Génère la lettre de motivation et le CV adapté pour l'offre donnée",
+    )
+    group.add_argument(
+        "--record",
+        metavar="OFFER_ID",
+        help="Enregistre l'offre dans le suivi (data/applications.json) sans générer ni lettre ni CV — "
+             "aucun appel API, pour les offres qui n'en demandent pas (formulaire en ligne, CV générique)",
     )
     group.add_argument(
         "--from-file",
@@ -279,6 +305,17 @@ Exemples :
         help="Annule le marquage doublon de OFFER_ID",
     )
     group.add_argument(
+        "--mark-invalid",
+        metavar="OFFER_ID",
+        help=f"Marque OFFER_ID comme invalide (offre morte/hors-sujet — motif via --reason, "
+             f"{', '.join(INVALID_REASONS)})",
+    )
+    group.add_argument(
+        "--unmark-invalid",
+        metavar="OFFER_ID",
+        help="Annule le marquage invalide de OFFER_ID",
+    )
+    group.add_argument(
         "--migrate",
         action="store_true",
         help="Copie la config perso et les données du dépôt vers JOBSEARCH_HOME (~/.jobsearch/ par défaut). "
@@ -310,6 +347,12 @@ Exemples :
         help="Note libre ajoutée avec --mark",
     )
     parser.add_argument(
+        "--reason",
+        default="other",
+        choices=list(INVALID_REASONS),
+        help=f"Avec --mark-invalid : motif ({', '.join(INVALID_REASONS)})",
+    )
+    parser.add_argument(
         "--no-batch",
         action="store_true",
         help="Force le filtrage séquentiel (sans l'API Message Batches)",
@@ -318,6 +361,12 @@ Exemples :
         "--letter-only",
         action="store_true",
         help="Avec --generate : produit uniquement la lettre (pas de CV adapté — économie d'un appel API)",
+    )
+    parser.add_argument(
+        "--notes",
+        default="",
+        help="Avec --generate : consigne ponctuelle injectée dans les prompts lettre et CV "
+             "(prime sur gen_notes de l'offre, posé via la touche N de la TUI)",
     )
     parser.add_argument(
         "--threshold",
@@ -375,7 +424,9 @@ Exemples :
         groups = (set(get_search().enabled_groups) | set(args.with_groups)) - set(args.without_groups)
         cmd_scrape(args.threshold, use_batch=not args.no_batch, include_groups=groups)
     elif args.generate:
-        cmd_generate(args.generate, letter_only=args.letter_only)
+        cmd_generate(args.generate, letter_only=args.letter_only, notes=args.notes)
+    elif args.record:
+        cmd_record(args.record)
     elif args.from_file:
         cmd_from_file(args)
     elif args.from_url:
@@ -403,6 +454,20 @@ Exemples :
         except ValueError as e:
             sys.exit(f"Erreur : {e}")
         print(f"Marquage doublon retiré pour {offer_id}.")
+    elif args.mark_invalid:
+        offer_id = args.mark_invalid
+        try:
+            mark_invalid(offer_id, reason=args.reason)
+        except ValueError as e:
+            sys.exit(f"Erreur : {e}")
+        print(f"Offre {offer_id} marquée invalide ({INVALID_REASONS[args.reason]}).")
+    elif args.unmark_invalid:
+        offer_id = args.unmark_invalid
+        try:
+            clear_invalid(offer_id)
+        except ValueError as e:
+            sys.exit(f"Erreur : {e}")
+        print(f"Marquage invalide retiré pour {offer_id}.")
     elif args.migrate:
         from jobsearch.migrate import run_migrate
 

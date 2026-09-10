@@ -1,6 +1,7 @@
 """Suivi des candidatures — data/applications.json."""
 import json
 import os
+import re
 from collections import Counter
 from datetime import date, datetime
 
@@ -183,13 +184,54 @@ _COUNTRY_NAMES = {
     "AT": "Austria", "PL": "Poland",
 }
 
+# Alias de noms de pays (anglais / français / langue locale) -> nom canonique
+# (les mêmes que ceux de _COUNTRY_NAMES). Sert de repli quand une offre ajoutée
+# manuellement n'a pas de code `country` : sans ça, "Delft, Pays-Bas" et
+# "Pays-Bas (Zoetermeer HQ) ou autre bureau européen" retombaient chacun sur
+# leur propre libellé, éclatant les Pays-Bas en 3 entrées au lieu d'une.
+_COUNTRY_ALIASES = {
+    "netherlands": "Netherlands", "nederland": "Netherlands",
+    "pays-bas": "Netherlands", "pays bas": "Netherlands", "holland": "Netherlands",
+    "france": "France",
+    "germany": "Germany", "allemagne": "Germany", "deutschland": "Germany",
+    "belgium": "Belgium", "belgique": "Belgium", "belgië": "Belgium", "belgie": "Belgium",
+    "spain": "Spain", "espagne": "Spain", "españa": "Spain", "espana": "Spain",
+    "italy": "Italy", "italie": "Italy", "italia": "Italy",
+    "united kingdom": "United Kingdom", "royaume-uni": "United Kingdom",
+    "royaume uni": "United Kingdom", "great britain": "United Kingdom",
+    "ireland": "Ireland", "irlande": "Ireland", "éire": "Ireland", "eire": "Ireland",
+    "switzerland": "Switzerland", "suisse": "Switzerland", "schweiz": "Switzerland",
+    "svizzera": "Switzerland",
+    "luxembourg": "Luxembourg", "luxemburg": "Luxembourg",
+    "portugal": "Portugal",
+    "sweden": "Sweden", "suède": "Sweden", "suede": "Sweden", "sverige": "Sweden",
+    "denmark": "Denmark", "danemark": "Denmark", "danmark": "Denmark",
+    "norway": "Norway", "norvège": "Norway", "norvege": "Norway", "norge": "Norway",
+    "finland": "Finland", "finlande": "Finland", "suomi": "Finland",
+    "austria": "Austria", "autriche": "Austria", "österreich": "Austria",
+    "osterreich": "Austria",
+    "poland": "Poland", "pologne": "Poland", "polska": "Poland",
+}
+
+# Une seule regex, compilée une fois, alternative triée par longueur décroissante
+# (sinon "pays" pourrait matcher avant "pays-bas") et en limites de mots — même
+# mécanique que `_TECH_KEYWORDS_RE` dans jobsearch/filter.py, pour la même raison :
+# un `alias in text` brut ferait matcher "Irelande" via "ireland" ou "Francfort"
+# via un alias plus court, comme "git" matchait "diGITal" côté pré-filtre.
+_COUNTRY_ALIASES_RE = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k in sorted(_COUNTRY_ALIASES, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
 
 def _application_location(app: dict, data_dir: str) -> str:
     """Localisation d'une candidature (regroupée par pays), via jointure avec l'offre JSON.
 
-    1) code pays connu (`country`) → nom lisible ; 2) sinon dernier segment d'une
-    `location` propre (ex. « Netherlands ») ; 3) sinon « Inconnu ». Les blobs
-    JSON-LD bruts et les candidatures manuelles sans offre → repli propre.
+    1) code pays connu (`country`) → nom lisible ; 2) sinon alias de nom de pays
+    trouvé dans `location` (anglais/français/local, en limites de mots) → nom
+    canonique ; 3) sinon dernier segment d'une `location` propre (ex. « Netherlands »)
+    ; 4) sinon « Inconnu ». Les blobs JSON-LD bruts et les candidatures manuelles
+    sans offre → repli propre.
     """
     offer_path = os.path.join(data_dir, "offers", f"{app.get('offer_id', '')}.json")
     if not os.path.exists(offer_path):
@@ -207,6 +249,9 @@ def _application_location(app: dict, data_dir: str) -> str:
     location = (offer.get("location") or "").strip()
     # Ignore les blobs JSON-LD bruts (ex. "[{'@type': 'Place', ...}]").
     if location and "@type" not in location and not location.lstrip().startswith(("[{", "{")):
+        match = _COUNTRY_ALIASES_RE.search(location)
+        if match:
+            return _COUNTRY_ALIASES[match.group(1).lower()]
         return location.split(",")[-1].strip() or "Inconnu"
     if country:
         return country

@@ -23,6 +23,7 @@ Adapt the CV to maximise relevance for this specific offer:
 5. **Language**: Match the language of the job description (write in English if the offer is in English, French if in French)
 6. **Keep all entries**: Do not remove any experience or project — just reorder and rephrase
 
+{notes_block}
 Output ONLY a valid JSON object with this exact structure (no preamble, no markdown fences):
 {
   "headline": "...",

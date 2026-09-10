@@ -59,8 +59,8 @@ The TUI is a **view** on the pipeline's files, not a database of its own: report
 
 | Tab | Role |
 |---|---|
-| **1 · Offers** | Table of scored offers, sortable, with a detail panel. Check offers (`space`) to queue them for generation — checked rows highlighted in green, offers from the latest scrape session in dark blue. The `✓` column cascades through 4 states: `▶` checked > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company, not yet resolved — press `m` to confirm). |
-| **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. |
+| **1 · Offers** | Table of scored offers, sortable, with a detail panel. Check offers (`space`) to queue them for generation — checked rows highlighted in green, offers from the latest scrape session in dark blue. The `✓` column cascades through 5 states: `▶` checked > `⛔` marked invalid (dead/closed/wrong contract type — press `i` to mark, pick a reason) > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company, not yet resolved — press `m` to confirm). |
+| **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. `N` attaches a per-offer note (`gen_notes`) injected into the letter and CV prompts; `M` records an offer straight into tracking with no letter/CV at all — no API call, no folder — for offers that don't need one (online form, generic CV). `o` opens the offer in the browser, `O` opens the generated application folder. |
 | **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. |
 | **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. |
 | **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations, an applications-over-time histogram, and a status-flow tree. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
@@ -84,16 +84,20 @@ The main use of the Applications tab: press `e` to open `lettre.md` in your edit
 | Offers | `space` | Check/uncheck for generation |
 | Offers | `o` | Open in browser |
 | Offers | `+`/`-` | Adjust score threshold |
-| Offers | `h` | Hide/show already-applied offers (and marked duplicates) |
+| Offers | `h` | Hide/show already-applied offers, marked duplicates and invalid offers |
 | Offers | `d` / `D` | Cycle / pick displayed period |
 | Offers | `g` | Go to Generation tab |
 | Offers | `m` | Mark/unmark as duplicate of an existing application |
+| Offers | `i` | Mark/unmark as invalid (pick a reason: closed/cancelled/wrong contract type/other; also drops the offer from the generation queue; refused if the offer already has an application) |
 | Generation | `space` | Check/uncheck a queue row |
 | Generation | `g` | Generate letter + CV |
 | Generation | `L` | Generate letter only |
 | Generation | `A` | Add a manual offer (HTML file or URL) to the queue |
 | Generation | `x` | Remove from the queue |
-| Generation | `o` | Open application folder |
+| Generation | `N` | Edit the generation note for the offer under the cursor (`gen_notes`, injected into the letter/CV prompts on the next `g`/`L`) |
+| Generation | `M` | Record in tracking WITHOUT generating (no API call, no folder — for offers that need neither letter nor CV) |
+| Generation | `o` | Open offer in browser |
+| Generation | `O` | Open generated application folder |
 | Applications | `enter` | Toggle letter ↔ CV preview |
 | Applications | `e` | Open `lettre.md` in editor |
 | Applications | `p` | Regenerate `lettre.pdf` |
@@ -109,6 +113,10 @@ The main use of the Applications tab: press `e` to open `lettre.md` in your edit
 
 Cross-source deduplication can't catch every repost. The pipeline follows "the machine suggests, the user confirms": offers from a company you already applied to are flagged `?`, and `m` opens a picker to confirm the match in one keystroke.
 
+### Invalid offers
+
+Marking a duplicate requires a target application to point at. Some offers just die on their own — closed, cancelled, or turning out to be the wrong contract type — with nothing to link them to. `i` (Offers tab) marks these as invalid instead: pick a reason from the modal, and the offer drops out of the "to apply" bucket of the report and out of the generation queue, staying visible with a `⛔` marker (hide it too with `h`). Refused for offers that already have an application — use the "cancelled" status (`z`, Tracking tab) for those instead.
+
 ---
 
 ## The CLI
@@ -121,11 +129,15 @@ jobsearch --scrape --with fr               # also include FR-only sources (Hello
 jobsearch --scrape --without fr            # disable a group enabled by default
 jobsearch --generate <offer_id>            # generate letter + adapted CV for an offer
 jobsearch --generate <offer_id> --letter-only  # letter only (1 Sonnet call instead of 2)
+jobsearch --generate <offer_id> --notes "..."  # one-off instruction injected into the letter and CV prompts
+jobsearch --record <offer_id>              # record in tracking without generating anything (no API call)
 jobsearch --tui                            # interactive interface
 jobsearch --applications                   # tracking table
 jobsearch --mark <offer_id> <status>       # update an application's status
 jobsearch --mark-duplicate <offer_id> <target_id>  # mark as duplicate of an existing application
 jobsearch --unmark-duplicate <offer_id>
+jobsearch --mark-invalid <offer_id> --reason closed|cancelled|contract|other  # mark a dead/off-topic offer
+jobsearch --unmark-invalid <offer_id>
 jobsearch --migrate [--apply]              # copy config/data from a repo-local install to JOBSEARCH_HOME
 jobsearch --from-file <path.html> [--url-source URL] [--company NAME] [--title TITLE]
 jobsearch --from-url <url>

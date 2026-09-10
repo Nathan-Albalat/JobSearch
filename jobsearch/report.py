@@ -5,6 +5,7 @@ import sys
 from datetime import date
 
 from jobsearch.config import PATHS, get_search
+from jobsearch.duplicates import INVALID_REASONS
 from jobsearch.tracker import render_tracking_section
 
 
@@ -37,12 +38,18 @@ def render_report(offers: list[dict], threshold: int | None = None, data_dir: st
 
     pertinent = [
         o for o in offers
-        if o["filter_result"].get("score", 0) >= threshold and not o.get("duplicate_of")
+        if o["filter_result"].get("score", 0) >= threshold
+        and not o.get("duplicate_of")
+        and not o.get("invalid")
     ]
     non_pertinent = [o for o in offers if o["filter_result"].get("score", 0) < threshold]
     duplicates = [
         o for o in offers
         if o["filter_result"].get("score", 0) >= threshold and o.get("duplicate_of")
+    ]
+    invalid_offers = [
+        o for o in offers
+        if o["filter_result"].get("score", 0) >= threshold and o.get("invalid")
     ]
 
     pertinent.sort(key=lambda o: o["filter_result"].get("score", 0), reverse=True)
@@ -112,6 +119,23 @@ def render_report(offers: list[dict], threshold: int | None = None, data_dir: st
             f"> {len(duplicates)} offre(s) pertinente(s) mais marquée(s) comme doublon "
             "d'une candidature existante (`duplicate_of`) — exclues de la liste à candidater."
         )
+        lines.append("")
+
+    if invalid_offers:
+        lines.append(f"## Offres écartées ({len(invalid_offers)})")
+        lines.append("")
+        lines.append(
+            f"> {len(invalid_offers)} offre(s) pertinente(s) mais marquée(s) comme invalide(s) "
+            "— exclues de la liste à candidater."
+        )
+        lines.append("")
+        counts: dict[str, int] = {}
+        for o in invalid_offers:
+            reason = o.get("invalid", {}).get("reason", "other")
+            counts[reason] = counts.get(reason, 0) + 1
+        for reason, n in sorted(counts.items(), key=lambda kv: kv[1], reverse=True):
+            label = INVALID_REASONS.get(reason, reason)
+            lines.append(f"- {label} : {n}")
         lines.append("")
 
     tracking = render_tracking_section(data_dir)

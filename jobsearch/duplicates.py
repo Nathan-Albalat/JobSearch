@@ -1,11 +1,11 @@
-"""Marquage manuel des offres en doublon (`duplicate_of`).
+"""Annotations manuelles portées par le JSON d'une offre (`duplicate_of`, `gen_notes`).
 
 Stdlib uniquement (json, os, re) — sur le modèle de `src/flow.py`. Ne dépend
 volontairement ni de `src/scraper.py` (import lourd : feedparser/requests/yaml,
 alourdirait le démarrage TUI/CLI) ni de `src/tracker.py` (qui ne connaît que les
 candidatures, pas les offres).
 
-Cas d'usage : la dédup fuzzy du scraper (préventive, à l'ingestion) ne peut pas
+Cas d'usage doublons : la dédup fuzzy du scraper (préventive, à l'ingestion) ne peut pas
 détecter tous les doublons inter-sources. Exemple réel : l'offre Farmless
 "Software Engineering Intern (Full-Stack)" (LinkedIn, candidature envoyée) est
 ressortie via WTTJ sous le titre "Fullstack Software Engineering Intern" —
@@ -15,14 +15,29 @@ recouvrement de mots avec l'offre WTTJ est EXACTEMENT le même (0.667) que le
 vrai doublon. Aucun seuil ne peut départager ces deux cas : il faut comprendre
 que « Fullstack » ≠ « Rust », donc marquage manuel assisté (`suggest_targets`
 propose, l'utilisateur confirme dans la TUI).
+
+Cas d'usage notes : `gen_notes` porte une consigne ponctuelle de génération
+("insiste sur le projet X"), saisie via la touche `N` de l'onglet Génération —
+injectée dans les prompts lettre et CV par `jobsearch/generator.py`. Persistée
+dans le JSON de l'offre plutôt que dans `data/gen_queue.json` (une simple liste
+d'ids) pour survivre à la sortie de la file et rester lisible hors TUI.
 """
 import json
 import os
 import re
+from datetime import datetime
 
 from jobsearch.config import PATHS
 
 APPLICATIONS_FILENAME = "applications.json"
+
+# Motifs de marquage « offre invalide » (code JSON -> libellé affiché dans la TUI).
+INVALID_REASONS = {
+    "closed": "Offre fermée",
+    "cancelled": "Offre annulée",
+    "contract": "Mauvais type de contrat",
+    "other": "Autre",
+}
 
 
 def _offer_path(offer_id: str, data_dir: str = PATHS.data_dir) -> str:
@@ -138,6 +153,75 @@ def clear_duplicate(offer_id: str, data_dir: str = PATHS.data_dir) -> dict:
     offer.pop("duplicate_of", None)
     _save_offer_file(offer_id, offer, data_dir)
     return offer
+
+
+def mark_invalid(offer_id: str, reason: str = "other", data_dir: str = PATHS.data_dir) -> dict:
+    """Marque `offer_id` comme invalide (écrit `{"invalid": {"reason", "at"}}`).
+
+    Sur le même modèle que `mark_duplicate` : relit toujours l'offre complète
+    depuis le disque avant mutation. Refuse une offre ayant déjà une
+    candidature — une candidature devenue caduque se suit via le statut
+    « annulée » (touche `z` de l'onglet Suivi), pas via ce marquage.
+    """
+    offer = load_offer(offer_id, data_dir)
+    if offer is None:
+        raise ValueError(f"Offre introuvable : {offer_id!r}.")
+
+    apps = _load_applications_raw(data_dir)
+    apps_by_offer = {a.get("offer_id"): a for a in apps}
+    if offer_id in apps_by_offer:
+        raise ValueError(
+            f"L'offre {offer_id!r} a déjà une candidature — utilisez le statut "
+            "« annulée » (z) dans l'onglet Suivi plutôt que de la marquer invalide."
+        )
+
+    if reason not in INVALID_REASONS:
+        reason = "other"
+
+    offer["invalid"] = {
+        "reason": reason,
+        "at": datetime.now().isoformat(timespec="seconds"),
+    }
+    _save_offer_file(offer_id, offer, data_dir)
+    return offer
+
+
+def clear_invalid(offer_id: str, data_dir: str = PATHS.data_dir) -> dict:
+    """Retire le marquage invalide d'une offre (annulation). Idempotent."""
+    offer = load_offer(offer_id, data_dir)
+    if offer is None:
+        raise ValueError(f"Offre introuvable : {offer_id!r}.")
+    offer.pop("invalid", None)
+    _save_offer_file(offer_id, offer, data_dir)
+    return offer
+
+
+def set_gen_notes(offer_id: str, notes: str, data_dir: str = PATHS.data_dir) -> dict:
+    """Écrit (ou retire) la consigne de génération `gen_notes` d'une offre.
+
+    Relit toujours l'offre complète depuis le disque avant mutation — même
+    piège documenté sur `mark_duplicate` : le dict TUI en mémoire peut être
+    partiel. Une note vide/blanche retire le champ plutôt que d'écrire une
+    chaîne vide, pour ne pas laisser de champ mort dans le JSON.
+    """
+    offer = load_offer(offer_id, data_dir)
+    if offer is None:
+        raise ValueError(f"Offre introuvable : {offer_id!r}.")
+    notes = (notes or "").strip()
+    if notes:
+        offer["gen_notes"] = notes
+    else:
+        offer.pop("gen_notes", None)
+    _save_offer_file(offer_id, offer, data_dir)
+    return offer
+
+
+def get_gen_notes(offer_id: str, data_dir: str = PATHS.data_dir) -> str:
+    """Retourne la consigne de génération de l'offre, ou "" si absente/offre introuvable."""
+    offer = load_offer(offer_id, data_dir)
+    if offer is None:
+        return ""
+    return offer.get("gen_notes", "") or ""
 
 
 def suggest_targets(offer: dict, apps: list[dict]) -> list[dict]:

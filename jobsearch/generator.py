@@ -52,6 +52,36 @@ def make_output_dir(offer: dict, output_dir: str) -> str:
     return folder_path
 
 
+def render_notes_block(notes: str, template: str, template_name: str) -> str:
+    """Construit le bloc de consigne ponctuelle injecté via `{notes_block}`.
+
+    Le titre de section fait partie de la VALEUR, pas du template : une ligne
+    du template ne contenant que `{notes_block}` est retirée en bloc par
+    `fill_template` quand la valeur résolue est vide (même mécanique que
+    `{duree_bullet_8_10}`) — si le titre était littéral dans le template, une
+    section "## Additional instructions" vide survivrait à chaque offre sans note.
+    """
+    notes = (notes or "").strip()
+    if not notes:
+        return ""
+    if "{notes_block}" not in template:
+        # Prompt personnalisé antérieur à cette fonctionnalité : la note serait
+        # sinon perdue en silence, sans aucun signe pour l'utilisateur.
+        print(
+            f"Avertissement : note ignorée — {template_name} ne contient pas {{notes_block}}.",
+            file=sys.stderr,
+        )
+        return ""
+    # Le "\n" final restitue la ligne vide qui séparait le bloc de la section
+    # suivante : le template n'en a plus, sinon un `{notes_block}` vide laisserait
+    # deux sauts de ligne consécutifs une fois la ligne retirée par fill_template.
+    return (
+        "## Additional instructions from the candidate\n"
+        "Follow these as a priority, without breaking the output format below.\n"
+        f"{notes}\n"
+    )
+
+
 def generate_cover_letter(
     client,
     offer: dict,
@@ -59,6 +89,7 @@ def generate_cover_letter(
     cv_summary: str,
     template: str,
     search: Search | None = None,
+    notes_block: str = "",
 ) -> str:
     if search is None:
         search = get_search()
@@ -74,6 +105,7 @@ def generate_cover_letter(
         "location": offer.get("location", ""),
         "description": strip_html(offer.get("description", ""), max_chars=2500),
         "points_forts": points_forts,
+        "notes_block": notes_block,
     })
     return call_sonnet(client, prompt, search=search)
 
@@ -84,6 +116,7 @@ def generate_cv_adapt(
     cv_data: dict,
     template: str,
     search: Search | None = None,
+    notes_block: str = "",
 ) -> dict:
     """Asks Claude to return an adapted JSON structure for the CV template."""
     import yaml as _yaml
@@ -100,6 +133,7 @@ def generate_cv_adapt(
         "company": offer.get("company", "") or "the company",
         "description": strip_html(offer.get("description", ""), max_chars=2500),
         "points_forts": points_forts,
+        "notes_block": notes_block,
     })
     raw = call_sonnet(client, prompt, search=search)
 
@@ -118,6 +152,7 @@ def generate(
     cv_dir: str = PATHS.cv_dir,
     output_dir: str = PATHS.output_dir,
     letter_only: bool = False,
+    notes: str = "",
 ) -> str:
     load_dotenv(PATHS.env_path, override=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -137,6 +172,10 @@ def generate(
             file=sys.stderr,
         )
 
+    # L'argument explicite (CLI --notes) l'emporte sur la note stockée dans le JSON de
+    # l'offre (touche N de l'onglet Génération) — permet de surcharger ponctuellement.
+    notes = notes.strip() or offer.get("gen_notes", "")
+
     profile_text = load_profile_text(config_dir, search=search)
     sync_cv_master(cv_dir)  # cv_master.md toujours aligné sur cv_data.yaml
     cv_data = load_cv_data(cv_dir)
@@ -148,12 +187,18 @@ def generate(
     folder = make_output_dir(offer, output_dir)
 
     print(f"Génération de la lettre de motivation...")
-    lettre = generate_cover_letter(client, offer, profile_text, cv_summary, cover_template, search=search)
+    cover_notes_block = render_notes_block(notes, cover_template, "cover_letter.txt")
+    lettre = generate_cover_letter(
+        client, offer, profile_text, cv_summary, cover_template, search=search, notes_block=cover_notes_block,
+    )
     lettre_path = os.path.join(folder, "lettre.md")
     with open(lettre_path, "w", encoding="utf-8") as f:
         f.write(f"<!-- Offre : {offer.get('title', '')} — {offer.get('company', '')} -->\n")
         f.write(f"<!-- URL : {offer.get('url', '')} -->\n")
-        f.write(f"<!-- Généré le : {date.today()} -->\n\n")
+        f.write(f"<!-- Généré le : {date.today()} -->\n")
+        if notes:
+            f.write(f"<!-- Consigne : {notes} -->\n")
+        f.write("\n")
         f.write(lettre)
 
     lettre_pdf_path = os.path.join(folder, "lettre.pdf")
@@ -178,7 +223,8 @@ def generate(
         with open(PATHS.prompt("cv_adapt.txt"), "r", encoding="utf-8") as f:
             cv_template = f.read()
         template_path = PATHS.template("cv_en.html")
-        adapted = generate_cv_adapt(client, offer, cv_data, cv_template, search=search)
+        cv_notes_block = render_notes_block(notes, cv_template, "cv_adapt.txt")
+        adapted = generate_cv_adapt(client, offer, cv_data, cv_template, search=search, notes_block=cv_notes_block)
 
         html_content = render_cv_html(template_path, cv_data, adapted)
 
@@ -209,9 +255,11 @@ if __name__ == "__main__":
     parser.add_argument("--output", default=PATHS.output_dir)
     parser.add_argument("--letter-only", action="store_true",
                         help="Génère uniquement la lettre (pas de CV adapté — économie d'un appel API)")
+    parser.add_argument("--notes", default="",
+                        help="Consigne ponctuelle injectée dans les prompts lettre et CV (prime sur gen_notes de l'offre)")
     args = parser.parse_args()
 
-    folder = generate(args.offer_id, args.config, args.data, args.cv, args.output, args.letter_only)
+    folder = generate(args.offer_id, args.config, args.data, args.cv, args.output, args.letter_only, args.notes)
     print(f"\nCandidature générée dans : {folder}")
     print(f"  - {folder}/lettre.md")
     print(f"  - {folder}/lettre.pdf")

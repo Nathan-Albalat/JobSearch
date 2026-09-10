@@ -36,15 +36,21 @@ from textual.widgets import (
     Static,
     TabbedContent,
     TabPane,
+    TextArea,
 )
 from textual.widgets.data_table import RowDoesNotExist
 from textual.widgets.option_list import Option
 
 from jobsearch.duplicates import (
+    INVALID_REASONS,
     _normalize_company,
     clear_duplicate,
+    clear_invalid,
+    get_gen_notes,
     load_offer,
     mark_duplicate,
+    mark_invalid,
+    set_gen_notes,
     suggest_targets,
 )
 from jobsearch.filter import strip_html
@@ -58,6 +64,7 @@ from jobsearch.tracker import (
     ensure_history,
     load_applications,
     mark_status,
+    record_generated,
 )
 from jobsearch.config import PATHS, get_search, settings_files
 
@@ -229,6 +236,9 @@ NEW_OFFER_HIGHLIGHT_COLOR = "#1b3a5c"
 DUPLICATE_HIGHLIGHT_COLOR = "#2b2b2b"
 # Surlignage des doublons suspectés (onglet Offres) — violet sobre, pas de teinte fluo.
 SUSPECTED_HIGHLIGHT_COLOR = "#5c4075"
+# Surlignage des offres marquées invalides (onglet Offres) — rouge sourd, distinct du
+# rouge vif de "rejected" (#870000, onglet Suivi) : deux onglets différents, deux sens différents.
+INVALID_HIGHLIGHT_COLOR = "#5c1a1a"
 # Statuts considérés comme « en attente de réponse » (candidature envoyée, décision non tombée).
 # Ne pilote plus l'affichage (voir TRACK_STATUS_STYLES ci-dessous) : conservé comme définition
 # métier, pendant de RESPONSE_STATUSES dans src/tracker.py.
@@ -274,12 +284,14 @@ HELP_TEXT = """\
   [b #7aa2f7]espace[/]  Cocher / décocher l'offre pour génération
   [b #7aa2f7]o[/]       Ouvrir l'offre dans le navigateur
   [b #7aa2f7]+ / -[/]   Augmenter / diminuer le seuil de score
-  [b #7aa2f7]h[/]       Masquer / afficher les offres déjà candidatées (et les doublons marqués)
+  [b #7aa2f7]h[/]       Masquer / afficher les offres déjà candidatées, doublons et invalides
   [b #7aa2f7]d[/]       Cycler la période affichée (tout · session · 7j · 30j)
   [b #7aa2f7]D[/]       Choisir une session de scrape précise
   [b #7aa2f7]g[/]       Passer à l'onglet Génération
   [b #7aa2f7]m[/]       Marquer/démarquer l'offre comme doublon d'une candidature existante
                      (`?` = entreprise déjà candidatée, à vérifier — pas forcément un doublon)
+  [b #7aa2f7]i[/]       Marquer/démarquer l'offre comme invalide (offre fermée/annulée/mauvais
+                     contrat…) — retire aussi l'offre de la file de génération
   (les offres de la dernière session sont surlignées en bleu)
 
 [b]Onglet Génération[/b]
@@ -288,7 +300,12 @@ HELP_TEXT = """\
   [b #7aa2f7]L[/]       Générer la lettre seule (sans CV adapté — économie d'un appel API)
   [b #7aa2f7]A[/]       Ajouter une offre manuelle (fichier HTML ou URL) à la liste, puis g / L
   [b #7aa2f7]x[/]       Retirer de la file (lignes cochées, sinon la ligne sous le curseur)
-  [b #7aa2f7]o[/]       Ouvrir le dossier de la candidature générée
+  [b #7aa2f7]N[/]       Éditer la note de génération de l'offre sous le curseur (consigne
+             injectée dans les prompts lettre et CV au prochain g / L)
+  [b #7aa2f7]M[/]       Enregistrer dans le suivi SANS générer (aucun appel API, aucun
+             dossier — pour les offres qui n'ont besoin ni de lettre ni de CV)
+  [b #7aa2f7]o[/]       Ouvrir l'offre dans le navigateur
+  [b #7aa2f7]O[/]       Ouvrir le dossier de la candidature générée
   (la file est conservée entre deux lancements de la TUI — data/gen_queue.json)
 
 [b]Onglet Candidatures[/b]
@@ -362,6 +379,33 @@ class NoteScreen(ModalScreen[str]):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.dismiss(event.value)
+
+
+class GenNotesScreen(ModalScreen[str]):
+    """Consigne de génération d'une offre (`gen_notes`) — injectée dans les prompts
+    lettre et CV au prochain g / L. Sur le modèle de `ProfileScreen` (jobsearch/wizard.py) :
+    un TextArea ne se soumet pas sur `entrée` (utile pour les retours à la ligne), d'où
+    `ctrl+s` en `priority=True`."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Annuler"),
+        Binding("ctrl+s", "submit", "Valider", priority=True),
+    ]
+
+    def __init__(self, initial: str = "") -> None:
+        super().__init__()
+        self._initial = initial
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="gen-notes-box"):
+            yield Label("Consigne de génération pour cette offre (ctrl+s pour valider, échap pour annuler) :")
+            yield TextArea(self._initial, id="gen-notes-input")
+
+    def on_mount(self) -> None:
+        self.query_one("#gen-notes-input", TextArea).focus()
+
+    def action_submit(self) -> None:
+        self.dismiss(self.query_one("#gen-notes-input", TextArea).text)
 
 
 class ManualEntryScreen(ModalScreen):
@@ -470,11 +514,48 @@ class DuplicatePickerScreen(ModalScreen[str]):
         self.dismiss(event.option.id)
 
 
+class InvalidReasonScreen(ModalScreen[str]):
+    """Choix du motif de marquage « offre invalide » — calquée sur DuplicatePickerScreen.
+
+    Motifs numérotés 1-4 (celui de `INVALID_REASONS`, toujours ≤ 9) et sélectionnables
+    directement au clavier, comme les cibles « même entreprise » du picker de doublons.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Annuler"),
+        *[Binding(str(n), f"pick_number({n})", show=False) for n in range(1, len(INVALID_REASONS) + 1)],
+    ]
+
+    def __init__(self, title: str = "") -> None:
+        super().__init__()
+        self._title = title
+        self._codes = list(INVALID_REASONS.keys())
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="invalid-box"):
+            yield Label(f"{self._title} (entrée pour valider · 1-{len(self._codes)} au clavier · échap pour annuler) :")
+            options = [
+                Option(f"{i}. {INVALID_REASONS[code]}", id=code)
+                for i, code in enumerate(self._codes, start=1)
+            ]
+            yield OptionList(*options)
+
+    def action_pick_number(self, n: int) -> None:
+        if n <= len(self._codes):
+            self.dismiss(self._codes[n - 1])
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(event.option.id)
+
+
 class ConfirmScreen(ModalScreen[bool]):
-    """Confirmation oui/non générique (utilisée pour le garde-fou inter-entreprises)."""
+    """Confirmation oui/non générique (garde-fou inter-entreprises, enregistrement sans génération)."""
 
     BINDINGS = [
         Binding("escape", "dismiss_no", "Annuler"),
+        # `enter` valide : sans lui, la modale semblait figée — le réflexe est
+        # d'appuyer sur entrée, pas sur `y`.
+        Binding("enter", "dismiss_yes", "Confirmer", show=False),
         Binding("y", "dismiss_yes", "Confirmer", show=False),
         Binding("n", "dismiss_no", "Annuler", show=False),
     ]
@@ -486,7 +567,7 @@ class ConfirmScreen(ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm-box"):
             yield Label(self._message)
-            yield Label("[y] Confirmer   [n / échap] Annuler")
+            yield Label("\\[entrée / y] Confirmer   \\[n / échap] Annuler")
 
     def action_dismiss_yes(self) -> None:
         self.dismiss(True)
@@ -553,6 +634,17 @@ class StageTUI(App):
         align: center middle;
     }
     #manual-box Input { margin-bottom: 1; }
+    #gen-notes-box {
+        background: $surface;
+        border: round $accent;
+        padding: 1 2;
+        width: 90%;
+        max-width: 100;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    #gen-notes-input { height: 10; margin-top: 1; }
     #me-error { color: $error; height: auto; }
     #session-box {
         background: $surface;
@@ -583,7 +675,16 @@ class StageTUI(App):
         max-height: 90%;
         align: center middle;
     }
-    HelpScreen, NoteScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen { align: center middle; }
+    #invalid-box {
+        background: $surface;
+        border: round $error;
+        padding: 1 2;
+        width: 70;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    HelpScreen, NoteScreen, GenNotesScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen, InvalidReasonScreen { align: center middle; }
     #bottom-bar { dock: bottom; height: 2; }
     #status-bar { height: 1; background: $panel; color: $text-muted; }
     """
@@ -612,6 +713,8 @@ class StageTUI(App):
         Binding("L", "generate_letter_only", "Lettre seule", show=False),
         Binding("A", "add_manual", "Ajout manuel", show=False),
         Binding("x", "remove_from_queue", "Retirer de la file", show=False),
+        Binding("N", "edit_gen_notes", show=False),
+        Binding("M", "record_only", show=False),
         Binding("plus,equals_sign", "threshold(1)", show=False),
         Binding("minus", "threshold(-1)", show=False),
         Binding("h", "toggle_hide_done", show=False),
@@ -621,7 +724,10 @@ class StageTUI(App):
         Binding("n", "edit_note", show=False),
         Binding("s", "sent_or_scrape", show=False),
         Binding("a", "set_status('answered')", show=False),
-        Binding("i", "set_status('interview')", show=False),
+        # `i` sert deux rôles distincts selon l'onglet actif (marquer invalide
+        # en Offres, statut entretien en Suivi) — un seul dispatcher, pas deux
+        # bindings sur la même touche (non supporté par Textual).
+        Binding("i", "mark_invalid_or_interview", show=False),
         Binding("j", "set_status('rejected')", show=False),
         Binding("v", "set_status('accepted')", show=False),
         Binding("z", "set_status('cancelled')", show=False),
@@ -697,7 +803,7 @@ class StageTUI(App):
             "✓", "Score", "Titre", "Entreprise", "Lieu", "Pays", "Source", "Vu le"
         )
         self.query_one("#gen-table", DataTable).add_columns(
-            "✓", "État", "Titre", "Entreprise", "Dossier / info"
+            "✓", "État", "Titre", "Entreprise", "Note", "Dossier / info"
         )
         self.query_one("#letters-table", DataTable).add_columns(
             "Dossier", "Lettre", "PDF", "CV PDF", "Modifiée"
@@ -783,7 +889,7 @@ class StageTUI(App):
         rows = [
             o for o in self.offers.values()
             if o["filter_result"].get("score", 0) >= self.threshold
-            and not (self.hide_done and (o["id"] in applied or o.get("duplicate_of")))
+            and not (self.hide_done and (o["id"] in applied or o.get("duplicate_of") or o.get("invalid")))
             and (exact_date is None or o.get("date_scraped", "") == exact_date)
             and (min_date is None or o.get("date_scraped", "") >= min_date)
         ]
@@ -804,15 +910,24 @@ class StageTUI(App):
             for o in rows if o.get("duplicate_of")
         })
         table.row_styles.update({
+            o["id"]: Style(bgcolor=INVALID_HIGHLIGHT_COLOR)
+            for o in rows if o.get("invalid")
+        })
+        table.row_styles.update({
             o["id"]: Style(color="black", bgcolor="green3")
             for o in rows if o["id"] in self.selected
         })
         with self._keep_cursor("offers-table"):
             table.clear()
             for o in rows:
+                # Le style de ligne (ci-dessus) et ce marqueur doivent suivre EXACTEMENT
+                # la même condition/le même ordre — un décalage avait déjà fait surligner
+                # 22 offres pour 6 réellement concernées (cf. CLAUDE.md).
                 selected = o["id"] in self.selected
                 if selected:
                     mark = "▶"
+                elif o.get("invalid"):
+                    mark = "⛔"
                 elif o.get("duplicate_of"):
                     mark = "⧉"
                 elif o["id"] in applied:
@@ -845,9 +960,11 @@ class StageTUI(App):
             period_txt = ""
         n_duplicates = sum(1 for o in rows if o.get("duplicate_of"))
         dup_txt = f" · {n_duplicates} doublon(s)" if n_duplicates else ""
+        n_invalid = sum(1 for o in rows if o.get("invalid"))
+        invalid_txt = f" · {n_invalid} invalide(s)" if n_invalid else ""
         self.sub_title = (
             f"seuil ≥ {self.threshold}{period_txt} · {len(rows)} offre(s){hidden}"
-            f" · {len(self.selected)} cochée(s){dup_txt}"
+            f" · {len(self.selected)} cochée(s){dup_txt}{invalid_txt}"
         )
         self.update_detail()
 
@@ -863,8 +980,10 @@ class StageTUI(App):
                 o = self.offers.get(oid, {})
                 icon, info = self.gen_status.get(oid, ("·", "en attente — g pour lancer"))
                 mark = "▶" if oid in self.gen_checked else ""
+                note = (o.get("gen_notes", "") or "").replace("\n", " ")[:40]
                 table.add_row(
-                    mark, icon, o.get("title", "?")[:50], (o.get("company", "") or "?")[:24], info[:120], key=oid
+                    mark, icon, o.get("title", "?")[:50], (o.get("company", "") or "?")[:24], note,
+                    info[:120], key=oid,
                 )
 
     def _candidature_dirs(self) -> list[str]:
@@ -1308,6 +1427,11 @@ class StageTUI(App):
                         f"[#b39ddb]   {a['offer_id']} — {a.get('company', '?')} · "
                         f"{a.get('title', '?')} ({a.get('status', '?')})[/#b39ddb]"
                     )
+        invalid = o.get("invalid")
+        if invalid:
+            reason_label = INVALID_REASONS.get(invalid.get("reason", ""), invalid.get("reason", "?"))
+            at = invalid.get("at", "")
+            parts += ["", f"[red]⛔ Invalide — {reason_label}{f' (le {at})' if at else ''}[/red]"]
         desc = strip_html(o.get("description", ""), max_chars=1200)
         if desc:
             parts += ["", "[dim]" + desc + "[/dim]"]
@@ -1433,6 +1557,61 @@ class StageTUI(App):
             _pick,
         )
 
+    def action_mark_invalid_or_interview(self) -> None:
+        """Dispatcher pour la touche `i`, partagée entre deux onglets (voir BINDINGS)."""
+        tab = self._active_tab()
+        if tab == "offers":
+            self.action_mark_invalid()
+        elif tab == "track":
+            self.action_set_status("interview")
+
+    def action_mark_invalid(self) -> None:
+        if self._active_tab() != "offers":
+            return
+        oid = self._current_row_key("offers-table")
+        if not oid:
+            return
+        offer = self.offers.get(oid)
+        if not offer:
+            return
+
+        if offer.get("invalid"):
+            try:
+                clear_invalid(oid)
+            except ValueError as e:
+                self.notify_status(f"Erreur : {e}")
+                return
+            offer.pop("invalid", None)
+            self.refresh_offers()
+            self.notify_status(f"Marquage invalide retiré pour {oid}.")
+            return
+
+        offer_title = offer.get("title", "") or "?"
+        offer_company = offer.get("company", "") or "?"
+        modal_title = f"Marquer « {offer_title} » ({offer_company}) comme invalide — motif :"
+
+        def _apply(reason: str | None) -> None:
+            if not reason:
+                return
+            try:
+                # On reprend l'offre RETOURNÉE par mark_invalid plutôt que de
+                # reconstruire le champ à la main : elle porte aussi `at`, que le
+                # panneau de détail affiche — sinon la date manquait jusqu'au
+                # prochain rechargement (`r`).
+                self.offers[oid] = mark_invalid(oid, reason)
+            except ValueError as e:
+                self.notify_status(f"Erreur : {e}")
+                return
+            # Une offre écartée n'a plus rien à faire dans la file de génération.
+            self.selected.discard(oid)
+            self.gen_checked.discard(oid)
+            self._persist_queue()
+            self.refresh_offers()
+            self.refresh_gen()
+            self.notify_status(f"{oid} marquée invalide ({INVALID_REASONS.get(reason, reason)}).")
+
+        self.push_screen(InvalidReasonScreen(modal_title), _apply)
+
     def action_cycle_period(self) -> None:
         if self._active_tab() != "offers":
             return
@@ -1500,8 +1679,9 @@ class StageTUI(App):
                 webbrowser.open(url)
         elif tab == "gen":
             oid = self._current_row_key("gen-table")
-            if oid and self.gen_status.get(oid, ("", ""))[0] == "✅":
-                subprocess.run(["open", self.gen_status[oid][1]], check=False)
+            url = self.offers.get(oid, {}).get("url") if oid else None
+            if url:
+                webbrowser.open(url)
         elif tab == "letters":
             folder = self._current_row_key("letters-table")
             if folder:
@@ -1514,7 +1694,18 @@ class StageTUI(App):
                     break
 
     def action_open_offer_url(self) -> None:
-        if self._active_tab() != "letters":
+        tab = self._active_tab()
+        if tab == "gen":
+            oid = self._current_row_key("gen-table")
+            if oid and self.gen_status.get(oid, ("", ""))[0] == "✅":
+                # Le 2e champ de gen_status n'est un chemin de dossier qu'après une
+                # génération réelle (g/L) — après `M` (enregistrement sans génération),
+                # c'est un message texte : `isdir` évite d'ouvrir n'importe quoi.
+                target = self.gen_status[oid][1]
+                if os.path.isdir(target):
+                    subprocess.run(["open", target], check=False)
+            return
+        if tab != "letters":
             return
         folder = self._current_row_key("letters-table")
         if not folder:
@@ -1668,6 +1859,65 @@ class StageTUI(App):
         if in_progress:
             msg += f" ({len(in_progress)} en cours ignorée(s))"
         self.notify_status(msg)
+
+    def action_edit_gen_notes(self) -> None:
+        if self._active_tab() != "gen":
+            return
+        oid = self._current_row_key("gen-table")
+        if not oid:
+            return
+        current = self.offers.get(oid, {}).get("gen_notes", "") or get_gen_notes(oid)
+
+        def _save(notes: str | None) -> None:
+            if notes is None:
+                return
+            offer = set_gen_notes(oid, notes)
+            if oid in self.offers:
+                self.offers[oid] = offer
+            self.refresh_gen()
+            self.notify_status(
+                f"Note enregistrée pour {oid}." if notes.strip() else f"Note retirée pour {oid}."
+            )
+
+        self.push_screen(GenNotesScreen(current), _save)
+
+    def action_record_only(self) -> None:
+        """`M` — enregistre dans le suivi sans générer ni lettre ni CV (aucun appel API)."""
+        if self._active_tab() != "gen":
+            return
+        targets = self.gen_checked & self.selected
+        if not targets:
+            oid = self._current_row_key("gen-table")
+            targets = {oid} if oid else set()
+        # Même exclusion que action_remove_from_queue : ne jamais toucher une génération
+        # en cours (⏳), et une offre déjà enregistrée (✅) n'a rien à refaire.
+        targets = {oid for oid in targets if self.gen_status.get(oid, ("·",))[0] not in ("⏳", "✅")}
+        if not targets:
+            return
+
+        def _confirm(ok: bool) -> None:
+            if not ok:
+                return
+            for oid in targets:
+                offer = self.offers.get(oid)
+                if not offer:
+                    continue
+                record_generated(offer, PATHS.data_dir)
+                self.gen_status[oid] = ("✅", "enregistrée dans le suivi — sans lettre ni CV")
+                self.gen_checked.discard(oid)
+            self.refresh_gen()
+            self.refresh_track()
+            self.refresh_stats()
+            self.refresh_offers()
+            self._persist_queue()
+            self.notify_status(f"{len(targets)} offre(s) enregistrée(s) dans le suivi, sans lettre ni CV.")
+
+        n = len(targets)
+        message = (
+            f"Enregistrer {n} offre(s) dans le suivi sans générer ni lettre ni CV ?\n"
+            "Aucun appel API, aucun dossier ne sera créé dans output/candidatures/."
+        )
+        self.push_screen(ConfirmScreen(message), _confirm)
 
     def action_generate(self) -> None:
         self._start_generation(letter_only=False)

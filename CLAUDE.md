@@ -73,7 +73,9 @@ jobsearch/                [paquet installable — code + ressources par défaut,
   letter_pdf.py         Rendu PDF de la lettre (extraction salutation/closing, markdown→HTML)
   manual.py             Mode manuel : extraction depuis HTML/URL + génération directe
   notifier.py           Envoi email optionnel (SMTP)
-  duplicates.py         Marquage manuel des offres en doublon (champ `duplicate_of`) — stdlib uniquement
+  duplicates.py         Annotations manuelles portées par le JSON d'une offre : doublons (`duplicate_of`),
+                        offres écartées (`invalid`, motif parmi `INVALID_REASONS`) et consignes de
+                        génération (`gen_notes`, champ {notes_block}) — stdlib uniquement
   migrate.py             `--migrate` : copie (jamais déplace) la config perso, les prompts/templates par défaut et les données du dépôt vers JOBSEARCH_HOME
   wizard.py              `--setup` : assistant d'installation Textual autonome (7 étapes, dont le choix d'un secteur/preset de mots-clés) — voir section dédiée ci-dessous
   resources/              [ressources du paquet, empaquetées via `importlib.resources` — défauts de référence]
@@ -89,9 +91,13 @@ LICENSE                   MIT — sans elle, le défaut légal serait « tous dr
 setup.sh                  Amorçage : copie les `.example` du dépôt vers JOBSEARCH_HOME
 
 data/                     [JOBSEARCH_HOME/data/]
-  offers/               Un fichier JSON par offre (avec filter_result après filtrage ; champ optionnel
-                        `duplicate_of` : id de l'offre candidatée dont celle-ci est un doublon manuel,
-                        posé/retiré via `jobsearch/duplicates.py`)
+  offers/               Un fichier JSON par offre (avec filter_result après filtrage ; champs optionnels
+                        `duplicate_of` : id de l'offre candidatée dont celle-ci est un doublon manuel ;
+                        `invalid` : `{"reason", "at"}` — offre écartée manuellement (fermée/annulée/
+                        mauvais type de contrat/autre), posée via la touche `i` de l'onglet Offres ou
+                        `--mark-invalid` ; `gen_notes` : consigne de génération ponctuelle, injectée dans
+                        les prompts lettre et CV lors du prochain `g`/`L` (touche `N` dans l'onglet
+                        Génération de la TUI) — les trois posés/retirés via `jobsearch/duplicates.py`)
   seen_offers.json      Hachés des offres déjà vues (déduplication)
   applications.json     Suivi des candidatures (statuts : generated/sent/answered/interview/rejected/accepted/cancelled)
                         Chaque candidature porte un champ `history` : liste ordonnée `{"status", "at"}` (datetime ISO)
@@ -137,6 +143,12 @@ jobsearch --generate <offer_id>
 # Lettre seule (pas de CV adapté — 1 appel Sonnet au lieu de 2)
 jobsearch --generate <offer_id> --letter-only
 
+# Consigne ponctuelle injectée dans les prompts lettre et CV (prime sur gen_notes de l'offre)
+jobsearch --generate <offer_id> --notes "Insiste sur le projet X"
+
+# Enregistrer une offre dans le suivi sans générer ni lettre ni CV (aucun appel API)
+jobsearch --record <offer_id>
+
 # Mode manuel (offre non-scrappable)
 jobsearch --from-file ~/Downloads/offre.html --url-source "https://..." --company "Criteo"
 jobsearch --from-url https://example.com/jobs/stage-dev-python
@@ -168,6 +180,10 @@ jobsearch --migrate --apply    # copie réelle, vérifie fichiers + sommes de co
 # Marquer une offre comme doublon manuel d'une candidature existante (voir section dédiée ci-dessous)
 jobsearch --mark-duplicate <offer_id> <target_id>
 jobsearch --unmark-duplicate <offer_id>
+
+# Écarter une offre invalide (fermée, annulée, mauvais type de contrat...) du bucket "à candidater"
+jobsearch --mark-invalid <offer_id> --reason closed|cancelled|contract|other
+jobsearch --unmark-invalid <offer_id>
 
 # Générer le CV master (sans adaptation, depuis cv_data.yaml) — resynchronise aussi cv_master.md
 python files/cv/generate_cv.py
@@ -223,7 +239,7 @@ Premier lancement : `jobsearch --scrape` (ou toute autre commande) détecte l'ab
 
 Vue interactive sur les fichiers du pipeline — **les fichiers restent la source de vérité** : les rapports markdown, `data/offers/*.json` et `data/applications.json` restent lisibles et utilisables sans la TUI, qui ne persiste quasiment aucun état propre (seule exception : la file de génération de l'onglet Génération, dans `data/gen_queue.json`). On peut donc reprendre le workflow n'importe quand (scrape lundi, revue mercredi) : la TUI relit l'état courant au lancement et sur `r`.
 
-6 onglets : **Offres** (tableau triable par score, panneau de détail, cocher pour ajouter à la file de génération — lignes cochées surlignées en vert, offres de la dernière session de scrape surlignées en bleu foncé, filtrage par période avec `d`/`D` ; colonne `✓` en cascade à 4 états : `▶` cochée > `⧉` doublon manuel confirmé > `✓` candidatée > `?` doublon suspecté — entreprise déjà candidatée, non tranché — touche `m` pour marquer/démarquer, suit `h` comme une offre candidatée), **Génération** (file persistée entre deux lancements de la TUI dans `data/gen_queue.json` ; cocher des lignes avec `espace` restreint `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées ; `x` retire des lignes de la file ; lance lettre + CV en tâche de fond, ou lettre seule avec `L`), **Candidatures** (liste `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle des fichiers — candidatures envoyées ou plus surlignées en vert foncé), **Suivi** (statuts + notes de `applications.json` — envoyée surlignée en jaune, réponse reçue en ambre, entretien en violet, acceptée en vert, refusée en rouge, annulée en gris foncé et texte atténué ; panneau de droite : timeline de la candidature sous le curseur, reconstruite depuis `history` — écart en jours entre chaque événement, dates déduites suffixées d'un `~` quand l'historique est reconstitué depuis les anciennes dates ponctuelles), **Stats** (rendu texte : métriques de retour — taux d'acceptation/réponse, délai moyen —, répartition des statuts, localisation des stages, histogramme des candidatures au cours du temps ; les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé » ; parcours des candidatures sous forme d'arbre de statuts (`jobsearch/flow.py`) et répartition mensuelle des statuts atteints — `f` exporte le diagramme de Sankey correspondant en HTML autonome, `output/stats/flux.html`, ouvert dans le navigateur), **Réglages** (table listant les fichiers de configuration éditables — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml` — avec rôle, état [personnalisé / défaut du paquet / absent] et date de modification ; `entrée` ouvre le fichier sous le curseur dans l'éditeur, en copiant d'abord un prompt/template encore au défaut du paquet vers la config utilisateur avant édition ; `r` recharge ensuite `search.yaml` et invalide le cache de `get_search()`).
+6 onglets : **Offres** (tableau triable par score, panneau de détail, cocher pour ajouter à la file de génération — lignes cochées surlignées en vert, offres de la dernière session de scrape surlignées en bleu foncé, filtrage par période avec `d`/`D` ; colonne `✓` en cascade à 5 états : `▶` cochée > `⛔` invalide (marquée manuellement, motif au choix — offre fermée/annulée/mauvais type de contrat/autre) > `⧉` doublon manuel confirmé > `✓` candidatée > `?` doublon suspecté — entreprise déjà candidatée, non tranché — touche `m` pour marquer/démarquer un doublon, `i` pour marquer/démarquer invalide (retire aussi l'offre de la file de génération ; refusé si l'offre a déjà une candidature — utiliser le statut « annulée » de l'onglet Suivi dans ce cas), suit `h` comme une offre candidatée), **Génération** (file persistée entre deux lancements de la TUI dans `data/gen_queue.json` ; cocher des lignes avec `espace` restreint `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées ; `x` retire des lignes de la file ; lance lettre + CV en tâche de fond, ou lettre seule avec `L` ; `N` édite une consigne de génération par offre (`gen_notes`, colonne « Note »), injectée dans les prompts lettre et CV au prochain `g`/`L` ; `M` enregistre directement dans le suivi sans rien générer — aucun appel API, aucun dossier créé — pour les offres qui n'ont besoin ni de lettre ni de CV, ex. formulaire en ligne ; `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature générée), **Candidatures** (liste `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle des fichiers — candidatures envoyées ou plus surlignées en vert foncé ; `o` ouvre le dossier de la candidature, `O` ouvre l'offre dans le navigateur), **Suivi** (statuts + notes de `applications.json` — envoyée surlignée en jaune, réponse reçue en ambre, entretien en violet, acceptée en vert, refusée en rouge, annulée en gris foncé et texte atténué ; panneau de droite : timeline de la candidature sous le curseur, reconstruite depuis `history` — écart en jours entre chaque événement, dates déduites suffixées d'un `~` quand l'historique est reconstitué depuis les anciennes dates ponctuelles), **Stats** (rendu texte : métriques de retour — taux d'acceptation/réponse, délai moyen —, répartition des statuts, localisation des stages, histogramme des candidatures au cours du temps ; les candidatures annulées sont exclues des taux et du délai moyen, comptées à part dans une catégorie « Annulé » ; parcours des candidatures sous forme d'arbre de statuts (`jobsearch/flow.py`) et répartition mensuelle des statuts atteints — `f` exporte le diagramme de Sankey correspondant en HTML autonome, `output/stats/flux.html`, ouvert dans le navigateur), **Réglages** (table listant les fichiers de configuration éditables — `.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml` — avec rôle, état [personnalisé / défaut du paquet / absent] et date de modification ; `entrée` ouvre le fichier sous le curseur dans l'éditeur, en copiant d'abord un prompt/template encore au défaut du paquet vers la config utilisateur avant édition ; `r` recharge ensuite `search.yaml` et invalide le cache de `get_search()`).
 
 Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifier le `.md`, revenir dans la TUI et presser `p` — la colonne PDF affiche « ⚠ à régénérer » quand le `.md` est plus récent que le PDF.
 
@@ -241,17 +257,21 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 | Offres | `espace` | Cocher/décocher l'offre pour génération |
 | Offres | `o` | Ouvrir l'offre dans le navigateur |
 | Offres | `+`/`-` | Ajuster le seuil de score affiché |
-| Offres | `h` | Masquer/afficher les offres déjà candidatées (et les doublons marqués) |
+| Offres | `h` | Masquer/afficher les offres déjà candidatées, les doublons et les invalides marqués |
 | Offres | `d` | Cycler la période affichée (tout · session · 7j · 30j) |
 | Offres | `D` | Choisir une session de scrape précise |
 | Offres | `g` | Aller à l'onglet Génération |
 | Offres | `m` | Marquer/démarquer l'offre comme doublon d'une candidature existante (modale de sélection ; la machine suggère via l'entreprise, l'utilisateur confirme) |
+| Offres | `i` | Marquer/démarquer l'offre comme invalide (modale de choix du motif : fermée/annulée/mauvais type de contrat/autre ; retire aussi l'offre de la file de génération ; refusé si l'offre a déjà une candidature) |
 | Génération | `espace` | Cocher/décocher une offre de la file (filtre optionnel pour `g`/`L`) |
 | Génération | `g` | Générer lettre + CV (lignes cochées, sinon toutes les offres en attente) |
 | Génération | `L` | Générer la lettre seule (sans CV adapté — 1 appel Sonnet au lieu de 2) |
 | Génération | `A` | Ajouter une offre manuelle (fichier HTML ou URL) à la liste, puis `g`/`L` |
 | Génération | `x` | Retirer de la file (lignes cochées, sinon la ligne sous le curseur) |
-| Génération | `o` | Ouvrir le dossier de la candidature |
+| Génération | `N` | Éditer la note de génération de l'offre sous le curseur (`gen_notes`, injectée dans les prompts lettre et CV au prochain `g`/`L`) |
+| Génération | `M` | Enregistrer dans le suivi SANS générer (aucun appel API, aucun dossier — offres qui n'ont besoin ni de lettre ni de CV) |
+| Génération | `o` | Ouvrir l'offre dans le navigateur |
+| Génération | `O` | Ouvrir le dossier de la candidature générée |
 | Candidatures | `entrée` | Basculer l'aperçu lettre ↔ CV |
 | Candidatures | `e` | Ouvrir lettre.md dans l'éditeur |
 | Candidatures | `p` | Régénérer lettre.pdf depuis lettre.md |
@@ -370,6 +390,7 @@ Le générateur (Claude Sonnet) n'utilise pas le caching — chaque appel est on
 - **Cache TTL 5 min (mode séquentiel uniquement)** : si le filtrage séquentiel dure plus de 5 minutes sans appel API, le cache expire. Non applicable en mode batch (défaut).
 - **Dédup fuzzy** : la détection de doublons inter-sources (entreprise identique + titre ≈ identique via SequenceMatcher ≥ 0.9) peut rater des doublons si l'entreprise est orthographiée différemment selon les boards.
 - **La dédup automatique ne peut pas tout attraper — cas Farmless, d'où le marquage manuel** (`jobsearch/duplicates.py`, touche `m` dans la TUI, `--mark-duplicate`/`--unmark-duplicate`) : l'offre `c52e7b97` (« Software Engineering Intern (Full-Stack) », LinkedIn, candidature envoyée puis entretien puis refusée) est ressortie sous `dcd4359a` via WTTJ (« Fullstack Software Engineering Intern ») avec une similarité mesurée de **0.392**, très loin du seuil de 0.9 — impossible à rattraper en baissant le seuil. Pire : Farmless publie aussi un « Software Engineering Intern (Rust) », poste réellement différent, dont le recouvrement de mots avec l'offre WTTJ est **exactement le même (0.667)** que le vrai doublon. Aucun seuil ne peut départager ces deux cas : il faut comprendre que « Fullstack » ≠ « Rust », donc du sens, pas de la comparaison de chaînes. D'où le principe « la machine suggère, l'utilisateur confirme » : l'indicateur `?` de la colonne `✓` signale une entreprise déjà candidatée (pas forcément un doublon — la plupart ne le sont pas), la touche `m` ouvre une modale listant les candidatures de cette entreprise (celles-ci en tête) pour confirmer en une pression. Le marquage écrit `duplicate_of` (id de l'offre candidatée) dans le JSON de l'offre doublon ; celle-ci disparaît alors du bucket « pertinent »/« à candidater » du rapport (`jobsearch/report.py`) et suit la touche `h` (masquage) comme une offre déjà candidatée.
+- **Offres mortes ou hors-sujet, marquage manuel `invalid`** (`jobsearch/duplicates.py`, touche `i` dans la TUI, `--mark-invalid`/`--unmark-invalid`) : contrairement à `duplicate_of`, qui exige une cible déjà candidatée, `mark_invalid` couvre le cas d'une offre écartée sans lien avec une autre candidature (offre fermée, annulée, ou dont le type de contrat ne correspond finalement pas). Écrit `{"reason", "at"}` sous la clé `invalid` de l'offre — un dict plutôt qu'un booléen pour rester extensible et dater le marquage. Refuse une offre ayant déjà une candidature (utiliser le statut « annulée », touche `z` de l'onglet Suivi, dans ce cas — c'est là qu'une candidature devenue caduque se suit, pas dans ce marquage). Marqueur `⛔` dans la colonne `✓` de l'onglet Offres (cascade : `▶` cochée > `⛔` invalide > `⧉` doublon > `✓` candidatée > `?` suspectée), retire l'offre de la file de génération si elle y était, suit `h` comme un doublon/une candidature, et sort du bucket « à candidater » du rapport (nouvelle section « Offres écartées », `jobsearch/report.py`).
 
 ### Génération
 - **Lettre PDF** : rendue via `jobsearch/letter_pdf.py` + `config/templates/cover_letter.html`. Le parser (`split_letter`) extrait salutation/closing de la lettre Sonnet (évite les doublons) et retire les artefacts de traduction en fin de lettre (ex. « Translated with DeepL.com… ») avant de chercher le mot de clôture. La ligne de séparation de l'en-tête dépend de `personal.accent_enabled` (`cv_data.yaml`, vert si activé) — placeholders `{{ACCENT_COLOR}}`/`{{ACCENT_LIGHT}}` à garder sur une seule ligne dans le template (un reformatage d'éditeur qui les casse sur plusieurs lignes rend le remplacement silencieusement inopérant → CSS invalide → plus de ligne du tout). `render_letter_pdf()` (nouvelle fonction, à utiliser à la place de `render_letter_html`+`write_letter_pdf`) essaie automatiquement 3 layouts de signature via un rendu d'essai WeasyPrint (comptage de pages) pour ne jamais déborder sur une 2e page à cause d'elle : empilée sous le nom (défaut) → compacte à côté du nom (`signoff-inline`) → sans signature. La signature `files/letter/signature.png` est insérée si présente. `--letter-pdf` permet le rendu à la demande hors pipeline.
@@ -390,6 +411,7 @@ Le générateur (Claude Sonnet) n'utilise pas le caching — chaque appel est on
 ### Rendu terminal (TUI)
 - **Échapper les crochets littéraux dans le balisage Rich** : `"[f]"` dans une chaîne passée à un widget est interprété comme une balise de style inconnue et **avalé silencieusement**. Écrire `"\\[f]"`. C'est ce qui faisait disparaître le raccourci de la ligne « exporter le diagramme de Sankey ».
 - **Alignement en colonnes et émoji** : `f"{label:<40}"` pade en *caractères*, pas en cellules d'affichage — un émoji large compte 1 pour `len()` mais occupe 2 colonnes. Utiliser `_pad()`/`_visible_width()` (`jobsearch/tui.py`, basés sur `unicodedata.east_asian_width`). Corollaire : garder des émoji de largeur `W` dans `_STATUS_LABELS` (🎙 était `Neutral`, d'où le décalage d'une cellule de la ligne « entretien » — remplacé par 🎤).
+- **Modale de confirmation : `enter` doit être lié explicitement.** `ConfirmScreen` (`jobsearch/tui.py`) n'avait que `y`/`n`/`échap` — sans binding `enter`, la modale paraît figée, puisque c'est la touche que l'on presse par réflexe. Combiné à l'avalement Rich des crochets ci-dessus (`\[y]` non échappé), l'écran n'affichait même plus quelle touche utiliser. Même défaut, même correctif que `OverwriteConfirmScreen` (`jobsearch/wizard.py`) — vérifier les deux en cas d'ajout d'une nouvelle modale.
 - **Curseur préservé** : toute reconstruction de table (`clear()` + `add_row()`) ramène le curseur en haut. Passer par le gestionnaire de contexte `_keep_cursor(table_id)` — appliqué aux quatre tables (Offres, Génération, Candidatures, Suivi).
 
 ---

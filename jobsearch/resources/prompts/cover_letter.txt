@@ -28,6 +28,7 @@ Write a professional yet genuine cover letter (~350 words) with this structure:
 
 Tone: professional but not stiff — natural, direct, confident without being arrogant.
 
+{notes_block}
 ## Output format — READ CAREFULLY
 The letter is rendered inside a template that ALREADY provides the header (sender name, contact, date), the recipient block, the subject line, and the closing signature name.
 

@@ -694,7 +694,7 @@ if __name__ == "__main__":
             # Les placeholders spécifiques à l'offre (title, company, ...) sont attendus non résolus ici.
             known_offer_placeholders = {
                 "title", "company", "location", "url", "description",
-                "cv_summary", "points_forts", "cv_data",
+                "cv_summary", "points_forts", "cv_data", "notes_block",
             }
             unexpected = [p for p in remaining if p not in known_offer_placeholders]
             if unexpected:

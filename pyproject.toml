@@ -9,6 +9,18 @@ description = "Pipeline automatisé de recherche de stage/emploi : collecte d'of
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [{ name = "Nathan Albalat" }]
+keywords = ["job-search", "scraping", "claude", "anthropic", "cv", "cover-letter", "tui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business",
+    "Topic :: Text Processing :: Markup :: HTML",
+]
 dependencies = [
     "anthropic",
     "feedparser",
@@ -24,6 +36,11 @@ dependencies = [
 [project.optional-dependencies]
 jobspy = ["python-jobspy"]
 
+[project.urls]
+Homepage = "https://github.com/Nathan-Albalat/JobSearch"
+Repository = "https://github.com/Nathan-Albalat/JobSearch"
+Issues = "https://github.com/Nathan-Albalat/JobSearch/issues"
+
 [project.scripts]
 jobsearch = "jobsearch.cli:main"
 
@@ -36,4 +53,7 @@ jobsearch = [
     "resources/templates/*.html",
     "resources/templates/fonts/*.ttf",
     "resources/prefilter_presets.yaml",
+    "resources/source_presets.yaml",
+    "resources/examples/*",
+    "resources/examples/.env.example",
 ]

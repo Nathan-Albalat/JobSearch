@@ -82,7 +82,8 @@ def load_profile_text(config_dir: str, search: Search | None = None) -> str:
         raise ValueError(
             "config/profile.yaml contient encore une clé 'stage:' ou 'criteres_pertinence:' — "
             "ce format est obsolète. Ces clés dépendent du sujet de recherche et ont migré vers "
-            "config/search.yaml. Regarde config/profile.example.yaml pour le nouveau format attendu."
+            "config/search.yaml. Regarde jobsearch/resources/examples/profile.example.yaml "
+            "(dans le paquet installé) pour le nouveau format attendu."
         )
 
     if search is None:

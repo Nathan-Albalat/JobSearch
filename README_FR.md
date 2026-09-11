@@ -37,7 +37,7 @@ Ta configuration et tes données sont préservées : elles vivent sous `~/.jobse
 
 ### À propos de l'assistant d'installation
 
-`jobsearch --setup` est une app Textual autonome en 7 étapes : présentation de l'outil, ta clé API Anthropic (facultative à ce stade), ton sujet de recherche (type de contrat, durée minimale, pays prioritaires, domaines, seuil de score), le pré-filtre (jeu de mots-clés pré-rempli pour ton secteur, ou saisie libre), le prompt de scoring (pré-rempli avec tes réponses pour que ton premier scrape ne soit pas calibré sur la recherche de quelqu'un d'autre), ton profil de candidat, puis un récapitulatif de ce qui est configuré. Il n'écrase jamais un fichier existant sans demander, et se relance sans risque.
+`jobsearch --setup` est une app Textual autonome en 7 étapes : présentation de l'outil, ta clé API Anthropic (facultative à ce stade), ton sujet de recherche (type de contrat, durée minimale, pays prioritaires, domaines, seuil de score), le pré-filtre (jeu de mots-clés pré-rempli pour ton secteur, ou saisie libre), le prompt de scoring (pré-rempli avec tes réponses pour que ton premier scrape ne soit pas calibré sur la recherche de quelqu'un d'autre), ton profil de candidat, puis un récapitulatif de ce qui est configuré. Il n'écrase jamais un fichier existant sans demander, et se relance sans risque. `sources.yaml` (les sources de scraping elles-mêmes — requêtes de recherche, flux RSS) est aussi généré, à partir de ce même secteur et de ces mêmes pays — sans question supplémentaire, sans qu'aucune source ne reste calée sur la recherche d'origine de l'auteur (un stage informatique aux Pays-Bas).
 
 **Fortement recommandé après l'installation :** personnalise encore le prompt de scoring et le pré-filtre depuis l'onglet Réglages de la TUI (touche `6`) avec quelques exemples réels de ta recherche — ça améliore nettement la précision du classement.
 
@@ -64,7 +64,7 @@ La TUI n'est qu'une **vue** sur les fichiers du pipeline, pas une base de donné
 | **3 · Candidatures** | Parcours `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle. |
 | **4 · Suivi** | Statuts et notes de `applications.json` (envoyée / réponse reçue / entretien / acceptée / refusée / annulée, chacun colorisé). Le panneau de droite affiche la timeline de la candidature sélectionnée, reconstruite depuis son historique — dates déduites d'anciennes données suffixées d'un `~`. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation/réponse, délai moyen), répartition des statuts, localisation des offres, histogramme des candidatures au cours du temps, et arbre du parcours des statuts. `f` exporte le flux en diagramme de Sankey HTML autonome. |
-| **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`) avec leur état (personnalisé / défaut du paquet / absent). `entrée` ouvre le fichier dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. |
+| **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`) avec leur état (personnalisé / défaut du paquet / absent). `entrée` ouvre le fichier dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. `o` ouvre une modale pour activer/désactiver individuellement une source de scraping (`espace` pour basculer, `échap` pour fermer) — écrit immédiatement dans `sources.yaml`, indépendamment du groupe `fr` basculé avec `--with`/`--without`. |
 
 ### Workflow de retouche d'une lettre
 
@@ -108,6 +108,7 @@ L'usage principal de l'onglet Candidatures : `e` pour ouvrir `lettre.md` dans to
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts |
 | Réglages | `entrée` | Ouvrir le fichier de config sous le curseur |
+| Réglages | `o` | Gérer les sources de scraping (activer/désactiver individuellement, `espace` pour basculer) |
 
 ### Offres en doublon
 
@@ -207,7 +208,7 @@ crontab -e
 - **Données du CV** — `cv_data.yaml`, source de vérité unique pour le CV master et le CV adapté ; `cv_master.md` est régénéré automatiquement — ne pas l'éditer à la main.
 - **Prompts** — `config/prompts/{filter,cover_letter,cv_adapt}.txt`.
 - **Templates PDF** — `config/templates/{cv_en,cover_letter}.html`, avec des marqueurs `{{NOM}}` remplacés avant le rendu WeasyPrint. Les polices sont embarquées localement (rendu hors-ligne) ; une image de signature `files/letter/signature.png` est insérée automatiquement si présente.
-- **Sources** — ajoute des flux RSS, ou pivote les entrées `wttj`/`hellowork` (pays, intitulé, types de contrat) dans `sources.yaml`.
+- **Sources** — `sources.yaml` est généré par l'assistant d'installation à partir de ton secteur et de tes pays prioritaires (requêtes de recherche, flux RSS, géographie LinkedIn/Indeed/Adzuna/WTTJ/HelloWork — voir `jobsearch/resources/source_presets.yaml`) ; relancer `jobsearch --setup` le régénère. Pour pivoter à la main à la place : ajoute des flux RSS, ou édite les entrées `jobspy`/`adzuna`/`wttj`/`hellowork` (pays, requête/intitulé, types de contrat) dans `sources.yaml`. Chaque source peut aussi être activée/désactivée individuellement via `enabled: false` (active par défaut) — soit directement dans le fichier, soit depuis le gestionnaire de sources de l'onglet Réglages (`6`, puis `o`).
 
 Tout ceci s'édite directement, ou depuis l'onglet Réglages de la TUI (`6`).
 

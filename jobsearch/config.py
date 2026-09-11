@@ -90,6 +90,30 @@ class Paths:
         """Jeux de mots-clés du pré-filtre par secteur, proposés par `jobsearch --setup`."""
         return _package_resource_dir("resources", "prefilter_presets.yaml")
 
+    @property
+    def source_presets_path(self) -> str:
+        """Catalogue de sources par secteur (requêtes + flux fixes + géographie),
+        proposé par `jobsearch --setup` pour générer `sources.yaml`."""
+        return _package_resource_dir("resources", "source_presets.yaml")
+
+    @property
+    def package_examples_dir(self) -> str:
+        """Fichiers `.example` livrés avec le paquet — contenu de paquet, jamais
+        de surcharge utilisateur possible ici (contrairement à `prompt()`/
+        `template()`) : un `.example` est un gabarit de référence, pas quelque
+        chose que `JOBSEARCH_HOME` personnalise."""
+        return _package_resource_dir("resources", "examples")
+
+    def example(self, name: str) -> str:
+        """Résout un fichier `.example` livré avec le paquet (`search.example.yaml`,
+        `profile.example.yaml`, `sources.example.yaml`, `cv_data.example.yaml`,
+        `cv_master.example.md`, `.env.example`) — toujours depuis
+        `jobsearch/resources/examples/`, via `importlib.resources` pour
+        fonctionner aussi bien en installation figée qu'en `pip install -e .`.
+        Contrairement à `prompt()`/`template()`, pas de repli : un `.example`
+        manquant est une anomalie d'installation, pas un cas nominal."""
+        return os.path.join(self.package_examples_dir, name)
+
     # Alias conservés pour compatibilité (`cv_pdf.py` : base_url WeasyPrint,
     # les polices restant toujours dans le paquet quel que soit le template utilisé).
     @property

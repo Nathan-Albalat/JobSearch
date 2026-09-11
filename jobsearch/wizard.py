@@ -31,7 +31,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Header, Input, Label, Static, TextArea
 
-from jobsearch.config import DEFAULTS, PACKAGE_ROOT, PATHS, Search, _deep_merge, fill_template
+from jobsearch.config import DEFAULTS, PATHS, Search, _deep_merge, fill_template
 
 # ---------------------------------------------------------------------------
 # Navigation
@@ -245,6 +245,475 @@ def derive_contrat_keywords(type_contrat: str) -> list[str]:
     return [key] if key else []
 
 
+# ---------------------------------------------------------------------------
+# Génération de sources.yaml — 4e occurrence de la famille de bugs « valeur
+# d'auteur héritée » (voir CLAUDE.md, section « Garde-fou anti-régression ») :
+# `config/sources.yaml` était jusqu'ici versionné tel quel, avec les requêtes
+# personnelles de l'auteur (stage informatique aux Pays-Bas), jamais touché par
+# `jobsearch --setup`. Ce qui suit dérive `sources.yaml` du secteur choisi à
+# l'étape « pré-filtre » et du type de contrat/pays choisis à l'étape « sujet »
+# — sans nouvelle question posée à l'utilisateur.
+# ---------------------------------------------------------------------------
+
+
+def load_source_presets() -> dict:
+    """Catalogue de sources par secteur (`jobsearch/resources/source_presets.yaml`)
+    — requêtes de recherche, flux à URL fixe et table géographique. Contenu du
+    paquet, jamais lu depuis l'utilisateur (`~/.jobsearch/`) — même patron que
+    `load_prefilter_presets`."""
+    with open(PATHS.source_presets_path, encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def _country_name_to_code() -> dict[str, str]:
+    """Table nom-de-pays (anglais, canonique) -> code ISO, reconstruite depuis
+    `jobsearch.tracker._COUNTRY_NAMES` plutôt que dupliquée ici — un seul
+    endroit à mettre à jour si un pays est ajouté. "UK" est exclu : c'est un
+    alias de code vers le même nom que "GB" dans `_COUNTRY_NAMES`, et seul
+    "GB" existe comme clé dans `source_presets.yaml` → `geo`."""
+    from jobsearch.tracker import _COUNTRY_NAMES
+
+    return {name.lower(): code for code, name in _COUNTRY_NAMES.items() if code != "UK"}
+
+
+def resolve_country_code(pays_libre: str) -> str | None:
+    """Résout un nom de pays saisi librement à l'étape « sujet » (ex: "Pays-Bas",
+    "France", "Netherlands") en code ISO 2 lettres, via les tables déjà
+    maintenues dans `jobsearch.tracker` (alias FR/EN/langue locale -> nom
+    canonique anglais -> code) — pas de troisième table de noms de pays.
+    `None` si non reconnu : la géographie n'est alors jamais devinée, la
+    source correspondante est simplement omise (voir `render_sources_yaml`)."""
+    from jobsearch.tracker import _COUNTRY_ALIASES
+
+    key = (pays_libre or "").strip().lower()
+    if not key:
+        return None
+    canonical = _COUNTRY_ALIASES.get(key, key)
+    return _country_name_to_code().get(canonical.lower())
+
+
+# Terme anglais du type de contrat, pour les sources internationales
+# (jobspy/Adzuna) — distinct de `_CONTRAT_KEYWORDS` (groupe de mots-clés du
+# pré-filtre) et de `_TYPE_CONTRAT_NEGATIF` (formulation négative du prompt).
+_CONTRAT_EN = {
+    "stage": "internship",
+    "alternance": "apprenticeship",
+    "cdi": "permanent",
+    "cdd": "temporary",
+    "freelance": "freelance",
+}
+
+
+def derive_contrat_en(type_contrat: str) -> str:
+    key = (type_contrat or "").strip().lower()
+    for name, en in _CONTRAT_EN.items():
+        if name in key:
+            return en
+    return type_contrat or ""
+
+
+# Libellé français capitalisé du type de contrat, attendu par le paramètre `c`
+# de HelloWork (ex: "Stage", "CDI").
+_CONTRAT_FR_LABEL = {
+    "stage": "Stage",
+    "alternance": "Alternance",
+    "cdi": "CDI",
+    "cdd": "CDD",
+    "freelance": "Freelance",
+}
+
+
+def derive_contrat_fr_label(type_contrat: str) -> str:
+    key = (type_contrat or "").strip().lower()
+    for name, label in _CONTRAT_FR_LABEL.items():
+        if name in key:
+            return label
+    return (type_contrat or "").strip().capitalize()
+
+
+# `contract_types` attendu par l'API WTTJ — seuls "internship"/"apprenticeship"
+# ont été vérifiés en usage réel (voir CLAUDE.md, section WTTJ). Repli sur une
+# liste vide (aucun filtre côté client, jamais une valeur inventée) pour les
+# types de contrat non couverts ci-dessous.
+_WTTJ_CONTRACT_TYPES = {
+    "stage": ["internship", "apprenticeship"],
+    "alternance": ["apprenticeship", "internship"],
+    "cdi": ["full_time"],
+    "cdd": ["fixed_term"],
+    "freelance": ["freelance"],
+}
+
+
+def derive_wttj_contract_types(type_contrat: str) -> list[str]:
+    key = (type_contrat or "").strip().lower()
+    for name, types in _WTTJ_CONTRACT_TYPES.items():
+        if name in key:
+            return types
+    return []
+
+
+# `job_types` attendu par l'API Arbeitnow — seul "internship" a été vérifié en
+# usage réel (config d'origine de ce dépôt). Repli sur une liste vide (aucun
+# filtre) pour les types de contrat non couverts, jamais une valeur inventée.
+_ARBEITNOW_JOB_TYPES = {
+    "stage": ["internship"],
+    "alternance": ["internship"],
+    "cdi": ["full-time"],
+    "cdd": ["contract"],
+    "freelance": ["contract"],
+}
+
+
+def derive_arbeitnow_job_types(type_contrat: str) -> list[str]:
+    key = (type_contrat or "").strip().lower()
+    for name, types in _ARBEITNOW_JOB_TYPES.items():
+        if name in key:
+            return types
+    return []
+
+
+def _dump_sources_block(sources: list[dict]) -> str:
+    """Sérialise une liste de sources, indentée sous la clé `sources:` — passe
+    toujours par `yaml.safe_dump` (syntaxe garantie valide), les en-têtes de
+    section restant, eux, des commentaires ajoutés à la main autour de ce bloc
+    (voir `render_sources_yaml`) : pas de commentaire par entrée individuelle,
+    contrairement à `search.example.yaml` qui, lui, préexistait déjà commenté."""
+    if not sources:
+        return ""
+    text = yaml.safe_dump(sources, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    return "\n".join(("  " + line if line else line) for line in text.rstrip("\n").split("\n")) + "\n"
+
+
+def _source_context(values: dict, prefilter_values: dict | None = None) -> dict:
+    """Dérive, en un seul endroit, tout ce qui dépend du secteur (preset ou
+    saisie libre choisi à l'étape « pré-filtre ») et de la géographie/contrat
+    (étape « sujet ») : requêtes métier, géographie résolue, flux à URL fixe.
+    Factorise ce que `render_sources_yaml` ET `render_source_defaults`
+    (`source_defaults.jobspy`/`source_defaults.adzuna` de `search.yaml`) ont
+    besoin de dériver de façon identique — sans cette factorisation, les deux
+    auraient fini par diverger silencieusement (c'est exactement ce type de
+    duplication qui a produit la 5e occurrence du bug « valeur d'auteur
+    héritée », voir CLAUDE.md)."""
+    prefilter_values = prefilter_values or PREFILTER_DEFAULTS
+    presets = load_source_presets()
+    preset_name = (prefilter_values or {}).get("preset", "")
+    preset = presets.get(preset_name) if preset_name not in ("", "libre") else None
+
+    if preset:
+        queries_en = list(preset.get("queries_en") or [])
+        queries_fr = list(preset.get("queries_fr") or [])
+        feeds = [dict(f) for f in (preset.get("feeds") or [])]
+        secteur_label = (load_prefilter_presets().get(preset_name) or {}).get("label", preset_name)
+    else:
+        # Saisie libre (ou aucun secteur choisi à l'étape pré-filtre) : pas de
+        # requêtes métier dédiées, seul le secteur nommé par l'utilisateur (s'il
+        # y en a un) sert de terme de recherche. Jamais de repli sur les
+        # requêtes informatiques par défaut : même biais que documenté pour le
+        # pré-filtre (voir `render_prefilter_keywords`).
+        custom_label = ((prefilter_values or {}).get("custom_label") or "").strip()
+        queries_en = [custom_label] if custom_label else []
+        queries_fr = [custom_label] if custom_label else []
+        # Arbeitnow (généraliste) reste un repli raisonnable même sans secteur
+        # identifié — c'est la seule source à URL fixe commune à tous les
+        # presets, jamais une source informatique.
+        arbeitnow_generic = next(
+            (dict(f) for f in (presets.get("sante", {}).get("feeds") or []) if f.get("type") == "api_json"),
+            None,
+        )
+        feeds = [arbeitnow_generic] if arbeitnow_generic else []
+        secteur_label = custom_label or "(secteur non renseigné)"
+
+    type_contrat = values.get("type_contrat") or "stage"
+    contrat_en = derive_contrat_en(type_contrat)
+    contrat_fr_label = derive_contrat_fr_label(type_contrat)
+    pays = values.get("pays") or []
+
+    geo_table = presets.get("geo") or {}
+    primary_code = resolve_country_code(pays[0]) if pays else None
+    primary_geo = geo_table.get(primary_code) if primary_code else None
+    france_code = next((c for c in (resolve_country_code(p) for p in pays) if c == "FR"), None)
+    france_is_primary = primary_code == "FR"
+
+    # Arbeitnow : job_types régénéré depuis le type de contrat choisi, jamais
+    # laissé au repli du preset (potentiellement calibré pour un autre contrat).
+    for f in feeds:
+        if f.get("type") == "api_json" and "job_types" in (f.get("params") or {}):
+            f["params"]["job_types"] = derive_arbeitnow_job_types(type_contrat)
+
+    return {
+        "queries_en": queries_en,
+        "queries_fr": queries_fr,
+        "feeds": feeds,
+        "secteur_label": secteur_label,
+        "type_contrat": type_contrat,
+        "contrat_en": contrat_en,
+        "contrat_fr_label": contrat_fr_label,
+        "pays": pays,
+        "geo_table": geo_table,
+        "primary_code": primary_code,
+        "primary_geo": primary_geo,
+        "france_code": france_code,
+        "france_is_primary": france_is_primary,
+    }
+
+
+def render_sources_yaml(values: dict, prefilter_values: dict | None = None) -> str:
+    """Génère `sources.yaml` depuis les réponses déjà collectées par
+    l'assistant — AUCUNE nouvelle question posée : le secteur vient de l'étape
+    « pré-filtre » (`prefilter_values["preset"]`), le type de contrat et les
+    pays prioritaires de l'étape « sujet » (`values`). Contrairement à
+    `render_search_yaml`, ce fichier est entièrement neuf (pas de
+    `.example.yaml` à préserver ligne à ligne) : assemblé par blocs
+    `yaml.safe_dump` (syntaxe garantie valide), séparés par des commentaires de
+    section écrits à la main.
+
+    Sans géographie reconnue (`resolve_country_code` -> None) ou sans requête
+    de secteur, les sources concernées sont simplement omises plutôt que
+    générées avec une valeur inventée — consignées dans l'en-tête du fichier
+    ("Non générées automatiquement")."""
+    ctx = _source_context(values, prefilter_values)
+    queries_en = ctx["queries_en"]
+    queries_fr = ctx["queries_fr"]
+    feeds = ctx["feeds"]
+    secteur_label = ctx["secteur_label"]
+    type_contrat = ctx["type_contrat"]
+    contrat_en = ctx["contrat_en"]
+    contrat_fr_label = ctx["contrat_fr_label"]
+    pays = ctx["pays"]
+    geo_table = ctx["geo_table"]
+    primary_code = ctx["primary_code"]
+    primary_geo = ctx["primary_geo"]
+    france_code = ctx["france_code"]
+    france_is_primary = ctx["france_is_primary"]
+
+    skipped: list[str] = []
+
+    # --- jobspy (LinkedIn / Indeed) ---
+    jobspy_sources: list[dict] = []
+    if primary_geo and queries_en:
+        search_term = f"{queries_en[0]} {contrat_en}".strip()
+        jobspy_sources.append({
+            "name": f"JobSpy - {search_term.capitalize()} {primary_geo['label']}",
+            "type": "jobspy",
+            "country": primary_code,
+            "params": {
+                "sites": ["linkedin", "indeed"],
+                "search_term": search_term,
+                "location": primary_geo["label"],
+                "country_indeed": primary_geo["country_indeed"],
+                "hours_old": 72,
+                "results_wanted": 50,
+            },
+        })
+        if len(pays) > 1:
+            second_query = queries_en[1] if len(queries_en) > 1 else queries_en[0]
+            broad_term = f"{second_query} {contrat_en}".strip()
+            jobspy_sources.append({
+                "name": f"JobSpy - {broad_term.capitalize()} ({', '.join(pays)})",
+                "type": "jobspy",
+                "country": "INTL",
+                "params": {
+                    "sites": ["linkedin"],
+                    "search_term": broad_term,
+                    "location": ", ".join(pays),
+                    "hours_old": 72,
+                    "results_wanted": 40,
+                },
+            })
+    elif pays:
+        skipped.append(
+            f"JobSpy (LinkedIn/Indeed) — pays prioritaire {pays[0]!r} non reconnu dans la "
+            "table géographique, source ignorée."
+        )
+
+    # --- Adzuna ---
+    adzuna_sources: list[dict] = []
+    if primary_geo and queries_en:
+        if primary_geo.get("adzuna_supported"):
+            what = f"{queries_en[0]} {contrat_en}".strip()
+            adzuna_sources.append({
+                "name": f"Adzuna {primary_code} - {what.capitalize()}",
+                "type": "adzuna",
+                "country": primary_code,
+                "params": {"country": primary_code.lower(), "what": what, "pages": 2},
+            })
+        else:
+            skipped.append(f"Adzuna — {primary_geo['label']} non couvert par l'API Adzuna, source ignorée.")
+
+    # --- WTTJ (pays prioritaire) ---
+    wttj_sources: list[dict] = []
+    if primary_geo and queries_fr:
+        contract_types = derive_wttj_contract_types(type_contrat)
+        for q in queries_fr[:2]:
+            entry = {
+                "name": f"WTTJ - {q.capitalize()} {primary_geo['label']}",
+                "type": "wttj",
+                "country": primary_code,
+                "params": {
+                    "job_title": q,
+                    "locations": {
+                        "country": primary_geo["label"],
+                        "country_code": primary_code,
+                        "label": primary_geo["label"],
+                        "latitude": primary_geo["latitude"],
+                        "longitude": primary_geo["longitude"],
+                    },
+                    "pages": 3,
+                },
+            }
+            if contract_types:
+                entry["params"]["contract_types"] = list(contract_types)
+            wttj_sources.append(entry)
+
+    # --- WTTJ France + HelloWork (groupe optionnel `fr`) — seulement si la
+    # France fait partie des pays prioritaires (n'importe quelle position),
+    # sans quoi elles n'ont pas de sens (voir CLAUDE.md). WTTJ FR n'est générée
+    # séparément que si la France N'EST PAS déjà le pays prioritaire (sinon
+    # déjà couverte, en actif, par le bloc WTTJ ci-dessus).
+    wttj_fr_sources: list[dict] = []
+    hellowork_sources: list[dict] = []
+    if france_code and not france_is_primary and queries_fr:
+        fr_geo = geo_table.get("FR")
+        contract_types = derive_wttj_contract_types(type_contrat)
+        for q in queries_fr[:2]:
+            entry = {
+                "name": f"WTTJ - {q.capitalize()} FR",
+                "type": "wttj",
+                "group": "fr",
+                "optional": True,
+                "country": "FR",
+                "params": {
+                    "job_title": q,
+                    "locations": {
+                        "country": fr_geo["label"],
+                        "country_code": "FR",
+                        "label": fr_geo["label"],
+                        "latitude": fr_geo["latitude"],
+                        "longitude": fr_geo["longitude"],
+                    },
+                    "pages": 3,
+                },
+            }
+            if contract_types:
+                entry["params"]["contract_types"] = list(contract_types)
+            wttj_fr_sources.append(entry)
+    if france_code and queries_fr:
+        # HelloWork est FR-only par nature : toujours en groupe optionnel `fr`,
+        # que la France soit le pays prioritaire ou non (même choix que la
+        # config d'origine de ce dépôt).
+        for q in queries_fr[:2]:
+            hellowork_sources.append({
+                "name": f"HelloWork - {q.capitalize()} ({contrat_fr_label})",
+                "type": "hellowork",
+                "group": "fr",
+                "optional": True,
+                "country": "FR",
+                "params": {"k": q, "c": contrat_fr_label, "pages": 2},
+            })
+
+    header_lines = [
+        "# sources.yaml — généré par `jobsearch --setup`.",
+        f"# Secteur : {secteur_label}",
+        f"# Type de contrat : {type_contrat}",
+        f"# Pays prioritaires : {', '.join(pays) if pays else '(non renseigné)'}",
+        "#",
+        "# `enabled: false` désactive une source individuellement, sans la supprimer",
+        "# (onglet Réglages de la TUI, touche 6, ou édition directe de ce fichier).",
+        "# `group`/`optional: true` : source désactivée par défaut, incluse avec",
+        "# `jobsearch --scrape --with <groupe>` (ex: --with fr).",
+    ]
+    if skipped:
+        header_lines.append("#")
+        header_lines.append("# Non générées automatiquement (à ajouter soi-même si besoin) :")
+        header_lines.extend(f"#   - {s}" for s in skipped)
+
+    groups = [
+        ("  # --- Flux à URL fixe (RSS / API JSON) ---", feeds),
+        ("\n  # --- LinkedIn / Indeed (jobspy) ---", jobspy_sources),
+        ("\n  # --- Adzuna (requiert ADZUNA_APP_ID / ADZUNA_APP_KEY dans .env) ---", adzuna_sources),
+        ("\n  # --- Welcome to the Jungle (API publique v3, sans auth) ---", wttj_sources),
+        ("\n  # --- WTTJ France (groupe optionnel 'fr') ---", wttj_fr_sources),
+        ("\n  # --- HelloWork (France, groupe optionnel 'fr') ---", hellowork_sources),
+    ]
+    non_empty = [(comment, srcs) for comment, srcs in groups if srcs]
+
+    if not non_empty:
+        body = "sources: []\n"
+    else:
+        body = "sources:\n" + "".join(f"{comment}\n{_dump_sources_block(srcs)}" for comment, srcs in non_empty)
+
+    return "\n".join(header_lines) + "\n\n" + body
+
+
+# ---------------------------------------------------------------------------
+# Génération de `source_defaults` (search.yaml) — 5e occurrence de la famille
+# de bugs « valeur d'auteur héritée » (voir CLAUDE.md, section « Garde-fou
+# anti-régression ») : `source_defaults.jobspy`/`source_defaults.adzuna` était
+# jusqu'ici recopié tel quel depuis `search.example.yaml` par `render_search_yaml`
+# — la plus grave des trois fuites relevées, puisque ce bloc est réellement lu
+# au SCRAPE (`get_search().source_defaults(...)`, voir `jobsearch/scraper.py` et
+# `jobsearch/scraper_jobspy.py`), pas seulement au scoring : une source qui omet
+# un paramètre optionnel (`sources.yaml`) retombait silencieusement sur
+# "software intern" / "netherlands". Réutilise `_source_context` (même
+# dérivation, même secteur/géographie que `sources.yaml`) plutôt que de
+# dupliquer cette logique une troisième fois.
+# ---------------------------------------------------------------------------
+
+
+def render_source_defaults(values: dict, prefilter_values: dict | None = None) -> dict:
+    """Régénère entièrement `source_defaults.jobspy`/`source_defaults.adzuna`
+    depuis les réponses de l'assistant — jamais recopié de
+    `search.example.yaml`. Sans géographie reconnue ou sans requête de secteur
+    dérivable (`_source_context`), les clés concernées (`search_term`,
+    `country_indeed`, `country`, `what`) sont laissées vides plutôt
+    qu'héritées de l'exemple livré — même principe que `geo.secondaire`/
+    `geo.dernier_recours`."""
+    ctx = _source_context(values, prefilter_values)
+    queries_en = ctx["queries_en"]
+    contrat_en = ctx["contrat_en"]
+    primary_code = ctx["primary_code"]
+    primary_geo = ctx["primary_geo"]
+
+    search_term = f"{queries_en[0]} {contrat_en}".strip() if queries_en else ""
+
+    jobspy = {
+        "sites": ["linkedin", "indeed"],
+        "search_term": search_term,
+        "results_wanted": 30,
+        "hours_old": 72,
+        "country_indeed": primary_geo["country_indeed"] if primary_geo else "",
+        "fetch_description": True,
+    }
+    adzuna = {
+        "country": (
+            primary_code.lower()
+            if primary_code and primary_geo and primary_geo.get("adzuna_supported")
+            else ""
+        ),
+        "what": search_term,
+        "results_per_page": 50,
+        "pages": 1,
+    }
+    return {"jobspy": jobspy, "adzuna": adzuna}
+
+
+def _set_source_defaults(text: str, source_defaults: dict) -> str:
+    """Remplace intégralement le bloc `source_defaults:` (deux sous-sections
+    `jobspy`/`adzuna`) par le contenu dérivé de l'entrée utilisateur — même
+    motif que `_set_prefilter_keywords` : un remplacement en bloc via
+    `yaml.safe_dump` (syntaxe garantie valide), plutôt qu'une substitution
+    scalaire par scalaire qui laisserait passer une clé oubliée."""
+    lines = text.split("\n")
+    span = _section_span(lines, "source_defaults")
+    if span is None:
+        return text
+    start, end = span
+    dumped = yaml.safe_dump(source_defaults, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    new_lines = ["  " + line if line else line for line in dumped.rstrip("\n").split("\n")]
+    lines[start + 1:end] = new_lines
+    return "\n".join(lines)
+
+
 # Aucun secteur pré-sélectionné : JobSearch est généraliste, et pré-cocher
 # « informatique » réintroduirait en silence le biais que les presets existent
 # pour supprimer — un juriste repartirait avec des mots-clés de développeur et
@@ -443,21 +912,21 @@ def _set_prefilter_keywords(text: str, groups: dict[str, list[str]]) -> str:
 
 def render_search_yaml(values: dict, prefilter_values: dict | None = None) -> str:
     """Génère `search.yaml` en substituant les valeurs de l'assistant dans le
-    `.example.yaml` du dépôt — préserve les ~200 lignes de commentaires
-    d'origine (jamais de `yaml.safe_dump`, qui les détruirait)."""
-    example_path = os.path.join(PACKAGE_ROOT, "config", "search.example.yaml")
-    if os.path.exists(example_path):
-        with open(example_path, encoding="utf-8") as f:
-            text = f.read()
-    else:
-        text = (
-            "# search.yaml — généré par jobsearch --setup (search.example.yaml introuvable,\n"
-            "# les clés absentes retombent sur les valeurs par défaut de jobsearch/config.py).\n"
-            "sujet:\n  type_contrat: \"stage\"\n  expertise_recruteur: \"\"\nduree:\n  applicable: true\n"
-            "  min_semaines: 22\n  texte: \"22 semaines minimum\"\n"
-            "geo:\n  priorite: []\n  notes: \"\"\ndomaines:\n  liste: []\nscoring:\n  seuil: 6\n"
-            "prefilter:\n  enabled: true\n  keywords:\n  exclude_keywords: []\n"
+    `.example.yaml` du paquet — préserve les ~200 lignes de commentaires
+    d'origine (jamais de `yaml.safe_dump`, qui les détruirait).
+
+    Aucun repli en dur : un `.example` manquant est une anomalie d'installation
+    (fichier absent du paquet publié), pas un cas nominal à faire disparaître
+    en silence — c'est exactement ce silence qui produisait auparavant la
+    boucle infinie de `_check_setup` sur une installation pipx."""
+    example_path = PATHS.example("search.example.yaml")
+    if not os.path.exists(example_path):
+        raise FileNotFoundError(
+            f"Fichier d'exemple manquant : {example_path} — installation du paquet incomplète "
+            "(jobsearch/resources/examples/ aurait dû être embarqué, voir pyproject.toml)."
         )
+    with open(example_path, encoding="utf-8") as f:
+        text = f.read()
 
     text = _set_scalar(text, "sujet", "type_contrat", _yaml_str(values["type_contrat"]))
     text = _set_scalar(text, "sujet", "label", _yaml_str(render_sujet_label(values)))
@@ -508,6 +977,11 @@ def render_search_yaml(values: dict, prefilter_values: dict | None = None) -> st
     text = _set_list(text, "scoring", "malus", render_scoring_malus(values))
     text = _set_list(text, "scoring", "titre_bonus", derive_titre_bonus(values["type_contrat"]))
     text = _set_prefilter_keywords(text, render_prefilter_keywords(prefilter_values, values))
+    # `source_defaults` est réellement consommé au scrape (get_search().source_defaults(...)
+    # dans jobsearch/scraper.py et jobsearch/scraper_jobspy.py) : jamais laissé hériter du
+    # sujet d'origine de l'exemple (« software intern » / « netherlands »), voir la section
+    # dédiée plus haut dans ce fichier.
+    text = _set_source_defaults(text, render_source_defaults(values, prefilter_values))
     return text
 
 
@@ -522,15 +996,34 @@ def render_search_yaml(values: dict, prefilter_values: dict | None = None) -> st
 # ---------------------------------------------------------------------------
 
 # Clés connues pour dépendre de l'entrée utilisateur (sujet/domaines/contrat) —
-# à étendre à chaque nouvelle clé dérivée ajoutée à `render_search_yaml`.
-RISK_KEYS: list[tuple[str, str]] = [
+# à étendre à chaque nouvelle clé dérivée ajoutée à `render_search_yaml`. Chemins
+# à profondeur variable (2 niveaux pour la plupart des sections, 3 pour
+# `source_defaults.<source>.<clé>` — ajouté en 5e occurrence de ce bug, voir
+# CLAUDE.md) : `_lookup_path` ci-dessous marche pour les deux.
+RISK_KEYS: list[tuple[str, ...]] = [
     ("sujet", "label"),
     ("sujet", "type_contrat_negatif"),
     ("scoring", "titre_bonus"),
     ("geo", "secondaire"),
     ("geo", "dernier_recours"),
     ("domaines", "ouverture"),
+    ("source_defaults", "jobspy", "search_term"),
+    ("source_defaults", "jobspy", "country_indeed"),
+    ("source_defaults", "adzuna", "country"),
+    ("source_defaults", "adzuna", "what"),
 ]
+
+
+def _lookup_path(doc: dict, path: tuple[str, ...]):
+    """Lit `doc[path[0]][path[1]]...` en tolérant les niveaux absents —
+    factorise la lecture des clés de `RISK_KEYS`, à profondeur variable
+    (2 niveaux pour la plupart des sections, 3 pour `source_defaults`)."""
+    node = doc
+    for part in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
 
 def _guard_profiles() -> list[dict]:
     """Deux profils volontairement très contrastés (le sujet d'origine du
@@ -564,7 +1057,13 @@ def _guard_profiles() -> list[dict]:
 
 
 def _load_example_search_yaml() -> dict:
-    example_path = os.path.join(PACKAGE_ROOT, "config", "search.example.yaml")
+    # Pas de garde silencieuse ici non plus : un .example absent doit planter
+    # bruyamment (voir render_search_yaml ci-dessus pour le même raisonnement).
+    example_path = PATHS.example("search.example.yaml")
+    if not os.path.exists(example_path):
+        raise FileNotFoundError(
+            f"Fichier d'exemple manquant : {example_path} — installation du paquet incomplète."
+        )
     with open(example_path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
@@ -590,6 +1089,11 @@ def check_wizard_defaults() -> list[str]:
        valeurs différentes sur les clés censées dépendre de l'entrée
        utilisateur (à l'exception documentée de `_ALWAYS_EMPTY_BY_DESIGN`).
 
+    Couvre aussi `sources.yaml` (4e occurrence de la même famille de bug — voir
+    CLAUDE.md) : échoue si les requêtes générées sont identiques entre les deux
+    profils, ou si le profil CDI/France/droit contient encore un littéral de
+    l'auteur (`_SOURCES_AUTHOR_LITERALS`, ex. « software intern », « Netherlands »).
+
     Fonction pure, sans Textual ni appel API — testable et réutilisable (voir
     `python -m jobsearch.config --check-wizard-defaults`). Retourne la liste
     des anomalies détectées (vide = rien à signaler)."""
@@ -604,29 +1108,131 @@ def check_wizard_defaults() -> list[str]:
     # (1) Le profil CDI/France/droit (index 1) ne doit littéralement rien devoir
     # au sujet d'origine (stage tech, Pays-Bas) livré dans search.example.yaml.
     contrat_eloigne = profiles[1]["search_values"]["type_contrat"]
-    for section, key in RISK_KEYS:
-        value = (rendered[1].get(section) or {}).get(key)
-        example_value = (example.get(section) or {}).get(key)
+    for path in RISK_KEYS:
+        label = ".".join(path)
+        value = _lookup_path(rendered[1], path)
+        example_value = _lookup_path(example, path)
         if value == example_value:
             anomalies.append(
-                f"{section}.{key} = {value!r} — identique à search.example.yaml "
+                f"{label} = {value!r} — identique à search.example.yaml "
                 f"pour le profil {contrat_eloigne!r} (valeur potentiellement héritée "
                 "sans dérivation depuis l'entrée utilisateur)."
             )
 
     # (2) Contrôle croisé entre les deux profils contrastés.
-    for section, key in RISK_KEYS:
-        if (section, key) in _ALWAYS_EMPTY_BY_DESIGN:
+    for path in RISK_KEYS:
+        if path in _ALWAYS_EMPTY_BY_DESIGN:
             continue
-        v0 = (rendered[0].get(section) or {}).get(key)
-        v1 = (rendered[1].get(section) or {}).get(key)
+        label = ".".join(path)
+        v0 = _lookup_path(rendered[0], path)
+        v1 = _lookup_path(rendered[1], path)
         if v0 == v1:
             anomalies.append(
-                f"{section}.{key} identique entre les deux profils simulés contrastés "
+                f"{label} identique entre les deux profils simulés contrastés "
                 f"(stage/Pays-Bas vs CDI/France/droit) : {v0!r} — suspect d'une valeur "
                 "non dérivée de l'entrée utilisateur."
             )
+
+    # (3) sources.yaml — même contrôle croisé, plus une recherche de littéraux
+    # de l'auteur d'origine (config/sources.yaml, avant sa neutralisation en
+    # sources.example.yaml) sur le profil le plus éloigné.
+    rendered_sources_text = [
+        render_sources_yaml(p["search_values"], p["prefilter_values"]) for p in profiles
+    ]
+    contrat_eloigne_sources = profiles[1]["search_values"]["type_contrat"]
+    text_eloigne_lower = rendered_sources_text[1].lower()
+    for literal in _SOURCES_AUTHOR_LITERALS:
+        if literal in text_eloigne_lower:
+            anomalies.append(
+                f"sources.yaml contient le littéral de l'auteur {literal!r} pour le profil "
+                f"{contrat_eloigne_sources!r} (CDI/France/droit) — requête ou géographie "
+                "potentiellement héritée sans dérivation depuis l'entrée utilisateur."
+            )
+
+    def _flatten_queries(text: str) -> str:
+        doc = yaml.safe_load(text) or {}
+        return " ".join(
+            str((s.get("params") or {}).get(k, ""))
+            for s in (doc.get("sources") or [])
+            for k in ("search_term", "what", "job_title", "k")
+        )
+
+    q0 = _flatten_queries(rendered_sources_text[0])
+    q1 = _flatten_queries(rendered_sources_text[1])
+    if q0 and q0 == q1:
+        anomalies.append(
+            "sources.yaml : les requêtes de recherche générées (search_term/what/job_title/k) "
+            "sont identiques entre les deux profils simulés contrastés (stage/informatique/"
+            "Pays-Bas vs CDI/droit/France) — suspect d'une requête non dérivée du secteur/sujet "
+            "choisi."
+        )
+
+    # (4) Fichiers d'exemple du CV (cv_data.example.yaml / cv_master.example.md) —
+    # ne dépendent d'aucune entrée utilisateur (`--setup` ne collecte pas de CV,
+    # voir CLAUDE.md), donc pas de rendu à comparer entre profils ici : simple
+    # recherche de littéraux biographiques de l'auteur d'origine, livrés tels
+    # quels avec le paquet à tout nouvel utilisateur.
+    anomalies.extend(_check_cv_examples())
+
     return anomalies
+
+
+# Littéraux biographiques de l'auteur d'origine (stage informatique, Pays-Bas,
+# Polytech, disponible février 2027, 22 semaines minimum) qui ne doivent jamais
+# subsister dans les fichiers d'exemple du CV livrés avec le paquet
+# (`jobsearch/resources/examples/cv_data.example.yaml`,
+# `.../cv_master.example.md`) — ces fichiers doivent rester un CV générique,
+# aussi bien utilisable par un juriste que par un développeur (voir CLAUDE.md,
+# 5e occurrence de la famille de bug « valeur d'auteur héritée »). Comparaison
+# insensible à la casse.
+_CV_AUTHOR_LITERALS = [
+    "pays-bas",
+    "netherlands",
+    "polytech",
+    "info5",
+    "février 2027",
+    "22 semaines",
+]
+
+
+def _check_cv_examples() -> list[str]:
+    """Recherche les littéraux de `_CV_AUTHOR_LITERALS` dans les deux fichiers
+    d'exemple du CV — ce sont eux qui alimentent `{cv_summary}` du prompt de
+    lettre de motivation (`jobsearch/generator.py`) pour tout nouvel
+    utilisateur n'ayant pas encore personnalisé son CV. Fonction pure, sans
+    dépendance à un profil simulé (contrairement au reste de
+    `check_wizard_defaults`) : ces fichiers ne varient pas selon les réponses
+    de l'assistant."""
+    anomalies: list[str] = []
+    paths = {
+        "cv_data.example.yaml": PATHS.example("cv_data.example.yaml"),
+        "cv_master.example.md": PATHS.example("cv_master.example.md"),
+    }
+    for filename, path in paths.items():
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            content_lower = f.read().lower()
+        for literal in _CV_AUTHOR_LITERALS:
+            if literal in content_lower:
+                anomalies.append(
+                    f"{filename} contient le littéral biographique de l'auteur {literal!r} "
+                    "— ce fichier doit rester un CV générique (voir CLAUDE.md)."
+                )
+    return anomalies
+
+
+# Littéraux de l'auteur d'origine (ex-config/sources.yaml, calibrée sur un
+# stage informatique aux Pays-Bas, avant sa neutralisation en
+# config/sources.example.yaml) — ne doivent jamais réapparaître dans un
+# sources.yaml généré pour un profil différent. Comparaison insensible à la
+# casse (voir check_wizard_defaults, point 3).
+_SOURCES_AUTHOR_LITERALS = [
+    "software intern",
+    "netherlands",
+    "développeur informatique",
+    "stage développeur",
+]
 
 
 def render_filter_prompt(values: dict) -> str:
@@ -933,16 +1539,17 @@ def render_env_file(keys: dict) -> str:
     """Génère `.env` à partir de `.env.example` (commentaires conservés) —
     écrit même quand toutes les clés sont sautées, pour que `.env` existe
     toujours après un `--setup` complet (sinon `_check_setup`, dans
-    `cli.py`, continue de le réclamer)."""
-    example_path = os.path.join(PACKAGE_ROOT, ".env.example")
-    if os.path.exists(example_path):
-        with open(example_path, encoding="utf-8") as f:
-            text = f.read()
-    else:
-        text = (
-            "ANTHROPIC_API_KEY=\n\nNOTIFY_EMAIL=\nSMTP_HOST=smtp.gmail.com\nSMTP_PORT=587\n"
-            "SMTP_USER=\nSMTP_PASSWORD=\n\nADZUNA_APP_ID=\nADZUNA_APP_KEY=\n"
+    `cli.py`, continue de le réclamer).
+
+    Aucun repli en dur : un `.env.example` manquant est une anomalie
+    d'installation (voir `render_search_yaml`)."""
+    example_path = PATHS.example(".env.example")
+    if not os.path.exists(example_path):
+        raise FileNotFoundError(
+            f"Fichier d'exemple manquant : {example_path} — installation du paquet incomplète."
         )
+    with open(example_path, encoding="utf-8") as f:
+        text = f.read()
     replacements = {
         "ANTHROPIC_API_KEY=your_key_here": f"ANTHROPIC_API_KEY={keys.get('key', '')}",
         "NOTIFY_EMAIL=": f"NOTIFY_EMAIL={keys.get('notify_email', '')}",
@@ -1416,6 +2023,11 @@ class SetupWizard(App):
             render_search_yaml(search_values, prefilter_values),
         ))
         items.append((
+            "Sources à scraper (sources.yaml)",
+            os.path.join(PATHS.config_dir, "sources.yaml"),
+            render_sources_yaml(search_values, prefilter_values),
+        ))
+        items.append((
             "Prompt de scoring (filter.txt)",
             os.path.join(PATHS.user_prompts_dir, "filter.txt"),
             render_filter_prompt(search_values),
@@ -1432,22 +2044,32 @@ class SetupWizard(App):
         # on les initialise ici depuis les `.example` du paquet : un CV générique,
         # explicitement signalé comme tel (voir ConfirmWriteScreen/SummaryScreen),
         # à personnaliser ensuite via `cv_master/cv_data.yaml` (onglet Réglages, touche 6).
-        cv_example_data = os.path.join(PACKAGE_ROOT, "cv_master", "cv_data.example.yaml")
-        cv_example_md = os.path.join(PACKAGE_ROOT, "cv_master", "cv_master.example.md")
-        if os.path.exists(cv_example_data):
-            with open(cv_example_data, encoding="utf-8") as f:
-                items.append((
-                    "CV master, générique à personnaliser (cv_data.yaml)",
-                    os.path.join(PATHS.cv_dir, "cv_data.yaml"),
-                    f.read(),
-                ))
-        if os.path.exists(cv_example_md):
-            with open(cv_example_md, encoding="utf-8") as f:
-                items.append((
-                    "Résumé CV, générique à personnaliser (cv_master.md)",
-                    os.path.join(PATHS.cv_dir, "cv_master.md"),
-                    f.read(),
-                ))
+        # Aucune garde silencieuse : un `.example` absent ici, c'est exactement le bug
+        # qui faisait annoncer une réussite à l'assistant tout en n'écrivant jamais ces
+        # deux fichiers — d'où la boucle infinie de `_check_setup` sur une installation
+        # pipx (les `.example` n'étaient pas embarqués dans le paquet).
+        cv_example_data = PATHS.example("cv_data.example.yaml")
+        cv_example_md = PATHS.example("cv_master.example.md")
+        if not os.path.exists(cv_example_data):
+            raise FileNotFoundError(
+                f"Fichier d'exemple manquant : {cv_example_data} — installation du paquet incomplète."
+            )
+        if not os.path.exists(cv_example_md):
+            raise FileNotFoundError(
+                f"Fichier d'exemple manquant : {cv_example_md} — installation du paquet incomplète."
+            )
+        with open(cv_example_data, encoding="utf-8") as f:
+            items.append((
+                "CV master, générique à personnaliser (cv_data.yaml)",
+                os.path.join(PATHS.cv_dir, "cv_data.yaml"),
+                f.read(),
+            ))
+        with open(cv_example_md, encoding="utf-8") as f:
+            items.append((
+                "Résumé CV, générique à personnaliser (cv_master.md)",
+                os.path.join(PATHS.cv_dir, "cv_master.md"),
+                f.read(),
+            ))
         return items
 
     @work

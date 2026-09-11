@@ -10,6 +10,12 @@ set -e
 # du répertoire courant depuis lequel setup.sh est appelé.
 PACKAGE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Les fichiers `.example` sont des ressources du paquet Python (embarquées via
+# `importlib.resources`, voir jobsearch/config.py:Paths.example) — pas des
+# fichiers de config perso : ils vivent sous jobsearch/resources/examples/,
+# pas à la racine du dépôt.
+EXAMPLES_DIR="$PACKAGE_ROOT/jobsearch/resources/examples"
+
 JOBSEARCH_HOME="${JOBSEARCH_HOME:-$HOME/.jobsearch}"
 
 GREEN='\033[0;32m'
@@ -39,12 +45,12 @@ echo ""
 
 mkdir -p "$JOBSEARCH_HOME/config" "$JOBSEARCH_HOME/data/offers" "$JOBSEARCH_HOME/output" "$JOBSEARCH_HOME/cv_master"
 
-copy_if_missing "$PACKAGE_ROOT/.env.example"                    "$JOBSEARCH_HOME/config/.env"
-copy_if_missing "$PACKAGE_ROOT/config/profile.example.yaml"     "$JOBSEARCH_HOME/config/profile.yaml"
-copy_if_missing "$PACKAGE_ROOT/config/search.example.yaml"      "$JOBSEARCH_HOME/config/search.yaml"
-copy_if_missing "$PACKAGE_ROOT/config/sources.yaml"              "$JOBSEARCH_HOME/config/sources.yaml"
-copy_if_missing "$PACKAGE_ROOT/cv_master/cv_data.example.yaml"  "$JOBSEARCH_HOME/cv_master/cv_data.yaml"
-copy_if_missing "$PACKAGE_ROOT/cv_master/cv_master.example.md"  "$JOBSEARCH_HOME/cv_master/cv_master.md"
+copy_if_missing "$EXAMPLES_DIR/.env.example"                    "$JOBSEARCH_HOME/config/.env"
+copy_if_missing "$EXAMPLES_DIR/profile.example.yaml"             "$JOBSEARCH_HOME/config/profile.yaml"
+copy_if_missing "$EXAMPLES_DIR/search.example.yaml"              "$JOBSEARCH_HOME/config/search.yaml"
+copy_if_missing "$EXAMPLES_DIR/sources.example.yaml"             "$JOBSEARCH_HOME/config/sources.yaml"
+copy_if_missing "$EXAMPLES_DIR/cv_data.example.yaml"             "$JOBSEARCH_HOME/cv_master/cv_data.yaml"
+copy_if_missing "$EXAMPLES_DIR/cv_master.example.md"             "$JOBSEARCH_HOME/cv_master/cv_master.md"
 
 echo ""
 echo -e "${YELLOW}À faire maintenant :${NC}"

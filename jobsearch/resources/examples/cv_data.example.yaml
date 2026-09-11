@@ -1,0 +1,64 @@
+personal:
+  full_name: "Your Name"
+  location: "Your City, Country"
+  email: "your.email@example.com"
+  github: "github.com/yourusername"
+  accent_enabled: true
+
+education:
+  school: "Your University — Your Degree, Your Field of Study"
+  dates: "20XX – 20XX"
+  detail: "Your School · Your specialization"
+
+availability:
+  start: "[Month Year]"
+  duration: "[Duration, if applicable]"
+  mobility: "[Your location / mobility preferences]"
+
+languages:
+  - name: "French"
+    level: "Native"
+  - name: "English"
+    level: "Fluent · C1"
+
+other: "[Additional certification, e.g. driver's licence]<br>[Other relevant tool]"
+
+experiences:
+  - title: "[Job Title] — Company Name"
+    date: "Month – Month Year"
+    subtitle: "Internship · City, Country · N months"
+    bullets:
+      - "Achieved result X by doing Y"
+      - "Improved metric Z by N%"
+      - "Contributed to project with N deliverables"
+    stack: ["Skill/tool 1", "Skill/tool 2", "Skill/tool 3"]
+
+  - title: "[Job Title] — Another Company"
+    date: "Year · N months"
+    subtitle: "Part-time · City, Country"
+    bullets:
+      - "Handled task X"
+      - "Supported team on ongoing activity Y"
+    stack: ["Skill/tool 1", "Skill/tool 2"]
+
+projects:
+  - title: "Project Name — Brief Description"
+    date: "Year – Year"
+    subtitle: "Academic project · N months"
+    bullets:
+      - "Designed and carried out X"
+      - "Achieved result Z"
+    stack: ["Skill/tool 1", "Skill/tool 2", "Skill/tool 3"]
+
+  - title: "Another Project — Brief Description"
+    date: "Year – Year"
+    subtitle: "Personal project · N months"
+    bullets:
+      - "Built X from scratch"
+    stack: ["Skill/tool 1"]
+
+skills:
+  proficient: "[Skill 1] · [Skill 2] · [Skill 3]"
+  familiar: "[Skill 4] · [Skill 5] · [Skill 6]"
+  tools: "[Tool 1] · [Tool 2] · [Tool 3]"
+  domains: "[Domain 1] · [Domain 2] · [Domain 3]"

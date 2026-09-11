@@ -1,0 +1,86 @@
+# sources.yaml — les sources à scraper (par opposition à search.yaml, qui est
+# le SUJET de recherche). Copié tel quel vers JOBSEARCH_HOME/config/sources.yaml
+# par setup.sh — plus rapidement remplacé par un fichier généré et adapté à ton
+# secteur/tes pays via `jobsearch --setup` (étapes « sujet » + « pré-filtre »,
+# voir jobsearch/wizard.py::render_sources_yaml et
+# jobsearch/resources/source_presets.yaml). Cette version est un exemple
+# générique, une entrée par type de source pris en charge : à dupliquer/adapter,
+# ou à laisser `--setup` écrire pour toi.
+#
+# `enabled: false` désactive une source individuellement, sans la supprimer
+# (onglet Réglages de la TUI, touche 6, ou édition directe de ce fichier).
+# `group`/`optional: true` : source désactivée par défaut, incluse avec
+# `jobsearch --scrape --with <groupe>` (ex: --with fr).
+
+sources:
+  # --- rss : flux RSS générique (feedparser) ---
+  - name: "Exemple - Flux RSS générique"
+    url: "https://example.com/jobs.rss"
+    type: rss
+    country: "INTL"
+
+  # --- api_json : API JSON paginée, type Arbeitnow (généraliste, toutes professions) ---
+  - name: "Arbeitnow - Jobs EU"
+    url: "https://www.arbeitnow.com/api/job-board-api"
+    type: api_json
+    country: "EU"
+    params:
+      job_types:
+        - internship   # ex: internship, full-time, contract — à adapter au type de contrat recherché
+      pages: 2
+
+  # --- jobspy : LinkedIn / Indeed via python-jobspy (dépendance optionnelle,
+  # voir CLAUDE.md « Piège — version de Python imposée par python-jobspy ») ---
+  - name: "JobSpy - Exemple de recherche"
+    type: jobspy
+    country: "XX"   # code du pays visé, à titre indicatif (n'est pas transmis à l'API)
+    params:
+      sites: [linkedin, indeed]
+      search_term: "exemple de poste recherché"
+      location: "Nom du pays ou de la ville"
+      country_indeed: "nom_pays_en_minuscule"   # nom anglais du pays, ex: "germany", "poland" — voir doc python-jobspy
+      hours_old: 72
+      results_wanted: 50
+
+  # --- adzuna : requiert ADZUNA_APP_ID / ADZUNA_APP_KEY dans .env
+  # (gratuits sur developer.adzuna.com). Adzuna ne couvre pas tous les pays —
+  # vérifier sur developer.adzuna.com avant de configurer un pays donné. ---
+  - name: "Adzuna XX - Exemple de recherche"
+    type: adzuna
+    country: "XX"
+    params:
+      country: xx   # code ISO 2 lettres en minuscules, ex: "nl", "fr", "de"
+      what: "exemple de poste recherché"
+      pages: 2
+
+  # --- wttj : Welcome to the Jungle, API publique v3, sans authentification.
+  # Pièges vérifiés (voir CLAUDE.md) : chaque offre est répétée une fois par bureau
+  # de l'entreprise → dédup sur (organization.slug, name), jamais reference/slug.
+  # `per_page` est verrouillé à 10 côté serveur ; `contract_type` est refusé en query
+  # (422) → filtré côté client via `contract_types`. `locations` est un mapping
+  # YAML natif (sérialisé en JSON par le fetch), pas une chaîne. ---
+  - name: "WTTJ - Exemple de recherche"
+    type: wttj
+    country: "XX"
+    params:
+      job_title: "exemple de poste recherché"
+      locations:
+        country: "Nom du pays"
+        country_code: "XX"
+        label: "Libellé affiché"
+        latitude: 0.0
+        longitude: 0.0
+      contract_types: [internship, apprenticeship]   # valeurs vérifiées uniquement pour ces deux-là
+      pages: 3
+
+  # --- hellowork : FR uniquement, server-rendered + JSON-LD, désactivée par
+  # défaut (groupe `fr`, activer avec --with fr) ---
+  - name: "HelloWork - Exemple de recherche"
+    type: hellowork
+    group: fr
+    optional: true
+    country: "FR"
+    params:
+      k: "exemple de poste recherché"
+      c: "Stage"   # libellé du type de contrat attendu par HelloWork, ex: "Stage", "CDI"
+      pages: 2

@@ -1,0 +1,311 @@
+# source_presets.yaml — catalogue par secteur utilisé par `jobsearch --setup`
+# (étape « pré-filtre ») pour générer `sources.yaml` sans que l'utilisateur ait
+# à toucher au code Python ni à connaître le format des sources. Calqué sur
+# `prefilter_presets.yaml` (mêmes 7 secteurs) — voir `jobsearch/wizard.py`,
+# fonction `render_sources_yaml`.
+#
+# Chaque secteur porte :
+#   `queries_en` : 2-4 termes de recherche métier en anglais (utilisés pour
+#                  LinkedIn/Indeed via jobspy, et Adzuna). Combinés à l'écriture
+#                  avec un terme dérivé du type de contrat (voir
+#                  `derive_contrat_en` dans wizard.py) — ex: "software
+#                  engineer" + "internship".
+#   `queries_fr` : 2-4 termes de recherche métier en français (utilisés pour
+#                  WTTJ `job_title` et HelloWork `k`, deux sites francophones).
+#   `feeds`      : sources à URL figée (type `rss`/`api_json`) pertinentes pour
+#                  ce secteur, au format exact des entrées de `sources.yaml`.
+#                  NE JAMAIS inventer d'URL ici : une URL fausse produit une
+#                  source en erreur à chaque scrape. Le secteur `informatique`
+#                  conserve les 8 flux tech/remote historiques (RemoteOK,
+#                  Himalayas, Jobicy) + Arbeitnow. Les autres secteurs n'ont,
+#                  à la connaissance de l'auteur, aucun flux RSS de qualité
+#                  équivalent (pas de "RemoteOK du droit") : ils ne reçoivent
+#                  qu'Arbeitnow (généraliste, toutes professions). L'essentiel
+#                  du volume pour ces secteurs vient donc des sources
+#                  paramétrables (LinkedIn/Indeed/Adzuna/WTTJ/HelloWork,
+#                  générées dynamiquement depuis `queries_en`/`queries_fr` et
+#                  la géographie choisie) — libre à l'utilisateur d'ajouter ses
+#                  propres flux RSS sectoriels dans `sources.yaml` ensuite
+#                  (onglet Réglages, touche 6), rien n'empêche de dupliquer une
+#                  entrée `rss` existante.
+#
+# Ajouter un secteur : dupliquer une entrée (queries_en/queries_fr/feeds),
+# changer la clé (utilisée comme identifiant interne, doit correspondre à une
+# clé de `prefilter_presets.yaml` pour que le secteur choisi à l'étape
+# pré-filtre pilote aussi `sources.yaml`). Aucune modification de code requise.
+
+informatique:
+  queries_en:
+    - "software engineer"
+    - "software developer"
+  queries_fr:
+    - "développeur informatique"
+    - "ingénieur logiciel"
+  feeds:
+    - name: "RemoteOK - Internships"
+      url: "https://remoteok.com/remote-intern-jobs.rss"
+      type: rss
+      country: "INTL"
+    - name: "RemoteOK - Python Jobs"
+      url: "https://remoteok.com/remote-python-jobs.rss"
+      type: rss
+      country: "INTL"
+    - name: "RemoteOK - Backend Jobs"
+      url: "https://remoteok.com/remote-backend-jobs.rss"
+      type: rss
+      country: "INTL"
+    - name: "RemoteOK - JavaScript Jobs"
+      url: "https://remoteok.com/remote-javascript-jobs.rss"
+      type: rss
+      country: "INTL"
+    - name: "RemoteOK - Java Jobs"
+      url: "https://remoteok.com/remote-java-jobs.rss"
+      type: rss
+      country: "INTL"
+    - name: "Himalayas - Remote Jobs"
+      url: "https://himalayas.app/jobs/rss"
+      type: rss
+      country: "INTL"
+    - name: "Jobicy - Internships"
+      url: "https://jobicy.com/?feed=job_feed&job_types=internship"
+      type: rss
+      country: "INTL"
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        # `job_types` est régénéré à l'écriture depuis le type de contrat
+        # choisi (voir `derive_arbeitnow_job_types` dans wizard.py) — la
+        # valeur ici n'est qu'un repli si jamais le type de contrat n'est pas
+        # reconnu.
+        job_types:
+          - internship
+
+sante:
+  queries_en:
+    - "nurse"
+    - "healthcare"
+  queries_fr:
+    - "infirmier"
+    - "soignant"
+  # Aucun flux RSS santé connu de qualité (voir note en tête de fichier) —
+  # seul Arbeitnow (généraliste) est inclus, le reste du volume vient des
+  # sources paramétrables (LinkedIn/Indeed/Adzuna/WTTJ/HelloWork).
+  feeds:
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        job_types: []
+
+droit:
+  queries_en:
+    - "legal counsel"
+    - "paralegal"
+  queries_fr:
+    - "juriste"
+    - "avocat"
+  feeds:
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        job_types: []
+
+commerce:
+  queries_en:
+    - "sales"
+    - "business developer"
+  queries_fr:
+    - "commercial"
+    - "chargé de clientèle"
+  feeds:
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        job_types: []
+
+communication:
+  queries_en:
+    - "marketing"
+    - "communication manager"
+  queries_fr:
+    - "chargé de communication"
+    - "marketing digital"
+  feeds:
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        job_types: []
+
+ingenierie:
+  queries_en:
+    - "mechanical engineer"
+    - "engineer"
+  queries_fr:
+    - "ingénieur mécanique"
+    - "ingénieur"
+  feeds:
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        job_types: []
+
+enseignement:
+  queries_en:
+    - "teacher"
+    - "tutor"
+  queries_fr:
+    - "enseignant"
+    - "formateur"
+  feeds:
+    - name: "Arbeitnow - Jobs EU"
+      url: "https://www.arbeitnow.com/api/job-board-api"
+      type: api_json
+      country: "EU"
+      params:
+        pages: 2
+        job_types: []
+
+# ---------------------------------------------------------------------------
+# Table géographique — placée ici plutôt que dans un module Python : elle est
+# du même ordre de nature que le reste de ce fichier (données déclaratives
+# consultées uniquement par `jobsearch --setup`, jamais par le pipeline de
+# scrape lui-même), et vivre à côté des presets évite un module dédié pour une
+# poignée de constantes. Sert à générer les paramètres géographiques des
+# sources WTTJ (`locations`), Adzuna (`country`) et jobspy (`country_indeed`)
+# à partir du/des pays prioritaires choisis à l'étape « sujet » de l'assistant
+# (`jobsearch/wizard.py`, fonction `resolve_country_code` fait le lien entre
+# le texte libre saisi par l'utilisateur, ex. "Pays-Bas", et une clé ci-dessous
+# en réutilisant les tables de `jobsearch/tracker.py`, `_COUNTRY_NAMES`/
+# `_COUNTRY_ALIASES` — pas de troisième table de noms de pays à maintenir).
+#
+# `adzuna_supported` : Adzuna ne couvre pas tous les pays européens. Liste
+# retenue ici (NL, FR, DE, GB, IT, AT, PL) d'après la documentation publique
+# de l'API Adzuna (developer.adzuna.com) au moment de l'écriture — à vérifier
+# soi-même si un pays de cette liste ne fonctionne plus, ou si un pays absent
+# de la liste est en fait couvert : mieux vaut ne pas générer une source
+# Adzuna cassée que d'en générer une hasardeuse.
+# `country_indeed` : valeur attendue par `python-jobspy` pour le paramètre
+# `country_indeed` — seule la valeur "netherlands" a été vérifiée en usage
+# réel (config d'origine de ce dépôt) ; les autres sont les noms de pays en
+# anglais/minuscules attendus par la documentation de jobspy, à ajuster si
+# une source jobspy échoue pour un pays donné.
+geo:
+  NL:
+    label: "Pays-Bas"
+    country_indeed: "netherlands"
+    latitude: 52.25
+    longitude: 5.75
+    adzuna_supported: true
+  FR:
+    label: "France"
+    country_indeed: "france"
+    latitude: 46.6
+    longitude: 2.3
+    adzuna_supported: true
+  DE:
+    label: "Allemagne"
+    country_indeed: "germany"
+    latitude: 51.0
+    longitude: 10.0
+    adzuna_supported: true
+  BE:
+    label: "Belgique"
+    country_indeed: "belgium"
+    latitude: 50.85
+    longitude: 4.35
+    adzuna_supported: false
+  ES:
+    label: "Espagne"
+    country_indeed: "spain"
+    latitude: 40.0
+    longitude: -4.0
+    adzuna_supported: false
+  IT:
+    label: "Italie"
+    country_indeed: "italy"
+    latitude: 42.5
+    longitude: 12.5
+    adzuna_supported: true
+  GB:
+    label: "Royaume-Uni"
+    country_indeed: "uk"
+    latitude: 54.0
+    longitude: -2.0
+    adzuna_supported: true
+  IE:
+    label: "Irlande"
+    country_indeed: "ireland"
+    latitude: 53.4
+    longitude: -8.2
+    adzuna_supported: false
+  CH:
+    label: "Suisse"
+    country_indeed: "switzerland"
+    latitude: 46.8
+    longitude: 8.2
+    adzuna_supported: false
+  LU:
+    label: "Luxembourg"
+    country_indeed: "luxembourg"
+    latitude: 49.6
+    longitude: 6.1
+    adzuna_supported: false
+  PT:
+    label: "Portugal"
+    country_indeed: "portugal"
+    latitude: 39.5
+    longitude: -8.0
+    adzuna_supported: false
+  SE:
+    label: "Suède"
+    country_indeed: "sweden"
+    latitude: 62.0
+    longitude: 15.0
+    adzuna_supported: false
+  DK:
+    label: "Danemark"
+    country_indeed: "denmark"
+    latitude: 56.0
+    longitude: 10.0
+    adzuna_supported: false
+  NO:
+    label: "Norvège"
+    country_indeed: "norway"
+    latitude: 61.0
+    longitude: 8.5
+    adzuna_supported: false
+  FI:
+    label: "Finlande"
+    country_indeed: "finland"
+    latitude: 64.0
+    longitude: 26.0
+    adzuna_supported: false
+  AT:
+    label: "Autriche"
+    country_indeed: "austria"
+    latitude: 47.5
+    longitude: 14.5
+    adzuna_supported: true
+  PL:
+    label: "Pologne"
+    country_indeed: "poland"
+    latitude: 52.0
+    longitude: 19.0
+    adzuna_supported: true

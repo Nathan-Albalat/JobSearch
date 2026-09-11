@@ -67,6 +67,7 @@ from jobsearch.tracker import (
     record_generated,
 )
 from jobsearch.config import PATHS, get_search, settings_files
+from jobsearch.sources_toggle import load_sources_state, set_source_enabled
 
 
 QUEUE_PATH = os.path.join(PATHS.data_dir, "gen_queue.json")
@@ -350,6 +351,9 @@ HELP_TEXT = """\
   [b #7aa2f7]↑ / ↓[/]   Naviguer
   [b #7aa2f7]entrée[/]  Ouvrir le fichier dans l'éditeur (copie d'abord le défaut du
              paquet vers la config utilisateur si besoin, avant édition)
+  [b #7aa2f7]o[/]       Gérer les sources de scraping (activer/désactiver individuellement,
+             espace pour basculer, échap pour fermer — écrit immédiatement dans
+             config/sources.yaml, indépendant des groupes --with/--without)
   [b #7aa2f7]r[/]       Recharger après édition (relit search.yaml, invalide le cache)
 """
 
@@ -576,6 +580,72 @@ class ConfirmScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class SourcesScreen(ModalScreen):
+    """Activation/désactivation individuelle des sources de scraping.
+
+    Chaque bascule (`espace`) écrit immédiatement sur `config/sources.yaml`
+    via `jobsearch.sources_toggle.set_source_enabled` (édition ligne à ligne,
+    commentaires préservés) — pas de bouton "valider" ni d'état intermédiaire
+    à confirmer, contrairement aux autres modales de saisie.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Fermer"),
+        Binding("space", "toggle_source", "Activer/désactiver", show=False),
+    ]
+
+    def __init__(self, config_dir: str = PATHS.config_dir) -> None:
+        super().__init__()
+        self._config_dir = config_dir
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="sources-box"):
+            yield Label("Sources de scraping (espace : activer/désactiver · échap : fermer) :")
+            yield DataTable(id="sources-table", cursor_type="row")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#sources-table", DataTable)
+        table.add_columns("État", "Nom", "Type", "Pays", "Groupe")
+        self.refresh_table()
+
+    def refresh_table(self) -> None:
+        table = self.query_one("#sources-table", DataTable)
+        # Préserve la ligne sous le curseur, comme `StageTUI._keep_cursor` — cette
+        # modale n'a pas accès à cette méthode (définie sur `StageTUI`), on
+        # réimplémente donc la même logique en local plutôt que de la partager.
+        previous = None
+        if table.row_count:
+            key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+            previous = str(key.value)
+        table.clear()
+        for s in load_sources_state(self._config_dir):
+            state_cell = "[green]✓[/green]" if s["enabled"] else "[red]✗[/red]"
+            group_cell = f"{s['group']} (optionnelle)" if s["optional"] else ""
+            table.add_row(
+                *_cells([state_cell, s["name"], s["type"], s["country"], group_cell]),
+                key=s["name"],
+            )
+        if previous:
+            try:
+                table.move_cursor(row=table.get_row_index(previous))
+            except (KeyError, RowDoesNotExist):
+                pass  # la source n'existe plus (fichier édité entre-temps)
+
+    def action_toggle_source(self) -> None:
+        table = self.query_one("#sources-table", DataTable)
+        if table.row_count == 0:
+            return
+        key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+        name = str(key.value)
+        current = next(
+            (s for s in load_sources_state(self._config_dir) if s["name"] == name), None
+        )
+        if current is None:
+            return
+        set_source_enabled(name, not current["enabled"], self._config_dir)
+        self.refresh_table()
+
+
 class StageTUI(App):
     TITLE = "JobSearch — pipeline de stage"
 
@@ -684,7 +754,17 @@ class StageTUI(App):
         max-height: 90%;
         align: center middle;
     }
-    HelpScreen, NoteScreen, GenNotesScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen, InvalidReasonScreen { align: center middle; }
+    #sources-box {
+        background: $surface;
+        border: round $accent;
+        padding: 1 2;
+        width: 90%;
+        max-width: 110;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    HelpScreen, NoteScreen, GenNotesScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen, InvalidReasonScreen, SourcesScreen { align: center middle; }
     #bottom-bar { dock: bottom; height: 2; }
     #status-bar { height: 1; background: $panel; color: $text-muted; }
     """
@@ -786,7 +866,8 @@ class StageTUI(App):
                     yield Static(
                         "[b]Recommandé[/b] : personnalise le prompt de scoring (config/prompts/filter.txt) "
                         "et le pré-filtre (search.yaml) avec des exemples et mots-clés réels de ta recherche — "
-                        "le barème livré est générique, un jeu d'exemples calibré donne un classement nettement plus précis.",
+                        "le barème livré est générique, un jeu d'exemples calibré donne un classement nettement plus précis. "
+                        "[dim]`o` : activer/désactiver individuellement une source de scraping.[/dim]",
                         id="settings-banner",
                     )
                     with Horizontal():
@@ -1692,6 +1773,10 @@ class StageTUI(App):
                 if app["offer_id"] == oid and app.get("url"):
                     webbrowser.open(app["url"])
                     break
+        elif tab == "settings":
+            # `o` est libre dans cet onglet (pas d'offre/candidature à ouvrir dans le
+            # navigateur) — réutilisé pour la modale de gestion des sources.
+            self.push_screen(SourcesScreen())
 
     def action_open_offer_url(self) -> None:
         tab = self._active_tab()

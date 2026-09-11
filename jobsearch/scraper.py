@@ -571,6 +571,12 @@ def scrape_all(
             )
             continue
 
+        # Désactivation individuelle (indépendante du groupe) — voir onglet Réglages de
+        # la TUI ou `jobsearch/sources_toggle.py`. Par défaut `enabled` est absent = actif.
+        if source.get("enabled") is False:
+            print(f"  Ignorée : {source.get('name', '?')} — désactivée dans les réglages.")
+            continue
+
         print(f"  Scraping : {source.get('name', '?')}...")
         source_type = source.get("type", "rss")
         try:

@@ -8,11 +8,11 @@ from jobsearch.config import PACKAGE_ROOT, PROJECT_ROOT, PATHS
 def _check_setup() -> None:
     """Détecte les fichiers de config manquants (dans `JOBSEARCH_HOME`) et propose de lancer setup.sh."""
     required = {
-        PATHS.env_path: ".env.example",
-        os.path.join(PATHS.config_dir, "profile.yaml"): "config/profile.example.yaml",
-        os.path.join(PATHS.config_dir, "search.yaml"): "config/search.example.yaml",
-        os.path.join(PATHS.cv_dir, "cv_data.yaml"): "cv_master/cv_data.example.yaml",
-        os.path.join(PATHS.cv_dir, "cv_master.md"): "cv_master/cv_master.example.md",
+        PATHS.env_path: "jobsearch/resources/examples/.env.example",
+        os.path.join(PATHS.config_dir, "profile.yaml"): "jobsearch/resources/examples/profile.example.yaml",
+        os.path.join(PATHS.config_dir, "search.yaml"): "jobsearch/resources/examples/search.example.yaml",
+        os.path.join(PATHS.cv_dir, "cv_data.yaml"): "jobsearch/resources/examples/cv_data.example.yaml",
+        os.path.join(PATHS.cv_dir, "cv_master.md"): "jobsearch/resources/examples/cv_master.example.md",
     }
     missing = [f for f in required if not os.path.exists(f)]
     if not missing:
@@ -51,17 +51,33 @@ def _check_setup() -> None:
     # cohérente, là où `setup.sh` se contente de copier les `.example` en laissant
     # l'utilisateur les éditer à la main. `setup.sh` reste disponible pour qui
     # préfère partir des fichiers bruts (ou n'a pas de terminal interactif).
-    answer = input("Lancer l'assistant de configuration (jobsearch --setup) ? [O/n] ").strip().lower()
-    if answer in ("", "o", "oui", "y", "yes"):
-        from jobsearch.wizard import run_setup
+    # `input()` lève EOFError dès que l'entrée n'est pas un terminal (pipe, cron,
+    # CI) : sans cette garde, l'utilisateur reçoit une trace Python au lieu d'un
+    # message. L'assistant étant une app Textual, il lui faut de toute façon un
+    # vrai terminal — on se contente donc d'afficher la marche à suivre.
+    if sys.stdin.isatty():
+        try:
+            answer = input("Lancer l'assistant de configuration (jobsearch --setup) ? [O/n] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = "n"
+            print()
+        if answer in ("", "o", "oui", "y", "yes"):
+            from jobsearch.wizard import run_setup
 
-        run_setup()
-        sys.exit(0)
-    print()
-    print("Abandon. Deux options pour configurer JobSearch :")
+            run_setup()
+            sys.exit(0)
+        print()
+        print("Abandon. Pour configurer JobSearch :")
+    else:
+        print("Pour configurer JobSearch (dans un terminal interactif) :")
     print("   • jobsearch --setup            assistant guidé (recommandé)")
-    print(f"   • bash {os.path.join(PACKAGE_ROOT, 'setup.sh')}")
-    print("     copie les fichiers d'exemple, à éditer ensuite à la main")
+    # `setup.sh` n'est PAS embarqué dans le paquet : en installation pipx,
+    # PACKAGE_ROOT vaut site-packages/ et le script n'y existe pas. Ne le
+    # proposer que s'il est réellement là (dépôt cloné, `pip install -e .`).
+    setup_sh = os.path.join(PACKAGE_ROOT, "setup.sh")
+    if os.path.isfile(setup_sh):
+        print(f"   • bash {setup_sh}")
+        print("     copie les fichiers d'exemple, à éditer ensuite à la main")
     sys.exit(1)
 
 
@@ -216,7 +232,13 @@ def cmd_letter_pdf(args) -> None:
 
 
 def main() -> None:
-    if "--migrate" not in sys.argv and "--setup" not in sys.argv:
+    # `--help`/`-h` est exempté au même titre que --migrate/--setup : _check_setup
+    # s'exécute AVANT parse_args, donc sans cette exemption le tout premier réflexe
+    # d'un nouvel utilisateur (lire l'aide) tombait sur la question de configuration
+    # au lieu de l'aide. Sans argument, en revanche, _check_setup reste pertinent :
+    # c'est précisément le moment d'indiquer quoi faire.
+    _EXEMPT = {"--migrate", "--setup", "--help", "-h"}
+    if not _EXEMPT.intersection(sys.argv[1:]):
         _check_setup()
 
     parser = argparse.ArgumentParser(

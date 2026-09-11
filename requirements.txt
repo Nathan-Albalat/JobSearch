@@ -1,3 +1,14 @@
+# Dépendances de base — équivalent de `[project.dependencies]` dans pyproject.toml.
+# Préférer `pip install -e .` (ou `pipx install .`), qui lit pyproject.toml :
+# ce fichier n'existe que pour un `pip install -r` sans installation du paquet.
+#
+# `python-jobspy` (LinkedIn / Indeed) est VOLONTAIREMENT absent : il épingle
+# NUMPY==1.26.3, qui n'a pas de wheel au-delà de Python 3.11 — l'installer sur un
+# Python plus récent tente une compilation de numpy et échoue sur une erreur
+# (`ModuleNotFoundError: No module named 'genapi'`) qui ne mentionne ni jobspy ni
+# la version de Python. C'est un extra optionnel : `pip install -e '.[jobspy]'`
+# dans un venv Python 3.11. Sans lui, les sources de type `jobspy` sont ignorées
+# avec un message explicite, le reste du scrape continue.
 anthropic
 feedparser
 requests
@@ -6,5 +17,4 @@ pyyaml
 python-dotenv
 jinja2
 weasyprint
-python-jobspy
 textual

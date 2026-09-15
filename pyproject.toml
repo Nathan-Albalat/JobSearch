@@ -38,6 +38,9 @@ jobspy = ["python-jobspy"]
 # API HTTP + vue web (jobsearch --serve) : même motif que [jobspy], extra
 # optionnel pour garder l'installation de base légère.
 server = ["fastapi", "uvicorn[standard]", "python-multipart"]
+# Serveur MCP (jobsearch --mcp) : même motif que [jobspy]/[server], extra optionnel
+# pour garder l'installation de base légère.
+mcp = ["mcp"]
 
 [project.urls]
 Homepage = "https://github.com/Nathan-Albalat/JobSearch"

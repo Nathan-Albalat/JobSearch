@@ -317,6 +317,13 @@ Exemples :
              "Nécessite l'extra jobsearch[server] (FastAPI + uvicorn).",
     )
     group.add_argument(
+        "--mcp",
+        action="store_true",
+        help="Démarre le serveur MCP (4 outils : list_applications, get_application, search_offers, "
+             "mark_application_status). Transport stdio par défaut (Claude Code, app Claude locale) — "
+             "voir --mcp-transport/--host/--port/--allow-write. Nécessite l'extra jobsearch[mcp].",
+    )
+    group.add_argument(
         "--mark",
         nargs=2,
         metavar=("OFFER_ID", "STATUS"),
@@ -454,8 +461,15 @@ Exemples :
     parser.add_argument(
         "--allow-write",
         action="store_true",
-        help="Avec --serve : active POST /api/applications/{id}/status (changement de statut à distance). "
-             "Absent par défaut — l'API est en lecture seule sans ce drapeau.",
+        help="Avec --serve/--mcp : active l'écriture (changement de statut à distance). "
+             "Absent par défaut — lecture seule sans ce drapeau.",
+    )
+    parser.add_argument(
+        "--mcp-transport",
+        default="stdio",
+        choices=["stdio", "streamable-http"],
+        help="Avec --mcp : transport à utiliser (défaut : stdio, pour un client MCP local). "
+             "streamable-http nécessite --host/--port et suit le même garde-fou réseau que --serve.",
     )
 
     args = parser.parse_args()
@@ -496,6 +510,16 @@ Exemples :
         from jobsearch.server import run_server  # import paresseux : fastapi/uvicorn requis seulement ici
 
         run_server(host=args.host, port=args.port, allow_write=args.allow_write)
+    elif args.mcp:
+        # Import paresseux : `mcp` requis seulement ici (extra jobsearch[mcp]).
+        if args.mcp_transport == "stdio":
+            from jobsearch.mcp_server import run_mcp_stdio
+
+            run_mcp_stdio(allow_write=args.allow_write)
+        else:
+            from jobsearch.mcp_server import run_mcp_streamable_http
+
+            run_mcp_streamable_http(host=args.host, port=args.port, allow_write=args.allow_write)
     elif args.mark:
         offer_id, status = args.mark
         try:

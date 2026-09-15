@@ -135,6 +135,7 @@ jobsearch --record <offer_id>              # enregistre dans le suivi sans rien 
 jobsearch --tui                            # interface interactive
 jobsearch --applications --json            # suivi en JSON (même forme que l'API)
 jobsearch --serve                          # API HTTP + vue web mobile (extra `jobsearch[server]`)
+jobsearch --mcp                            # serveur MCP pour Claude Code / app Claude (extra `jobsearch[mcp]`)
 jobsearch --applications                   # tableau de suivi
 jobsearch --mark <offer_id> <status>       # met à jour le statut d'une candidature
 jobsearch --mark-duplicate <offer_id> <target_id>  # marque comme doublon d'une candidature existante
@@ -206,6 +207,42 @@ jobsearch --serve --host 100.x.y.z --allow-write
 ```
 
 Aucun port n'est ouvert sur Internet et le trafic est chiffré de bout en bout. Attention : la machine doit être allumée pour répondre — `JOBSEARCH_HOME` rend le déménagement vers un Raspberry Pi toujours allumé ou un petit VPS trivial si la contrainte devient gênante.
+
+### Serveur MCP — Claude Code / app Claude
+
+Pour qu'un client MCP (Claude Code, app Claude sur la machine) réponde directement aux questions sur ta recherche, sans passer par l'API HTTP :
+
+```bash
+pipx install 'jobsearch[mcp]' ...        # ou : pip install -e '.[mcp]'
+jobsearch --mcp                          # transport stdio, lecture seule
+jobsearch --mcp --allow-write            # autorise aussi le changement de statut
+```
+
+Exactement **4 outils**, volontairement peu nombreux (chaque outil déclaré coûte du contexte dans toutes les conversations du client, pas seulement celles sur la recherche d'emploi) :
+
+| Outil | Rôle |
+|---|---|
+| `list_applications` | filtre `q`/`status`/`company`/`since`/`limit` — `q` cherche AUSSI dans les notes libres |
+| `get_application` | dossier complet : candidature + offre + lettre déjà envoyée |
+| `search_offers` | offres collectées non candidatées — `q`/`min_score`/`since`/`limit` |
+| `mark_application_status` | change le statut ; refusé sans `--allow-write` |
+
+Même principe que l'API HTTP : les échéances, dates d'entretien et noms de recruteurs vivent dans le champ de notes en texte libre, pas dans des champs dédiés — `q` y cherche aussi. Le schéma d'usage attendu est en deux temps : restreindre côté serveur (`list_applications(q=...)`), puis lire le petit sous-ensemble obtenu — jamais rapatrier toutes les candidatures.
+
+Exemple de configuration client (`claude_desktop_config.json` ou équivalent Claude Code, transport stdio) :
+
+```json
+{
+  "mcpServers": {
+    "jobsearch": {
+      "command": "jobsearch",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+Un transport `streamable-http` existe aussi (`--mcp --mcp-transport streamable-http --host H --port P`) pour un agent distant, avec le même garde-fou que `--serve` (refus de démarrer sur une adresse non-loopback sans `JOBSEARCH_API_TOKEN`) — mais **le SDK MCP 2.2.0 n'authentifie pas réellement les requêtes de ce transport par un jeton partagé** (seul un mécanisme OAuth complet est prévu). Ne l'expose donc jamais nu sur Internet : uniquement derrière un tunnel de confiance (Tailscale), comme `--serve --host <adresse Tailscale>`.
 
 ## Informations supplémentaires
 

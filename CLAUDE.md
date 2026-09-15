@@ -200,6 +200,11 @@ jobsearch --applications --json          # même sérialisation que l'API (jobse
 # Serveur HTTP : API JSON + vue web mobile (extra `jobsearch[server]`)
 jobsearch --serve                        # 127.0.0.1:8000, lecture seule
 jobsearch --serve --host 100.x.y.z --allow-write   # adresse Tailscale, écriture autorisée
+
+# Serveur MCP : 4 outils pour un client MCP (Claude Code, app Claude) — extra `jobsearch[mcp]`
+jobsearch --mcp                          # transport stdio, lecture seule
+jobsearch --mcp --allow-write            # autorise aussi mark_application_status
+
 jobsearch --mark <offer_id> sent --note "Candidature envoyée via le site"
 
 # Migration config perso + données du dépôt vers JOBSEARCH_HOME (copie uniquement, jamais destructif)
@@ -320,7 +325,7 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 
 Extra optionnel `jobsearch[server]` (FastAPI + uvicorn), même motif que `[jobspy]` : l'installation de base reste légère.
 
-- **`jobsearch/serialize.py`** (stdlib) — couche de sérialisation partagée entre `--applications --json`, l'API et le futur serveur MCP : `application_dict` (passe par `tracker.ensure_history`, jamais réimplémentée), `offer_dict`, `dossier_dict` et `offer_id_from_folder` (ce dernier factorise le motif `basename(f).rsplit("_", 1)[-1]`, auparavant dupliqué dans `jobsearch/tui.py`).
+- **`jobsearch/serialize.py`** (stdlib) — couche de sérialisation partagée entre `--applications --json`, l'API HTTP et le serveur MCP (`jobsearch/mcp_server.py`, voir plus bas) : `application_dict` (passe par `tracker.ensure_history`, jamais réimplémentée), `offer_dict`, `dossier_dict` et `offer_id_from_folder` (ce dernier factorise le motif `basename(f).rsplit("_", 1)[-1]`, auparavant dupliqué dans `jobsearch/tui.py`).
 - **`dossier_dict`** est la ressource clé pour un agent : elle joint en un seul objet la candidature, l'offre et la lettre déjà produite. Sans elle, répondre à « écris-moi un mail à propos de la candidature X » exigerait de recoller trois sources.
 - **`jobsearch/server.py`** — routes `/api/applications[/{id}]`, `/api/offers[/{id}]`, `/api/stats`, `/health`, et les pages web `/`, `/a/{id}`, `/offers`, `/stats`. **N'importe jamais `tui.py` (Textual) ni `generator.py` (Anthropic)** : le serveur doit démarrer vite et sans ces dépendances.
 - **Les notes libres portent l'information qui n'a pas de champ** — échéances, dates d'entretien, noms de recruteurs. C'est un choix délibéré : on ne peut pas anticiper la liste des champs utiles, et un modèle extrait très bien « entretien le 07/08 » d'une phrase. Deux conséquences dans le code : le paramètre `q` de `/api/applications` **cherche aussi dans les notes** (sans quoi une question dont le critère y vit obligerait l'agent à rapatrier toutes les candidatures), et la note est éditable depuis la vue web (`POST /a/{id}/note`) — une échéance se repère en lisant un mail sur son téléphone, pas devant un terminal. Ne pas confondre `notes` (candidature, suivi) et `gen_notes` (offre, consigne de génération).
@@ -342,6 +347,29 @@ Extra optionnel `jobsearch[server]` (FastAPI + uvicorn), même motif que `[jobsp
 **Tailscale** : le Mac et l'iPhone rejoignent le même tailnet, le serveur écoute sur l'adresse Tailscale de la machine. Aucun port ouvert sur Internet, trafic chiffré de bout en bout.
 
 **Limite à assumer** : la machine doit être allumée pour répondre. La séparation `JOBSEARCH_HOME` rend le déménagement vers un Raspberry Pi ou un petit VPS trivial si cette contrainte devient gênante.
+
+### Serveur MCP (`jobsearch --mcp`)
+
+Extra optionnel `jobsearch[mcp]` (paquet `mcp`), même motif que `[jobspy]`/`[server]`. **`jobsearch/mcp_server.py`** appelle directement les fonctions Python de `tracker`/`report`/`duplicates`/`serialize` (pas l'API HTTP — pas de dépendance à un serveur qui tourne) et respecte la même règle structurante que `server.py` : **n'importe jamais `tui.py` (Textual) ni `generator.py` (Anthropic)**.
+
+**Exactement 4 outils**, volontairement peu nombreux — chaque outil déclaré coûte du contexte dans *toutes* les conversations du client MCP, y compris celles sans rapport avec la recherche d'emploi :
+
+| Outil | Rôle |
+|---|---|
+| `list_applications` | filtres `q`/`status`/`company`/`since`/`limit` — `q` cherche AUSSI dans les notes |
+| `get_application` | le dossier joint : candidature + offre + lettre déjà envoyée (`dossier_dict`) |
+| `search_offers` | `q`/`min_score`/`since`/`limit` ; exclut candidatées/doublons/invalides |
+| `mark_application_status` | via `tracker.mark_status` (donc `ensure_history` respectée) ; refusé sans `--allow-write` |
+
+**Le schéma d'usage attendu est en deux temps** : restreindre côté serveur (`list_applications(q=...)`), **puis** lire le petit sous-ensemble obtenu — jamais rapatrier toutes les candidatures. Les descriptions des 4 outils insistent explicitement là-dessus, et rappellent que **les échéances, dates d'entretien et noms de recruteurs vivent dans le champ de notes en texte libre**, pas dans des champs dédiés (même remarque que pour `/api/applications?q=` ci-dessus) — sans cette indication dans la description, un modèle conclut que l'information n'existe pas plutôt que de filtrer puis lire.
+
+- `jobsearch --mcp` : transport **stdio** (cas principal — Claude Code, app Claude sur la même machine). Exemple de config client :
+  ```json
+  {"mcpServers": {"jobsearch": {"command": "jobsearch", "args": ["--mcp"]}}}
+  ```
+- `jobsearch --mcp --mcp-transport streamable-http --host H --port P` : agent distant. **Même garde-fou que `--serve`** (refus de démarrer sur une adresse non-loopback sans `JOBSEARCH_API_TOKEN`), mais **le SDK `mcp` 2.2.0 n'offre pas d'authentification par jeton partagé pour ce transport** (seul un `TokenVerifier` OAuth complet est prévu) — le jeton n'authentifie donc pas réellement les requêtes ici, contrairement à `--serve`. À n'exposer que derrière Tailscale, jamais nu sur Internet — documenté dans la docstring de `mcp_server.py` plutôt que de bricoler une pseudo-authentification.
+- `--mcp` n'est **pas** exempté de `_check_setup` (contrairement à `--migrate`/`--setup`/`--help`) : il a besoin de la config comme toute autre commande.
+- Pagination : mêmes bornes que l'API HTTP (`DEFAULT_LIMIT`/`MAX_LIMIT`, dupliquées dans `mcp_server.py` plutôt qu'importées de `server.py`, pour ne pas tirer FastAPI dans l'extra `[mcp]`).
 
 ---
 

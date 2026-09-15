@@ -56,6 +56,7 @@ from jobsearch.duplicates import (
 from jobsearch.filter import strip_html
 from jobsearch.flow import DEFAULT_FLOW_PATH, by_month_status, flow_tree, write_flow_html
 from jobsearch.report import load_filtered_offers
+from jobsearch.serialize import offer_id_from_folder
 from jobsearch.tracker import (
     STATUS_COLORS,
     STATUSES,
@@ -1082,7 +1083,7 @@ class StageTUI(App):
         dirs = self._candidature_dirs()
 
         def _letter_row_style(folder: str):
-            status = status_by_offer.get(os.path.basename(folder).rsplit("_", 1)[-1], "generated")
+            status = status_by_offer.get(offer_id_from_folder(folder), "generated")
             if status == "cancelled":
                 return Style(color="grey50", bgcolor=STATUS_COLORS["cancelled"])
             if status != "generated":
@@ -1140,7 +1141,7 @@ class StageTUI(App):
     def _letter_offer_info(self, folder: str) -> dict:
         """Retrouve entreprise/titre/lieu pour le rendu PDF : offre JSON via l'id du dossier,
         sinon commentaires de lettre.md, sinon nom du dossier."""
-        offer_id = os.path.basename(folder).rsplit("_", 1)[-1]
+        offer_id = offer_id_from_folder(folder)
         offer_path = os.path.join(PATHS.data_dir, "offers", f"{offer_id}.json")
         if os.path.exists(offer_path):
             with open(offer_path, encoding="utf-8") as f:
@@ -1795,7 +1796,7 @@ class StageTUI(App):
         folder = self._current_row_key("letters-table")
         if not folder:
             return
-        offer_id = os.path.basename(folder).rsplit("_", 1)[-1]
+        offer_id = offer_id_from_folder(folder)
         for app in load_applications():
             if app["offer_id"] == offer_id and app.get("url"):
                 webbrowser.open(app["url"])
@@ -2130,12 +2131,8 @@ class StageTUI(App):
         def save(note: str | None) -> None:
             if note is None:
                 return
-            apps = load_applications()
-            for app in apps:
-                if app["offer_id"] == oid:
-                    app["notes"] = note
-            from jobsearch.tracker import save_applications
-            save_applications(apps)
+            from jobsearch.tracker import set_note
+            set_note(oid, note)
             self.refresh_track()
             self.notify_status(f"Note enregistrée pour {oid}.")
 

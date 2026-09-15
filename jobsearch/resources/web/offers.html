@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Offres — JobSearch{% endblock %}
+{% block content %}
+<h1>Offres pertinentes ({{ offers|length }})</h1>
+{% if not offers %}
+<p class="muted">Aucune offre au-dessus du seuil pour l'instant.</p>
+{% endif %}
+{% for o in offers %}
+<a class="card" href="{{ o.url }}" target="_blank">
+  <div class="title">[{{ o.score if o.score is not none else "?" }}/10] {{ o.title or "Sans titre" }} — {{ o.company or "Entreprise inconnue" }}</div>
+  <div class="sub">{{ o.location }} · {{ o.source }}</div>
+</a>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ d.offer.company if d.offer else d.offer_id }} — JobSearch{% endblock %}
+{% block content %}
+{% set a = d.application %}
+{% set o = d.offer %}
+<h1>{{ (o.title if o else (a.title if a else d.offer_id)) or "Sans titre" }}</h1>
+<p class="sub">{{ (o.company if o else (a.company if a else "")) }}
+  {% if o and o.location %} · {{ o.location }}{% endif %}</p>
+
+{% if a %}
+<span class="badge" style="background: {{ a.status|statuscolor }};">{{ a.status_label }}</span>
+<h2>Historique</h2>
+<table>
+<tr><th>Statut</th><th>Date</th></tr>
+{% for ev in a.history %}
+<tr><td>{{ ev.status }}</td><td>{{ ev.at }}{% if ev.inferred %} ~{% endif %}</td></tr>
+{% endfor %}
+</table>
+<h2>Note</h2>
+{% if allow_write %}
+<form method="post" action="/a/{{ d.offer_id }}/note" class="block">
+  <textarea name="note" rows="4" placeholder="Échéance, date d'entretien, contact…">{{ a.notes or "" }}</textarea>
+  <button type="submit">Enregistrer la note</button>
+</form>
+{% else %}
+<p>{{ a.notes or "—" }}</p>
+{% endif %}
+
+{% if allow_write %}
+<h2>Changer le statut</h2>
+{% for s in statuses %}
+<form method="post" action="/a/{{ d.offer_id }}/status">
+  <input type="hidden" name="status" value="{{ s }}">
+  <button type="submit">{{ s }}</button>
+</form>
+{% endfor %}
+{% endif %}
+{% else %}
+<p class="muted">Pas encore de candidature enregistrée pour cette offre.</p>
+{% endif %}
+
+{% if o and o.url %}
+<p><a href="{{ o.url }}" target="_blank">Voir l'offre d'origine ↗</a></p>
+{% endif %}
+
+{% if d.letter_markdown %}
+<h2>Lettre de motivation</h2>
+<pre class="letter">{{ d.letter_markdown }}</pre>
+{% else %}
+<p class="muted">Aucune lettre générée pour cette offre.</p>
+{% endif %}
+
+<p class="sub">
+  PDF lettre : {{ "présent" if d.has_letter_pdf else "absent" }} ·
+  PDF CV : {{ "présent" if d.has_cv_pdf else "absent" }}
+</p>
+{% endblock %}

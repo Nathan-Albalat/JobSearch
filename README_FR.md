@@ -133,6 +133,8 @@ jobsearch --generate <offer_id> --letter-only  # lettre seule (1 appel Sonnet au
 jobsearch --generate <offer_id> --notes "..."  # consigne ponctuelle injectée dans les prompts lettre et CV
 jobsearch --record <offer_id>              # enregistre dans le suivi sans rien générer (aucun appel API)
 jobsearch --tui                            # interface interactive
+jobsearch --applications --json            # suivi en JSON (même forme que l'API)
+jobsearch --serve                          # API HTTP + vue web mobile (extra `jobsearch[server]`)
 jobsearch --applications                   # tableau de suivi
 jobsearch --mark <offer_id> <status>       # met à jour le statut d'une candidature
 jobsearch --mark-duplicate <offer_id> <target_id>  # marque comme doublon d'une candidature existante
@@ -172,6 +174,38 @@ jobsearch --from-file offre.html --title "Stage Développeur" --company "Criteo"
 ```
 
 ---
+
+## Accès distant — téléphone et agents
+
+Installe l'extra optionnel, puis lance le serveur :
+
+```bash
+pipx install 'jobsearch[server]' ...        # ou : pip install -e '.[server]'
+jobsearch --serve                           # 127.0.0.1:8000, lecture seule
+```
+
+Le même processus sert deux choses :
+
+- **Une vue web mobile** — candidatures, statuts et chronologie, offres récentes, et le diagramme de flux des statuts. HTML simple, une colonne, sans JavaScript : utilisable dans Safari sur un téléphone, là où aucun terminal n'est accessible.
+- **Une API JSON** (`/api/applications`, `/api/offers`, `/api/stats`) pour qu'un agent puisse répondre aux questions sur ta recherche. `?q=` cherche dans l'entreprise, le titre **et les notes libres** — échéances, dates d'entretien et noms de recruteurs y vivent plutôt que dans des champs dédiés, ce qui permet à l'agent de restreindre côté serveur au lieu de tout rapatrier.
+- **Notes éditables depuis le téléphone** — noter une échéance ou une date d'entretien depuis la page d'une candidature (nécessite `--allow-write`). `GET /api/applications/{id}` renvoie un objet unique joignant la candidature, l'offre et la lettre déjà envoyée — exactement ce qu'il faut pour rédiger une relance sans recoller trois sources.
+
+### Sécurité
+
+- Écoute sur `127.0.0.1` par défaut.
+- Définis `JOBSEARCH_API_TOKEN` dans `config/.env` pour exiger un jeton (en-tête `X-API-Token` pour l'API, cookie pour les pages — ouvre `http://<hôte>:8000/?token=<ton jeton>` une fois, le jeton est aussitôt retiré de l'URL).
+- **Le serveur refuse de démarrer** sur une adresse non locale si aucun jeton n'est défini.
+- L'écriture (changement de statut) exige `--allow-write` ; sans lui, la route répond 403.
+
+### L'exposer à ton téléphone
+
+Utilise **Tailscale** : mets la machine et le téléphone sur le même tailnet, puis écoute sur l'adresse Tailscale de la machine :
+
+```bash
+jobsearch --serve --host 100.x.y.z --allow-write
+```
+
+Aucun port n'est ouvert sur Internet et le trafic est chiffré de bout en bout. Attention : la machine doit être allumée pour répondre — `JOBSEARCH_HOME` rend le déménagement vers un Raspberry Pi toujours allumé ou un petit VPS trivial si la contrainte devient gênante.
 
 ## Informations supplémentaires
 

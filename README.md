@@ -133,6 +133,8 @@ jobsearch --generate <offer_id> --letter-only  # letter only (1 Sonnet call inst
 jobsearch --generate <offer_id> --notes "..."  # one-off instruction injected into the letter and CV prompts
 jobsearch --record <offer_id>              # record in tracking without generating anything (no API call)
 jobsearch --tui                            # interactive interface
+jobsearch --applications --json            # tracking as JSON (same shape as the API)
+jobsearch --serve                          # HTTP API + mobile web view (extra `jobsearch[server]`)
 jobsearch --applications                   # tracking table
 jobsearch --mark <offer_id> <status>       # update an application's status
 jobsearch --mark-duplicate <offer_id> <target_id>  # mark as duplicate of an existing application
@@ -172,6 +174,38 @@ jobsearch --from-file offer.html --title "Software Engineer Intern" --company "C
 ```
 
 ---
+
+## Remote access — phone and agents
+
+Install the optional extra, then start the server:
+
+```bash
+pipx install 'jobsearch[server]' ...        # or: pip install -e '.[server]'
+jobsearch --serve                           # 127.0.0.1:8000, read-only
+```
+
+It serves two things from the same process:
+
+- **A mobile web view** — applications, their status and timeline, recent offers, and the status-flow diagram. Plain HTML, one column, no JavaScript: it works in Safari on a phone, where no terminal is available.
+- **A JSON API** (`/api/applications`, `/api/offers`, `/api/stats`) so any agent can answer questions about your job search. `?q=` searches company, title **and the free-text notes** — deadlines, interview dates and recruiter names live there rather than in dedicated fields, so an agent can narrow to the relevant applications server-side instead of reading them all.
+- **Editable notes from the phone** — jot a deadline or an interview date on the application page (requires `--allow-write`). `GET /api/applications/{id}` returns a single joined object — the application, the offer, and the cover letter already sent — which is what an agent needs to draft a follow-up email without stitching three sources together.
+
+### Security
+
+- Listens on `127.0.0.1` by default.
+- Set `JOBSEARCH_API_TOKEN` in `config/.env` to require a token (`X-API-Token` header for the API, a cookie for the pages — open `http://<host>:8000/?token=<your token>` once and the token is dropped from the URL immediately).
+- **The server refuses to start** on a non-loopback address when no token is set.
+- Writes (status changes) require `--allow-write`; without it the endpoint returns 403.
+
+### Exposing it to your phone
+
+Use **Tailscale**: put the machine and the phone on the same tailnet, then bind to the machine's Tailscale address:
+
+```bash
+jobsearch --serve --host 100.x.y.z --allow-write
+```
+
+No port is opened to the internet and traffic is encrypted end to end. Note that the machine must be awake to answer — `JOBSEARCH_HOME` makes it easy to move the whole setup to an always-on Raspberry Pi or a small VPS if that becomes a problem.
 
 ## Additional information
 

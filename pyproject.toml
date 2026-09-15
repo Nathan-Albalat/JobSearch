@@ -35,6 +35,9 @@ dependencies = [
 
 [project.optional-dependencies]
 jobspy = ["python-jobspy"]
+# API HTTP + vue web (jobsearch --serve) : même motif que [jobspy], extra
+# optionnel pour garder l'installation de base légère.
+server = ["fastapi", "uvicorn[standard]", "python-multipart"]
 
 [project.urls]
 Homepage = "https://github.com/Nathan-Albalat/JobSearch"
@@ -56,4 +59,5 @@ jobsearch = [
     "resources/source_presets.yaml",
     "resources/examples/*",
     "resources/examples/.env.example",
+    "resources/web/*.html",
 ]

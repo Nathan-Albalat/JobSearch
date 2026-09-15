@@ -195,6 +195,11 @@ jobsearch --tui
 
 # Suivi des candidatures
 jobsearch --applications
+jobsearch --applications --json          # même sérialisation que l'API (jobsearch/serialize.py)
+
+# Serveur HTTP : API JSON + vue web mobile (extra `jobsearch[server]`)
+jobsearch --serve                        # 127.0.0.1:8000, lecture seule
+jobsearch --serve --host 100.x.y.z --allow-write   # adresse Tailscale, écriture autorisée
 jobsearch --mark <offer_id> sent --note "Candidature envoyée via le site"
 
 # Migration config perso + données du dépôt vers JOBSEARCH_HOME (copie uniquement, jamais destructif)
@@ -308,6 +313,35 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts (HTML, ouvert dans le navigateur) |
 | Réglages | `entrée` | Ouvrir le fichier de config sous le curseur dans l'éditeur (`$VISUAL`/`$EDITOR` sinon `open`/`xdg-open`/`start`) |
 | Réglages | `o` | Gérer les sources de scraping (`SourcesScreen`, modale) — activer/désactiver individuellement (`espace`), `échap` pour fermer |
+
+---
+
+## Accès distant : API HTTP et vue web (`jobsearch --serve`)
+
+Extra optionnel `jobsearch[server]` (FastAPI + uvicorn), même motif que `[jobspy]` : l'installation de base reste légère.
+
+- **`jobsearch/serialize.py`** (stdlib) — couche de sérialisation partagée entre `--applications --json`, l'API et le futur serveur MCP : `application_dict` (passe par `tracker.ensure_history`, jamais réimplémentée), `offer_dict`, `dossier_dict` et `offer_id_from_folder` (ce dernier factorise le motif `basename(f).rsplit("_", 1)[-1]`, auparavant dupliqué dans `jobsearch/tui.py`).
+- **`dossier_dict`** est la ressource clé pour un agent : elle joint en un seul objet la candidature, l'offre et la lettre déjà produite. Sans elle, répondre à « écris-moi un mail à propos de la candidature X » exigerait de recoller trois sources.
+- **`jobsearch/server.py`** — routes `/api/applications[/{id}]`, `/api/offers[/{id}]`, `/api/stats`, `/health`, et les pages web `/`, `/a/{id}`, `/offers`, `/stats`. **N'importe jamais `tui.py` (Textual) ni `generator.py` (Anthropic)** : le serveur doit démarrer vite et sans ces dépendances.
+- **Les notes libres portent l'information qui n'a pas de champ** — échéances, dates d'entretien, noms de recruteurs. C'est un choix délibéré : on ne peut pas anticiper la liste des champs utiles, et un modèle extrait très bien « entretien le 07/08 » d'une phrase. Deux conséquences dans le code : le paramètre `q` de `/api/applications` **cherche aussi dans les notes** (sans quoi une question dont le critère y vit obligerait l'agent à rapatrier toutes les candidatures), et la note est éditable depuis la vue web (`POST /a/{id}/note`) — une échéance se repère en lisant un mail sur son téléphone, pas devant un terminal. Ne pas confondre `notes` (candidature, suivi) et `gen_notes` (offre, consigne de génération).
+- **`tracker.set_note`** est le chemin d'écriture unique des notes : il **remplace** (édition), là où `mark_status(..., note=...)` **ajoute** au fil des changements de statut. La TUI (touche `n`) et la vue web passent toutes deux par lui.
+- **Pagination obligatoire** : `limit` par défaut à 50, plafond dur à 200. Avec ~5400 offres et 44 Mo sur disque, aucun endpoint ne doit pouvoir tout renvoyer — c'est la contrainte n°1 face à un consommateur LLM.
+- Les couleurs de statut des pages viennent de `tracker.STATUS_COLORS`, source unique déjà partagée avec la TUI et le SVG. La page `/stats` embarque `flow.render_sankey_svg`.
+- Les templates vivent dans `jobsearch/resources/web/*.html` et **doivent rester déclarés dans `[tool.setuptools.package-data]`** — sinon elles disparaissent en installation pipx, exactement comme les `.example` (voir « Premier lancement (CLI) »).
+
+### Sécurité — ces règles sont le cœur de la fonctionnalité
+
+- Écoute sur **`127.0.0.1` par défaut**.
+- Jeton partagé `JOBSEARCH_API_TOKEN` dans `config/.env` : en-tête `X-API-Token` sur `/api/*`, cookie `HttpOnly` sur les pages. Le cookie est posé via `?token=...` à la première visite, puis **une redirection 303 retire le jeton de l'URL** — sans elle, le secret resterait dans l'historique du navigateur.
+- **Refus de démarrer** (code retour 1) si l'écoute n'est pas sur la boucle locale et qu'aucun jeton n'est défini. Un échec bruyant au lancement vaut mieux qu'un suivi de candidatures ouvert sur le réseau.
+- Écriture derrière `--allow-write`, absente par défaut (403 sinon). Seul `mark_status` est exposé, via `tracker.mark_status` — donc `ensure_history` est respectée.
+- Aucune route ne prend un chemin de fichier : uniquement des `offer_id` validés.
+
+### Déploiement
+
+**Tailscale** : le Mac et l'iPhone rejoignent le même tailnet, le serveur écoute sur l'adresse Tailscale de la machine. Aucun port ouvert sur Internet, trafic chiffré de bout en bout.
+
+**Limite à assumer** : la machine doit être allumée pour répondre. La séparation `JOBSEARCH_HOME` rend le déménagement vers un Raspberry Pi ou un petit VPS trivial si cette contrainte devient gênante.
 
 ---
 

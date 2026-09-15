@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Candidatures — JobSearch{% endblock %}
+{% block content %}
+<h1>Candidatures ({{ applications|length }})</h1>
+{% if not applications %}
+<p class="muted">Aucune candidature enregistrée.</p>
+{% endif %}
+{% for a in applications %}
+<a class="card" href="/a/{{ a.offer_id }}">
+  <div class="title">{{ a.title or "Sans titre" }} — {{ a.company or "Entreprise inconnue" }}</div>
+  <div class="sub">{{ a.generated_at or "?" }}{% if a.notes %} · {{ a.notes }}{% endif %}</div>
+  <span class="badge" style="background: {{ a.status|statuscolor }};">{{ a.status_label }}</span>
+</a>
+{% endfor %}
+{% endblock %}

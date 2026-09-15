@@ -310,6 +310,13 @@ Exemples :
         help="Affiche le tableau de suivi des candidatures",
     )
     group.add_argument(
+        "--serve",
+        action="store_true",
+        help="Démarre l'API HTTP + la vue web (consultation depuis l'iPhone, agents distants). "
+             "Écoute sur 127.0.0.1 par défaut — voir --host/--port/--allow-write. "
+             "Nécessite l'extra jobsearch[server] (FastAPI + uvicorn).",
+    )
+    group.add_argument(
         "--mark",
         nargs=2,
         metavar=("OFFER_ID", "STATUS"),
@@ -428,6 +435,28 @@ Exemples :
         default="",
         help="Surcharge l'entreprise extraite (utilisé avec --from-file / --from-url)",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Avec --applications : sortie JSON (même sérialisation que l'API HTTP) au lieu du tableau texte",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Avec --serve : adresse d'écoute (défaut : 127.0.0.1, boucle locale uniquement)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8420,
+        help="Avec --serve : port d'écoute (défaut : 8420)",
+    )
+    parser.add_argument(
+        "--allow-write",
+        action="store_true",
+        help="Avec --serve : active POST /api/applications/{id}/status (changement de statut à distance). "
+             "Absent par défaut — l'API est en lecture seule sans ce drapeau.",
+    )
 
     args = parser.parse_args()
 
@@ -454,7 +483,19 @@ Exemples :
     elif args.from_url:
         cmd_from_url(args)
     elif args.applications:
-        print(render_applications_table(load_applications()))
+        if args.json:
+            import json as _json
+
+            from jobsearch.serialize import application_dict
+
+            apps = load_applications()
+            print(_json.dumps([application_dict(a, PATHS.data_dir) for a in apps], ensure_ascii=False, indent=2))
+        else:
+            print(render_applications_table(load_applications()))
+    elif args.serve:
+        from jobsearch.server import run_server  # import paresseux : fastapi/uvicorn requis seulement ici
+
+        run_server(host=args.host, port=args.port, allow_write=args.allow_write)
     elif args.mark:
         offer_id, status = args.mark
         try:

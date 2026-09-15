@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}JobSearch{% endblock %}</title>
+<style>
+  /* Mise en page en une colonne, cibles tactiles larges — pensé pour Safari iPhone
+     avant tout, pas de framework JS (voir CLAUDE.md, étape 3 du plan --serve). */
+  * { box-sizing: border-box; }
+  body {
+    background: #181818; color: #eee; font-family: -apple-system, sans-serif;
+    margin: 0; padding: 0 12px 32px;
+  }
+  header {
+    position: sticky; top: 0; background: #181818; padding: 14px 0 8px;
+    border-bottom: 1px solid #333; z-index: 1;
+  }
+  header nav a {
+    color: #ccc; text-decoration: none; margin-right: 16px; font-size: 15px;
+    padding: 6px 0; display: inline-block;
+  }
+  header nav a.active { color: #fff; font-weight: 600; border-bottom: 2px solid #4a9eff; }
+  h1 { font-size: 18px; margin: 12px 0; }
+  .card {
+    background: #232323; border-radius: 10px; padding: 14px 16px; margin: 10px 0;
+    display: block; text-decoration: none; color: inherit;
+  }
+  .card .title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .card .sub { font-size: 13px; color: #aaa; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px;
+    color: #fff; margin-top: 6px;
+  }
+  .muted { color: #888; }
+  a { color: #4a9eff; }
+  button, .btn {
+    display: inline-block; padding: 10px 16px; margin: 4px 6px 4px 0; border-radius: 8px;
+    border: 1px solid #444; background: #2b2b2b; color: #eee; font-size: 14px;
+  }
+  form { display: inline; }
+  /* `form` est inline pour aligner les boutons de statut ; le formulaire de note
+     contient un textarea et doit donc repasser en bloc. */
+  form.block { display: block; margin: 8px 0 16px; }
+  textarea {
+    display: block; width: 100%; box-sizing: border-box; padding: 10px;
+    border-radius: 8px; border: 1px solid #444; background: #202020; color: #eee;
+    font-size: 15px; font-family: inherit; margin-bottom: 8px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { padding: 6px 8px; border-bottom: 1px solid #333; text-align: left; }
+  pre.letter { white-space: pre-wrap; background: #202020; padding: 12px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header>
+<nav>
+  <!-- Le jeton est déjà posé en cookie dès la première visite (?token=... une seule
+       fois) : les liens de nav restent simples, pas de propagation manuelle. -->
+  <a href="/" class="{{ 'active' if active == 'apps' else '' }}">Candidatures</a>
+  <a href="/offers" class="{{ 'active' if active == 'offers' else '' }}">Offres</a>
+  <a href="/stats" class="{{ 'active' if active == 'stats' else '' }}">Stats</a>
+</nav>
+</header>
+{% block content %}{% endblock %}
+</body>
+</html>

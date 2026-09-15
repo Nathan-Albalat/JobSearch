@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Stats — JobSearch{% endblock %}
+{% block content %}
+<h1>Statistiques</h1>
+<p>{{ stats.total }} candidature(s) au total.</p>
+<table>
+<tr><th>Statut</th><th>Nombre</th></tr>
+{% for s, n in stats.by_status.items() %}
+<tr><td>{{ s }}</td><td>{{ n }}</td></tr>
+{% endfor %}
+</table>
+
+<p class="sub">
+  Taux de réponse : {{ (stats.rates.taux_reponse * 100)|round(1) if stats.rates.taux_reponse is not none else "—" }}% ·
+  Taux d'acceptation : {{ (stats.rates.taux_acceptation * 100)|round(1) if stats.rates.taux_acceptation is not none else "—" }}% ·
+  Délai moyen : {{ stats.rates.delai_moyen_jours|round(1) if stats.rates.delai_moyen_jours is not none else "—" }} j
+</p>
+
+<h2>Flux des candidatures</h2>
+<!-- `flow.render_sankey_svg` retourne déjà un SVG embarquable — pas de xmlns car pensé
+     pour être enrobé dans un document HTML5 (voir docstring de jobsearch/flow.py). -->
+<div style="overflow-x: auto;">
+{{ sankey_svg|safe }}
+</div>
+{% endblock %}

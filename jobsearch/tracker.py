@@ -159,6 +159,28 @@ def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = PATH
     raise KeyError(f"Aucune candidature pour l'offre '{offer_id}'. Lance d'abord --generate.")
 
 
+def set_note(offer_id: str, note: str, data_dir: str = PATHS.data_dir) -> dict:
+    """Remplace la note libre d'une candidature (ne concatène pas).
+
+    Distinct de `mark_status(..., note=...)`, qui AJOUTE au fil des changements
+    de statut : ici on édite, donc on remplace — c'est ce que fait déjà la touche
+    `n` de la TUI, dont le code inline vivait en double. Pas d'`ensure_history`
+    ici : une note ne touche pas au parcours des statuts.
+
+    Ce champ est délibérément du texte libre : échéances, dates d'entretien et
+    noms de recruteurs n'ont pas de champ dédié et n'en auront pas — on ne peut
+    pas anticiper la liste, et un modèle extrait très bien « entretien le 07/08 »
+    d'une phrase. Voir le paramètre `q` de l'API, qui cherche aussi là-dedans.
+    """
+    apps = load_applications(data_dir)
+    for app in apps:
+        if app["offer_id"] == offer_id:
+            app["notes"] = note.strip()
+            save_applications(apps, data_dir)
+            return app
+    raise KeyError(f"Aucune candidature pour l'offre '{offer_id}'.")
+
+
 def render_applications_table(apps: list[dict]) -> str:
     if not apps:
         return "Aucune candidature enregistrée."

@@ -210,6 +210,17 @@ No port is opened to the internet and traffic is encrypted end to end. Note that
 
 ### MCP server — Claude Code / Claude app
 
+**Install the extra and register the server** (user scope — available in every conversation, not just this repo):
+
+```bash
+pipx inject jobsearch mcp          # or: pip install -e '.[mcp]'
+claude mcp add -s user jobsearch -- ~/.local/bin/jobsearch --mcp
+claude mcp list                    # should report "Connected"
+```
+
+Append `--allow-write` to allow status changes from a conversation; it is off by default.
+
+
 For an MCP client (Claude Code, the Claude app running on the same machine) to answer questions about your job search directly, without going through the HTTP API:
 
 ```bash

@@ -334,6 +334,23 @@ Extra optionnel `jobsearch[server]` (FastAPI + uvicorn), même motif que `[jobsp
 - Les couleurs de statut des pages viennent de `tracker.STATUS_COLORS`, source unique déjà partagée avec la TUI et le SVG. La page `/stats` embarque `flow.render_sankey_svg`.
 - Les templates vivent dans `jobsearch/resources/web/*.html` et **doivent rester déclarés dans `[tool.setuptools.package-data]`** — sinon elles disparaissent en installation pipx, exactement comme les `.example` (voir « Premier lancement (CLI) »).
 
+### Extras manquants — message actionnable, jamais un ModuleNotFoundError brut
+
+`pipx install jobsearch` n'embarque **aucun** extra : `--serve` et `--mcp` échouaient sur un `ModuleNotFoundError: No module named 'mcp'` que rien ne permettait de relier à `pipx inject`. `_missing_extra` (`jobsearch/cli.py`) affiche désormais la commande exacte pour les deux modes d'installation — même intention que `fetch_jobspy` pour python-jobspy.
+
+**Piège** : `mcp_server.py` importe le SDK **à l'intérieur de `build_server`**, pas au niveau module. Le `try/except ImportError` doit donc englober l'**appel** et pas seulement l'import, sinon l'erreur surgit hors de sa portée et le message actionnable est contourné.
+
+### Déclarer le serveur MCP à un client
+
+Pour Claude Code, au périmètre utilisateur (disponible dans toutes les conversations, pas seulement ce dépôt) :
+
+```bash
+claude mcp add -s user jobsearch -- ~/.local/bin/jobsearch --mcp
+claude mcp list                      # doit afficher « ✔ Connected »
+```
+
+Ajouter `--allow-write` à la fin pour autoriser les changements de statut depuis une conversation — absent par défaut, conformément au principe du reste du projet.
+
 ### Sécurité — ces règles sont le cœur de la fonctionnalité
 
 - Écoute sur **`127.0.0.1` par défaut**.

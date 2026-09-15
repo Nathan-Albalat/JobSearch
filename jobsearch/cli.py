@@ -98,6 +98,19 @@ from jobsearch.duplicates import (
 )
 
 
+def _missing_extra(extra: str, paquets: str) -> None:
+    """Message actionnable quand un extra optionnel manque, plutôt qu'un
+    `ModuleNotFoundError` brut — même intention que `fetch_jobspy`
+    (`jobsearch/scraper_jobspy.py`) pour python-jobspy. Le cas nominal est une
+    installation pipx : `pipx install jobsearch` n'embarque aucun extra, et
+    l'utilisateur n'a aucune raison de deviner `pipx inject`."""
+    sys.exit(
+        f"Extra « {extra} » non installé — cette commande en a besoin.\n"
+        f"  pipx       : pipx inject jobsearch {paquets}\n"
+        f"  venv local : pip install -e '.[{extra}]'"
+    )
+
+
 def cmd_scrape(
     threshold: int | None,
     use_batch: bool = True,
@@ -507,19 +520,28 @@ Exemples :
         else:
             print(render_applications_table(load_applications()))
     elif args.serve:
-        from jobsearch.server import run_server  # import paresseux : fastapi/uvicorn requis seulement ici
+        try:
+            # Import paresseux (fastapi/uvicorn requis seulement ici) ET appel dans le
+            # même try : l'un ou l'autre peut lever selon où vit l'import du SDK.
+            from jobsearch.server import run_server
 
-        run_server(host=args.host, port=args.port, allow_write=args.allow_write)
+            run_server(host=args.host, port=args.port, allow_write=args.allow_write)
+        except ImportError:
+            _missing_extra("server", "fastapi uvicorn python-multipart")
     elif args.mcp:
         # Import paresseux : `mcp` requis seulement ici (extra jobsearch[mcp]).
-        if args.mcp_transport == "stdio":
-            from jobsearch.mcp_server import run_mcp_stdio
+        # `mcp_server` importe le SDK à l'intérieur de `build_server`, pas au niveau
+        # module : l'ImportError ne surgit donc qu'à l'APPEL, pas à l'import. Le
+        # try doit englober les deux, sinon le message actionnable est contourné.
+        from jobsearch.mcp_server import run_mcp_stdio, run_mcp_streamable_http
 
-            run_mcp_stdio(allow_write=args.allow_write)
-        else:
-            from jobsearch.mcp_server import run_mcp_streamable_http
-
-            run_mcp_streamable_http(host=args.host, port=args.port, allow_write=args.allow_write)
+        try:
+            if args.mcp_transport == "stdio":
+                run_mcp_stdio(allow_write=args.allow_write)
+            else:
+                run_mcp_streamable_http(host=args.host, port=args.port, allow_write=args.allow_write)
+        except ImportError:
+            _missing_extra("mcp", "mcp")
     elif args.mark:
         offer_id, status = args.mark
         try:

@@ -210,6 +210,17 @@ Aucun port n'est ouvert sur Internet et le trafic est chiffré de bout en bout. 
 
 ### Serveur MCP — Claude Code / app Claude
 
+**Installer l'extra et déclarer le serveur** (périmètre utilisateur — disponible dans toutes tes conversations, pas seulement ce dépôt) :
+
+```bash
+pipx inject jobsearch mcp          # ou : pip install -e '.[mcp]'
+claude mcp add -s user jobsearch -- ~/.local/bin/jobsearch --mcp
+claude mcp list                    # doit afficher « Connected »
+```
+
+Ajouter `--allow-write` à la fin pour autoriser les changements de statut depuis une conversation ; absent par défaut.
+
+
 Pour qu'un client MCP (Claude Code, app Claude sur la machine) réponde directement aux questions sur ta recherche, sans passer par l'API HTTP :
 
 ```bash

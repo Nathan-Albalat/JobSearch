@@ -67,7 +67,7 @@ from jobsearch.tracker import (
     mark_status,
     record_generated,
 )
-from jobsearch.config import PATHS, get_search, settings_files
+from jobsearch.config import PATHS, SOURCES_SETTINGS_KEY, get_search, settings_files
 from jobsearch.sources_toggle import load_sources_state, set_source_enabled
 
 
@@ -281,6 +281,9 @@ HELP_TEXT = """\
   [b #7aa2f7]?[/]                  Cette aide
   [b #7aa2f7]q[/]                  Quitter
 
+Règle générale : [b #7aa2f7]o[/] ouvre toujours l'OFFRE (navigateur), [b #7aa2f7]O[/]
+ouvre toujours le DOSSIER de candidature — même sens partout où ces touches existent.
+
 [b]Onglet Offres[/b]
   [b #7aa2f7]↑ / ↓[/]   Naviguer
   [b #7aa2f7]espace[/]  Cocher / décocher l'offre pour génération
@@ -292,7 +295,7 @@ HELP_TEXT = """\
   [b #7aa2f7]g[/]       Passer à l'onglet Génération
   [b #7aa2f7]m[/]       Marquer/démarquer l'offre comme doublon d'une candidature existante
                      (`?` = entreprise déjà candidatée, à vérifier — pas forcément un doublon)
-  [b #7aa2f7]i[/]       Marquer/démarquer l'offre comme invalide (offre fermée/annulée/mauvais
+  [b #7aa2f7]X[/]       Marquer/démarquer l'offre comme invalide (offre fermée/annulée/mauvais
                      contrat…) — retire aussi l'offre de la file de génération
   (les offres de la dernière session sont surlignées en bleu)
 
@@ -304,7 +307,7 @@ HELP_TEXT = """\
   [b #7aa2f7]x[/]       Retirer de la file (lignes cochées, sinon la ligne sous le curseur)
   [b #7aa2f7]N[/]       Éditer la note de génération de l'offre sous le curseur (consigne
              injectée dans les prompts lettre et CV au prochain g / L)
-  [b #7aa2f7]M[/]       Enregistrer dans le suivi SANS générer (aucun appel API, aucun
+  [b #7aa2f7]T[/]       Enregistrer dans le suivi SANS générer (aucun appel API, aucun
              dossier — pour les offres qui n'ont besoin ni de lettre ni de CV)
   [b #7aa2f7]o[/]       Ouvrir l'offre dans le navigateur
   [b #7aa2f7]O[/]       Ouvrir le dossier de la candidature générée
@@ -316,8 +319,8 @@ HELP_TEXT = """\
   [b #7aa2f7]e[/]       Ouvrir lettre.md dans l'éditeur (retouches)
   [b #7aa2f7]p[/]       Régénérer lettre.pdf depuis lettre.md (après retouche)
   [b #7aa2f7]u[/]       Régénérer cv_adapte.pdf depuis cv_adapte.html
-  [b #7aa2f7]o[/]       Ouvrir le dossier de la candidature
-  [b #7aa2f7]O[/]       Ouvrir l'offre dans le navigateur
+  [b #7aa2f7]o[/]       Ouvrir l'offre dans le navigateur
+  [b #7aa2f7]O[/]       Ouvrir le dossier de la candidature
   (les candidatures envoyées ou plus sont surlignées en vert)
 
 [b]Onglet Suivi[/b]
@@ -344,17 +347,18 @@ HELP_TEXT = """\
   Liste les fichiers de configuration du pipeline (clés API, sujet de
   recherche, profil, sources, prompts, templates, données du CV) avec
   leur état (personnalisé · défaut du paquet · absent) et leur date de
-  modification.
+  modification, plus une ligne dédiée « Sources de scraping ».
   Fortement recommandé : le prompt de scoring livré (config/prompts/filter.txt)
   et le pré-filtre de mots-clés (search.yaml) sont génériques — les
   personnaliser avec des exemples et mots-clés réels de ta recherche
   améliore nettement la précision du classement des offres.
   [b #7aa2f7]↑ / ↓[/]   Naviguer
-  [b #7aa2f7]entrée[/]  Ouvrir le fichier dans l'éditeur (copie d'abord le défaut du
-             paquet vers la config utilisateur si besoin, avant édition)
-  [b #7aa2f7]o[/]       Gérer les sources de scraping (activer/désactiver individuellement,
-             espace pour basculer, échap pour fermer — écrit immédiatement dans
-             config/sources.yaml, indépendant des groupes --with/--without)
+  [b #7aa2f7]entrée[/]  Sur une ligne de fichier : ouvrir dans l'éditeur (copie d'abord le
+             défaut du paquet vers la config utilisateur si besoin, avant édition).
+             Sur la ligne « Sources de scraping » : activer/désactiver
+             individuellement une source (espace pour basculer dans la modale,
+             échap pour fermer — écrit immédiatement dans config/sources.yaml,
+             indépendant des groupes --with/--without)
   [b #7aa2f7]r[/]       Recharger après édition (relit search.yaml, invalide le cache)
 """
 
@@ -689,7 +693,10 @@ class StageTUI(App):
         background: $surface;
         border: round $accent;
         padding: 1 2;
-        width: 96;
+        /* La plus longue ligne de HELP_TEXT (balises Rich retirées) mesure 102
+           caractères ; bordure (2) + padding horizontal (4) => largeur utile de
+           width - 6. 112 laisse une marge confortable sans repliement. */
+        width: 112;
         max-width: 95%;
         height: auto;
         max-height: 90%;
@@ -766,8 +773,9 @@ class StageTUI(App):
         align: center middle;
     }
     HelpScreen, NoteScreen, GenNotesScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen, InvalidReasonScreen, SourcesScreen { align: center middle; }
-    #bottom-bar { dock: bottom; height: 2; }
+    #bottom-bar { dock: bottom; height: auto; }
     #status-bar { height: 1; background: $panel; color: $text-muted; }
+    #update-banner { height: 1; background: $panel; color: $warning; display: none; }
     """
 
     BINDINGS = [
@@ -788,27 +796,31 @@ class StageTUI(App):
         Binding("p", "render_letter_pdf", show=False),
         Binding("u", "render_cv_pdf", show=False),
         Binding("space", "toggle_select", "Cocher", show=False),
-        Binding("o", "open_url", "Ouvrir", show=False),
-        Binding("O", "open_offer_url", "Ouvrir l'offre", show=False),
+        # `o` = ouvrir l'OFFRE (navigateur), `O` = ouvrir le DOSSIER de candidature —
+        # sens unique sur tous les onglets concernés (1/2/3/4 pour `o`, 2/3 pour `O`) :
+        # ne jamais réutiliser ces touches pour autre chose sur un nouvel onglet.
+        Binding("o", "open_url", "Ouvrir l'offre", show=False),
+        Binding("O", "open_offer_url", "Ouvrir le dossier", show=False),
         Binding("g", "generate", "Générer", show=False),
         Binding("L", "generate_letter_only", "Lettre seule", show=False),
         Binding("A", "add_manual", "Ajout manuel", show=False),
         Binding("x", "remove_from_queue", "Retirer de la file", show=False),
         Binding("N", "edit_gen_notes", show=False),
-        Binding("M", "record_only", show=False),
+        Binding("T", "record_only", show=False),
         Binding("plus,equals_sign", "threshold(1)", show=False),
         Binding("minus", "threshold(-1)", show=False),
         Binding("h", "toggle_hide_done", show=False),
         Binding("m", "mark_duplicate", show=False),
+        # `X` = marquer/démarquer invalide (onglet Offres uniquement) — dissocié de
+        # `i`, qui vaut désormais uniquement le statut "entretien" (onglet Suivi),
+        # comme les autres touches de la famille de statuts s/a/i/j/v/z.
+        Binding("X", "mark_invalid", show=False),
         Binding("d", "cycle_period", show=False),
         Binding("D", "pick_session", show=False),
         Binding("n", "edit_note", show=False),
         Binding("s", "sent_or_scrape", show=False),
         Binding("a", "set_status('answered')", show=False),
-        # `i` sert deux rôles distincts selon l'onglet actif (marquer invalide
-        # en Offres, statut entretien en Suivi) — un seul dispatcher, pas deux
-        # bindings sur la même touche (non supporté par Textual).
-        Binding("i", "mark_invalid_or_interview", show=False),
+        Binding("i", "set_status('interview')", show=False),
         Binding("j", "set_status('rejected')", show=False),
         Binding("v", "set_status('accepted')", show=False),
         Binding("z", "set_status('cancelled')", show=False),
@@ -868,7 +880,8 @@ class StageTUI(App):
                         "[b]Recommandé[/b] : personnalise le prompt de scoring (config/prompts/filter.txt) "
                         "et le pré-filtre (search.yaml) avec des exemples et mots-clés réels de ta recherche — "
                         "le barème livré est générique, un jeu d'exemples calibré donne un classement nettement plus précis. "
-                        "[dim]`o` : activer/désactiver individuellement une source de scraping.[/dim]",
+                        "[dim]Ligne « Sources de scraping » : `entrée` pour activer/désactiver "
+                        "individuellement une source.[/dim]",
                         id="settings-banner",
                     )
                     with Horizontal():
@@ -877,6 +890,10 @@ class StageTUI(App):
         # Barre de statut + Footer regroupés dans un conteneur docké : deux widgets
         # `dock: bottom` frères se superposent sur la même ligne (l'un masque l'autre).
         with Vertical(id="bottom-bar"):
+            # Bannière discrète et persistante (distincte de #status-bar, qui affiche
+            # des messages transitoires et serait écrasée en quelques secondes) —
+            # masquée (`display: none`) tant qu'aucune mise à jour n'est disponible.
+            yield Static("", id="update-banner")
             yield Static("", id="status-bar")
             yield Footer()
 
@@ -901,7 +918,23 @@ class StageTUI(App):
         self.query_one("#stats-months").border_title = "Candidatures au cours du temps"
         self.query_one("#stats-flow").border_title = "Parcours des candidatures"
         self.query_one("#stats-flow-months").border_title = "Statuts atteints par mois"
+        self._check_update_banner()
         self.action_reload()
+
+    def _check_update_banner(self) -> None:
+        """Alerte persistante « mise à jour disponible », discrète (pas de temporisation
+        15 min ici, contrairement à la CLI : la TUI reste ouverte, pas relancée à chaque
+        commande). `status_notice()` avale déjà toute exception réseau."""
+        from jobsearch.updates import status_notice
+
+        notice = status_notice()
+        banner = self.query_one("#update-banner", Static)
+        if notice:
+            banner.update(f" ⬆ {notice}")
+            banner.styles.display = "block"
+        else:
+            banner.update("")
+            banner.styles.display = "none"
 
     # ---------- data ----------
 
@@ -1232,6 +1265,9 @@ class StageTUI(App):
                     state_cell = "[green]personnalisé[/green]"
                 elif state == "défaut du paquet":
                     state_cell = "[dim]défaut du paquet[/dim]"
+                elif state == "action":
+                    # Ligne "Sources de scraping" : pas un état de fichier, pas de rouge trompeur.
+                    state_cell = "[dim]—[/dim]"
                 else:
                     state_cell = "[red]absent[/red]"
                 mtime = entry["mtime"]
@@ -1249,6 +1285,14 @@ class StageTUI(App):
         if not entry:
             widget.update("")
             return
+        if entry.get("kind") == "sources":
+            widget.update(
+                f"[b]{entry['role']}[/b]\n\n"
+                "Activer/désactiver individuellement une source de scraping "
+                "(config/sources.yaml — écriture immédiate, commentaires préservés).\n\n"
+                "[dim]entrée : gérer les sources[/dim]"
+            )
+            return
         parts = [
             f"[b]{entry['role']}[/b]",
             f"[dim]{entry['path']}[/dim]",
@@ -1265,6 +1309,11 @@ class StageTUI(App):
             return
         path = self._current_row_key("settings-table")
         if not path:
+            return
+        if path == SOURCES_SETTINGS_KEY:
+            # Ligne dédiée : pas un fichier, ouvre la modale de gestion des sources
+            # au lieu de tenter de lancer un éditeur sur un chemin qui n'existe pas.
+            self.push_screen(SourcesScreen())
             return
         entry = next((e for e in settings_files() if e["path"] == path), None)
         if entry is None:
@@ -1639,14 +1688,6 @@ class StageTUI(App):
             _pick,
         )
 
-    def action_mark_invalid_or_interview(self) -> None:
-        """Dispatcher pour la touche `i`, partagée entre deux onglets (voir BINDINGS)."""
-        tab = self._active_tab()
-        if tab == "offers":
-            self.action_mark_invalid()
-        elif tab == "track":
-            self.action_set_status("interview")
-
     def action_mark_invalid(self) -> None:
         if self._active_tab() != "offers":
             return
@@ -1753,6 +1794,9 @@ class StageTUI(App):
             return
 
     def action_open_url(self) -> None:
+        # `o` a un sens unique dans toute la TUI : ouvrir l'OFFRE dans le navigateur
+        # (onglets 1, 2, 3, 4). Ne jamais y remettre une action "dossier"/"modale" —
+        # c'est précisément la confusion qui a motivé cette harmonisation.
         tab = self._active_tab()
         if tab == "offers":
             oid = self._current_row_key("offers-table")
@@ -1766,26 +1810,28 @@ class StageTUI(App):
                 webbrowser.open(url)
         elif tab == "letters":
             folder = self._current_row_key("letters-table")
-            if folder:
-                subprocess.run(["open", folder], check=False)
+            if not folder:
+                return
+            offer_id = offer_id_from_folder(folder)
+            for app in load_applications():
+                if app["offer_id"] == offer_id and app.get("url"):
+                    webbrowser.open(app["url"])
+                    break
         elif tab == "track":
             oid = self._current_row_key("track-table")
             for app in load_applications():
                 if app["offer_id"] == oid and app.get("url"):
                     webbrowser.open(app["url"])
                     break
-        elif tab == "settings":
-            # `o` est libre dans cet onglet (pas d'offre/candidature à ouvrir dans le
-            # navigateur) — réutilisé pour la modale de gestion des sources.
-            self.push_screen(SourcesScreen())
 
     def action_open_offer_url(self) -> None:
+        # `O` a un sens unique : ouvrir le DOSSIER de la candidature (onglets 2, 3).
         tab = self._active_tab()
         if tab == "gen":
             oid = self._current_row_key("gen-table")
             if oid and self.gen_status.get(oid, ("", ""))[0] == "✅":
                 # Le 2e champ de gen_status n'est un chemin de dossier qu'après une
-                # génération réelle (g/L) — après `M` (enregistrement sans génération),
+                # génération réelle (g/L) — après `T` (enregistrement sans génération),
                 # c'est un message texte : `isdir` évite d'ouvrir n'importe quoi.
                 target = self.gen_status[oid][1]
                 if os.path.isdir(target):
@@ -1794,13 +1840,8 @@ class StageTUI(App):
         if tab != "letters":
             return
         folder = self._current_row_key("letters-table")
-        if not folder:
-            return
-        offer_id = offer_id_from_folder(folder)
-        for app in load_applications():
-            if app["offer_id"] == offer_id and app.get("url"):
-                webbrowser.open(app["url"])
-                break
+        if folder:
+            subprocess.run(["open", folder], check=False)
 
     # ---------- onglet candidatures ----------
 
@@ -1968,7 +2009,7 @@ class StageTUI(App):
         self.push_screen(GenNotesScreen(current), _save)
 
     def action_record_only(self) -> None:
-        """`M` — enregistre dans le suivi sans générer ni lettre ni CV (aucun appel API)."""
+        """`T` — enregistre dans le suivi sans générer ni lettre ni CV (aucun appel API)."""
         if self._active_tab() != "gen":
             return
         targets = self.gen_checked & self.selected

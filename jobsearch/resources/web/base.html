@@ -50,6 +50,14 @@
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   td, th { padding: 6px 8px; border-bottom: 1px solid #333; text-align: left; }
   pre.letter { white-space: pre-wrap; background: #202020; padding: 12px; border-radius: 8px; }
+  select {
+    padding: 10px 12px; border-radius: 8px; border: 1px solid #444; background: #2b2b2b;
+    color: #eee; font-size: 14px; font-family: inherit;
+  }
+  footer.update-notice {
+    margin-top: 24px; padding: 10px 12px; border-radius: 8px; background: #2b2200;
+    color: #e0c060; font-size: 13px;
+  }
 </style>
 </head>
 <body>
@@ -63,5 +71,8 @@
 </nav>
 </header>
 {% block content %}{% endblock %}
+{% if update_notice %}
+<footer class="update-notice">⬆ {{ update_notice }}</footer>
+{% endif %}
 </body>
 </html>

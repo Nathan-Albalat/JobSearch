@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jobsearch"
-version = "1.2.0"
+dynamic = ["version"]
 description = "Pipeline automatisé de recherche de stage/emploi : collecte d'offres, filtrage par scoring Claude, rapport, lettre de motivation et CV adaptés."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -52,6 +52,12 @@ jobsearch = "jobsearch.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["jobsearch*"]
+
+[tool.setuptools.dynamic]
+# La version vit dans jobsearch/__init__.py (voir sa docstring) : le code doit
+# pouvoir connaître sa propre version sans dépendre des métadonnées de
+# distribution, qui sont figées en installation éditable.
+version = { attr = "jobsearch.__version__" }
 
 [tool.setuptools.package-data]
 jobsearch = [

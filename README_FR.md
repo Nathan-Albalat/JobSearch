@@ -59,12 +59,12 @@ La TUI n'est qu'une **vue** sur les fichiers du pipeline, pas une base de donné
 
 | Onglet | Rôle |
 |---|---|
-| **1 · Offres** | Tableau des offres scorées, triable, avec panneau de détail. Coche les offres (`espace`) pour les mettre en file de génération — lignes cochées surlignées en vert, offres de la dernière session en bleu foncé. La colonne `✓` est une cascade à 5 états : `▶` cochée > `⛔` marquée invalide (offre morte/fermée/mauvais type de contrat — `i` pour marquer, motif au choix) > `⧉` doublon manuel confirmé > `✓` déjà candidatée > `?` doublon suspecté (même entreprise, non tranché — `m` pour confirmer). |
-| **2 · Génération** | La file de génération, persistée dans `data/gen_queue.json`. Coche des lignes pour restreindre `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. `N` attache une note par offre (`gen_notes`) injectée dans les prompts lettre et CV ; `M` enregistre directement dans le suivi sans rien générer — aucun appel API, aucun dossier — pour les offres qui n'ont besoin ni de lettre ni de CV (formulaire en ligne, CV générique). `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature générée. |
-| **3 · Candidatures** | Parcours `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle. |
+| **1 · Offres** | Tableau des offres scorées, triable, avec panneau de détail. Coche les offres (`espace`) pour les mettre en file de génération — lignes cochées surlignées en vert, offres de la dernière session en bleu foncé. La colonne `✓` est une cascade à 5 états : `▶` cochée > `⛔` marquée invalide (offre morte/fermée/mauvais type de contrat — `X` pour marquer, motif au choix) > `⧉` doublon manuel confirmé > `✓` déjà candidatée > `?` doublon suspecté (même entreprise, non tranché — `m` pour confirmer). |
+| **2 · Génération** | La file de génération, persistée dans `data/gen_queue.json`. Coche des lignes pour restreindre `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. `N` attache une note par offre (`gen_notes`) injectée dans les prompts lettre et CV ; `T` enregistre directement dans le suivi sans rien générer — aucun appel API, aucun dossier — pour les offres qui n'ont besoin ni de lettre ni de CV (formulaire en ligne, CV générique). `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature générée. |
+| **3 · Candidatures** | Parcours `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle. `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature. |
 | **4 · Suivi** | Statuts et notes de `applications.json` (envoyée / réponse reçue / entretien / acceptée / refusée / annulée, chacun colorisé). Le panneau de droite affiche la timeline de la candidature sélectionnée, reconstruite depuis son historique — dates déduites d'anciennes données suffixées d'un `~`. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation/réponse, délai moyen), répartition des statuts, localisation des offres, histogramme des candidatures au cours du temps, et arbre du parcours des statuts. `f` exporte le flux en diagramme de Sankey HTML autonome. |
-| **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`) avec leur état (personnalisé / défaut du paquet / absent). `entrée` ouvre le fichier dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. `o` ouvre une modale pour activer/désactiver individuellement une source de scraping (`espace` pour basculer, `échap` pour fermer) — écrit immédiatement dans `sources.yaml`, indépendamment du groupe `fr` basculé avec `--with`/`--without`. |
+| **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`), plus une ligne dédiée « Sources de scraping », avec leur état (personnalisé / défaut du paquet / absent). `entrée` sur une ligne de fichier l'ouvre dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. `entrée` sur la ligne « Sources de scraping » ouvre une modale pour activer/désactiver individuellement une source de scraping (`espace` pour basculer, `échap` pour fermer) — écrit immédiatement dans `sources.yaml`, indépendamment du groupe `fr` basculé avec `--with`/`--without`. |
 
 ### Workflow de retouche d'une lettre
 
@@ -88,27 +88,27 @@ L'usage principal de l'onglet Candidatures : `e` pour ouvrir `lettre.md` dans to
 | Offres | `d` / `D` | Cycler / choisir la période affichée |
 | Offres | `g` | Aller à l'onglet Génération |
 | Offres | `m` | Marquer/démarquer comme doublon d'une candidature existante |
-| Offres | `i` | Marquer/démarquer comme invalide (motif au choix : fermée/annulée/mauvais type de contrat/autre ; retire aussi l'offre de la file de génération ; refusé si l'offre a déjà une candidature) |
+| Offres | `X` | Marquer/démarquer comme invalide (motif au choix : fermée/annulée/mauvais type de contrat/autre ; retire aussi l'offre de la file de génération ; refusé si l'offre a déjà une candidature) |
 | Génération | `espace` | Cocher/décocher une ligne de la file |
 | Génération | `g` | Générer lettre + CV |
 | Génération | `L` | Générer la lettre seule |
 | Génération | `A` | Ajouter une offre manuelle (fichier HTML ou URL) à la file |
 | Génération | `x` | Retirer de la file |
 | Génération | `N` | Éditer la note de génération de l'offre sous le curseur (`gen_notes`, injectée dans les prompts lettre et CV au prochain `g`/`L`) |
-| Génération | `M` | Enregistrer dans le suivi SANS générer (aucun appel API, aucun dossier — offres qui n'ont besoin ni de lettre ni de CV) |
+| Génération | `T` | Enregistrer dans le suivi SANS générer (aucun appel API, aucun dossier — offres qui n'ont besoin ni de lettre ni de CV) |
 | Génération | `o` | Ouvrir l'offre dans le navigateur |
 | Génération | `O` | Ouvrir le dossier de la candidature générée |
 | Candidatures | `entrée` | Basculer l'aperçu lettre ↔ CV |
 | Candidatures | `e` | Ouvrir `lettre.md` dans l'éditeur |
 | Candidatures | `p` | Régénérer `lettre.pdf` |
 | Candidatures | `u` | Régénérer `cv_adapte.pdf` |
-| Candidatures | `o` / `O` | Ouvrir le dossier / ouvrir l'offre dans le navigateur |
+| Candidatures | `o` | Ouvrir l'offre dans le navigateur |
+| Candidatures | `O` | Ouvrir le dossier de la candidature |
 | Suivi | `s`/`a`/`i`/`j`/`v`/`z` | Statut → sent / answered / interview / rejected / accepted / cancelled |
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts |
-| Réglages | `entrée` | Ouvrir le fichier de config sous le curseur |
-| Réglages | `o` | Gérer les sources de scraping (activer/désactiver individuellement, `espace` pour basculer) |
+| Réglages | `entrée` | Sur une ligne de fichier : l'ouvrir dans l'éditeur. Sur la ligne « Sources de scraping » : ouvrir la modale de gestion des sources |
 
 ### Offres en doublon
 
@@ -187,8 +187,8 @@ jobsearch --serve                           # 127.0.0.1:8000, lecture seule
 
 Le même processus sert deux choses :
 
-- **Une vue web mobile** — candidatures, statuts et chronologie, offres récentes, et le diagramme de flux des statuts. HTML simple, une colonne, sans JavaScript : utilisable dans Safari sur un téléphone, là où aucun terminal n'est accessible.
-- **Une API JSON** (`/api/applications`, `/api/offers`, `/api/stats`) pour qu'un agent puisse répondre aux questions sur ta recherche. `?q=` cherche dans l'entreprise, le titre **et les notes libres** — échéances, dates d'entretien et noms de recruteurs y vivent plutôt que dans des champs dédiés, ce qui permet à l'agent de restreindre côté serveur au lieu de tout rapatrier.
+- **Une vue web mobile** — candidatures, statuts et chronologie, offres récentes, et le diagramme de flux des statuts. HTML simple, une colonne, sans JavaScript : utilisable dans Safari sur un téléphone, là où aucun terminal n'est accessible. Candidatures et offres se trient côté serveur (`?sort=`/`?dir=` — entreprise, statut, date de génération pour les candidatures ; score, date de collecte, entreprise pour les offres) et les offres se filtrent par session de scrape (`?session=YYYY-MM-DD`) — un `<select>` + bouton, toujours sans JS. Le changement de statut sur la page d'une candidature passe par un menu déroulant + bouton « Enregistrer » plutôt que six boutons séparés. La page Stats affiche tout ce que le suivi calcule déjà : répartition par statut, catégories larges, taux de réponse/acceptation et délai moyen, localisation, candidatures par mois — en plus du diagramme de flux Sankey.
+- **Une API JSON** (`/api/applications`, `/api/offers`, `/api/stats`) pour qu'un agent puisse répondre aux questions sur ta recherche. `?q=` cherche dans l'entreprise, le titre **et les notes libres** — échéances, dates d'entretien et noms de recruteurs y vivent plutôt que dans des champs dédiés, ce qui permet à l'agent de restreindre côté serveur au lieu de tout rapatrier. Mêmes paramètres de tri/filtre que les pages web.
 - **Notes éditables depuis le téléphone** — noter une échéance ou une date d'entretien depuis la page d'une candidature (nécessite `--allow-write`). `GET /api/applications/{id}` renvoie un objet unique joignant la candidature, l'offre et la lettre déjà envoyée — exactement ce qu'il faut pour rédiger une relance sans recoller trois sources.
 
 ### Sécurité
@@ -207,6 +207,20 @@ jobsearch --serve --host 100.x.y.z --allow-write
 ```
 
 Aucun port n'est ouvert sur Internet et le trafic est chiffré de bout en bout. Attention : la machine doit être allumée pour répondre — `JOBSEARCH_HOME` rend le déménagement vers un Raspberry Pi toujours allumé ou un petit VPS trivial si la contrainte devient gênante.
+
+### Le rendre persistant — service launchd (macOS)
+
+Lancer `jobsearch --serve` à la main dans un terminal ne survit ni à la fermeture de la session ni à un redémarrage. `jobsearch --service` gère un agent launchd utilisateur (`com.jobsearch.server`) qui le maintient actif, le démarre à la connexion, et le relance s'il plante :
+
+```bash
+jobsearch --service install --host 100.x.y.z --port 8767 --allow-write   # écrit et charge le plist
+jobsearch --service status     # plist présent ?, agent chargé ?, processus vivant ?, adresse d'écoute
+jobsearch --service logs       # fin du journal du service (JOBSEARCH_HOME/data/server.log)
+jobsearch --service restart    # après une modif de config, ou si ça semble bloqué
+jobsearch --service uninstall  # décharge et supprime le plist
+```
+
+`install` reprend les mêmes options `--host`/`--port`/`--allow-write` que `--serve`. `status` est la commande à lancer quand « ça ne marche plus » — elle indique le chemin du plist, si l'agent est chargé, si le processus est réellement vivant, et l'adresse sur laquelle il est configuré pour écouter. Le plist pointe vers l'exécutable `jobsearch` résolu à l'installation, et journalise stdout comme stderr dans `JOBSEARCH_HOME/data/server.log` — sans ça, un service qui plantait ne laissait aucune trace. Ce mode est propre à macOS (launchd) ; sur une autre plateforme, `--service` explique la situation et indique l'équivalent systemd `--user`, plutôt que d'échouer sur une trace brute.
 
 ### Serveur MCP — Claude Code / app Claude
 
@@ -305,6 +319,10 @@ SMTP_PORT=587
 SMTP_USER=ton_compte@gmail.com
 SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx   # App Password Gmail
 ```
+
+### Alerte de mise à jour
+
+`jobsearch` vérifie la dernière release du dépôt public (`api.github.com`, anonyme, stdlib uniquement) et prévient quand une version plus récente existe — dans la sortie de la CLI (limité à une fois toutes les 15 minutes), dans la barre de statut de la TUI, et dans le pied de page de la vue web. Entièrement non-bloquant : la vérification réseau est mise en cache 24h dans `data/update_check.json`, et tout échec (hors ligne, quota dépassé, réponse inattendue) est ignoré en silence — jamais de ralentissement ni de commande cassée. Le message pointe vers `pipx upgrade jobsearch`.
 
 ### Résolution de problèmes
 

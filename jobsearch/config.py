@@ -159,6 +159,13 @@ class Paths:
 PATHS = Paths()
 
 
+# Clé de ligne réservée pour l'entrée "Sources de scraping" de l'onglet Réglages
+# (jobsearch/tui.py) : ce n'est pas un chemin de fichier à ouvrir dans un éditeur,
+# mais un déclencheur de la modale `SourcesScreen` — `action_edit_setting` doit la
+# distinguer des vraies entrées de fichier avant de tenter quoi que ce soit dessus.
+SOURCES_SETTINGS_KEY = "__sources__"
+
+
 def settings_files() -> list[dict]:
     """Liste des fichiers de configuration éditables, pour l'onglet Réglages de la TUI.
 
@@ -232,6 +239,18 @@ def settings_files() -> list[dict]:
         })
 
     entries.append(_plain("Données du CV", os.path.join(PATHS.cv_dir, "cv_data.yaml")))
+
+    # Ligne dédiée à la gestion des sources de scraping : pas un fichier à éditer
+    # directement (édition ligne à ligne via jobsearch/sources_toggle.py, préservant
+    # les commentaires), mais un raccourci vers la modale `SourcesScreen` — même geste
+    # (`entrée`) que pour les autres lignes de cette table, comportement différent.
+    entries.append({
+        "role": "Sources de scraping",
+        "path": SOURCES_SETTINGS_KEY,
+        "kind": "sources",
+        "state": "action",
+        "mtime": None,
+    })
 
     return entries
 

@@ -59,12 +59,12 @@ The TUI is a **view** on the pipeline's files, not a database of its own: report
 
 | Tab | Role |
 |---|---|
-| **1 · Offers** | Table of scored offers, sortable, with a detail panel. Check offers (`space`) to queue them for generation — checked rows highlighted in green, offers from the latest scrape session in dark blue. The `✓` column cascades through 5 states: `▶` checked > `⛔` marked invalid (dead/closed/wrong contract type — press `i` to mark, pick a reason) > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company, not yet resolved — press `m` to confirm). |
-| **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. `N` attaches a per-offer note (`gen_notes`) injected into the letter and CV prompts; `M` records an offer straight into tracking with no letter/CV at all — no API call, no folder — for offers that don't need one (online form, generic CV). `o` opens the offer in the browser, `O` opens the generated application folder. |
-| **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. |
+| **1 · Offers** | Table of scored offers, sortable, with a detail panel. Check offers (`space`) to queue them for generation — checked rows highlighted in green, offers from the latest scrape session in dark blue. The `✓` column cascades through 5 states: `▶` checked > `⛔` marked invalid (dead/closed/wrong contract type — press `X` to mark, pick a reason) > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company, not yet resolved — press `m` to confirm). |
+| **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. `N` attaches a per-offer note (`gen_notes`) injected into the letter and CV prompts; `T` records an offer straight into tracking with no letter/CV at all — no API call, no folder — for offers that don't need one (online form, generic CV). `o` opens the offer in the browser, `O` opens the generated application folder. |
+| **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. `o` opens the offer in the browser, `O` opens the application folder. |
 | **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. |
 | **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations, an applications-over-time histogram, and a status-flow tree. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
-| **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`) with its state (customized / package default / missing). `enter` opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. `o` opens a modal to enable/disable individual scraping sources (`space` to toggle, `escape` to close) — written immediately to `sources.yaml`, independent from the `fr` group toggled with `--with`/`--without`. |
+| **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`), plus a dedicated "Scraping sources" row, with each file's state (customized / package default / missing). `enter` on a file row opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. `enter` on the "Scraping sources" row opens a modal to enable/disable individual scraping sources (`space` to toggle, `escape` to close) — written immediately to `sources.yaml`, independent from the `fr` group toggled with `--with`/`--without`. |
 
 ### Cover letter editing workflow
 
@@ -88,27 +88,27 @@ The main use of the Applications tab: press `e` to open `lettre.md` in your edit
 | Offers | `d` / `D` | Cycle / pick displayed period |
 | Offers | `g` | Go to Generation tab |
 | Offers | `m` | Mark/unmark as duplicate of an existing application |
-| Offers | `i` | Mark/unmark as invalid (pick a reason: closed/cancelled/wrong contract type/other; also drops the offer from the generation queue; refused if the offer already has an application) |
+| Offers | `X` | Mark/unmark as invalid (pick a reason: closed/cancelled/wrong contract type/other; also drops the offer from the generation queue; refused if the offer already has an application) |
 | Generation | `space` | Check/uncheck a queue row |
 | Generation | `g` | Generate letter + CV |
 | Generation | `L` | Generate letter only |
 | Generation | `A` | Add a manual offer (HTML file or URL) to the queue |
 | Generation | `x` | Remove from the queue |
 | Generation | `N` | Edit the generation note for the offer under the cursor (`gen_notes`, injected into the letter/CV prompts on the next `g`/`L`) |
-| Generation | `M` | Record in tracking WITHOUT generating (no API call, no folder — for offers that need neither letter nor CV) |
+| Generation | `T` | Record in tracking WITHOUT generating (no API call, no folder — for offers that need neither letter nor CV) |
 | Generation | `o` | Open offer in browser |
 | Generation | `O` | Open generated application folder |
 | Applications | `enter` | Toggle letter ↔ CV preview |
 | Applications | `e` | Open `lettre.md` in editor |
 | Applications | `p` | Regenerate `lettre.pdf` |
 | Applications | `u` | Regenerate `cv_adapte.pdf` |
-| Applications | `o` / `O` | Open folder / open offer in browser |
+| Applications | `o` | Open offer in browser |
+| Applications | `O` | Open application folder |
 | Tracking | `s`/`a`/`i`/`j`/`v`/`z` | Status → sent / answered / interview / rejected / accepted / cancelled |
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
 | Stats | `f` | Export the status-flow Sankey diagram |
-| Settings | `enter` | Open the config file under the cursor |
-| Settings | `o` | Manage scraping sources (enable/disable individually, `space` to toggle) |
+| Settings | `enter` | On a file row: open it in your editor. On the "Scraping sources" row: open the source-management modal |
 
 ### Duplicate offers
 
@@ -187,8 +187,8 @@ jobsearch --serve                           # 127.0.0.1:8000, read-only
 
 It serves two things from the same process:
 
-- **A mobile web view** — applications, their status and timeline, recent offers, and the status-flow diagram. Plain HTML, one column, no JavaScript: it works in Safari on a phone, where no terminal is available.
-- **A JSON API** (`/api/applications`, `/api/offers`, `/api/stats`) so any agent can answer questions about your job search. `?q=` searches company, title **and the free-text notes** — deadlines, interview dates and recruiter names live there rather than in dedicated fields, so an agent can narrow to the relevant applications server-side instead of reading them all.
+- **A mobile web view** — applications, their status and timeline, recent offers, and the status-flow diagram. Plain HTML, one column, no JavaScript: it works in Safari on a phone, where no terminal is available. Applications and offers can be sorted server-side (`?sort=`/`?dir=` — company, status, generated date for applications; score, scraped date, company for offers) and offers filtered by scrape session (`?session=YYYY-MM-DD`) — a `<select>` + submit button, still no JS. Status changes on an application page go through a dropdown + "Save" button rather than six separate buttons. The stats page shows everything the tracker already computes: status breakdown, coarse categories, response/acceptance rates and average delay, locations, and applications per month — on top of the Sankey flow diagram.
+- **A JSON API** (`/api/applications`, `/api/offers`, `/api/stats`) so any agent can answer questions about your job search. `?q=` searches company, title **and the free-text notes** — deadlines, interview dates and recruiter names live there rather than in dedicated fields, so an agent can narrow to the relevant applications server-side instead of reading them all. Same sort/filter parameters as the web pages.
 - **Editable notes from the phone** — jot a deadline or an interview date on the application page (requires `--allow-write`). `GET /api/applications/{id}` returns a single joined object — the application, the offer, and the cover letter already sent — which is what an agent needs to draft a follow-up email without stitching three sources together.
 
 ### Security
@@ -207,6 +207,20 @@ jobsearch --serve --host 100.x.y.z --allow-write
 ```
 
 No port is opened to the internet and traffic is encrypted end to end. Note that the machine must be awake to answer — `JOBSEARCH_HOME` makes it easy to move the whole setup to an always-on Raspberry Pi or a small VPS if that becomes a problem.
+
+### Making it persistent — launchd service (macOS)
+
+Running `jobsearch --serve` by hand in a terminal doesn't survive a closed session or a reboot. `jobsearch --service` manages a user-level launchd agent (`com.jobsearch.server`) that keeps it running, starts it at login, and restarts it if it crashes:
+
+```bash
+jobsearch --service install --host 100.x.y.z --port 8767 --allow-write   # writes + loads the plist
+jobsearch --service status     # plist present?, agent loaded?, process alive?, listening address
+jobsearch --service logs       # tail of the service log (JOBSEARCH_HOME/data/server.log)
+jobsearch --service restart    # after editing config, or if it seems stuck
+jobsearch --service uninstall  # unloads and removes the plist
+```
+
+`install` reuses the same `--host`/`--port`/`--allow-write` flags as `--serve`. `status` is the command to run when "it doesn't work anymore" — it reports the plist path, whether the agent is loaded, whether the process is actually alive, and the address it's configured to listen on. The plist points at the `jobsearch` executable resolved at install time and logs both stdout and stderr to `JOBSEARCH_HOME/data/server.log` — without this, a service that crashed left no trace at all. This is macOS-only (launchd); on other platforms `--service` explains the situation and points at the systemd `--user` equivalent instead of failing with a raw traceback.
 
 ### MCP server — Claude Code / Claude app
 
@@ -305,6 +319,10 @@ SMTP_PORT=587
 SMTP_USER=your_account@gmail.com
 SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx   # Gmail App Password
 ```
+
+### Update alert
+
+`jobsearch` checks the public repo's latest release (`api.github.com`, anonymous, stdlib only) and lets you know when a newer version is out — in the CLI output (throttled to once every 15 minutes), in the TUI's status bar, and in the web view's footer. Fully non-blocking: the network check is cached for 24h in `data/update_check.json`, and any failure (offline, rate-limited, unexpected response) is silently ignored — it never delays or breaks a command. The message points to `pipx upgrade jobsearch`.
 
 ### Troubleshooting
 

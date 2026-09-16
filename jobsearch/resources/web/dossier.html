@@ -28,12 +28,14 @@
 
 {% if allow_write %}
 <h2>Changer le statut</h2>
-{% for s in statuses %}
-<form method="post" action="/a/{{ d.offer_id }}/status">
-  <input type="hidden" name="status" value="{{ s }}">
-  <button type="submit">{{ s }}</button>
+<form method="post" action="/a/{{ d.offer_id }}/status" class="block">
+  <select name="status">
+    {% for s in statuses %}
+    <option value="{{ s }}" {% if a and a.status == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Enregistrer</button>
 </form>
-{% endfor %}
 {% endif %}
 {% else %}
 <p class="muted">Pas encore de candidature enregistrée pour cette offre.</p>

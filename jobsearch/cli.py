@@ -250,7 +250,11 @@ def main() -> None:
     # d'un nouvel utilisateur (lire l'aide) tombait sur la question de configuration
     # au lieu de l'aide. Sans argument, en revanche, _check_setup reste pertinent :
     # c'est précisément le moment d'indiquer quoi faire.
-    _EXEMPT = {"--migrate", "--setup", "--help", "-h"}
+    # --service est exempté au même titre que --migrate : c'est une commande de
+    # gestion (installer/diagnostiquer l'agent launchd), pas une commande du pipeline —
+    # `--service status` doit pouvoir répondre même sur un JOBSEARCH_HOME pas encore
+    # configuré (ex: diagnostiquer avant d'avoir fini --setup).
+    _EXEMPT = {"--migrate", "--setup", "--help", "-h", "--service"}
     if not _EXEMPT.intersection(sys.argv[1:]):
         _check_setup()
 
@@ -272,6 +276,9 @@ Exemples :
   jobsearch --unmark-duplicate dcd4359a          # annule le marquage
   jobsearch --mark-invalid dcd4359a --reason closed   # écarte une offre fermée/hors-sujet
   jobsearch --unmark-invalid dcd4359a                 # annule le marquage
+  jobsearch --service install --host 100.x.y.z --port 8767 --allow-write   # persistance launchd (macOS)
+  jobsearch --service status   # plist présent, agent chargé, processus vivant, adresse d'écoute
+  jobsearch --service logs     # fin du journal du service (data/server.log)
         """,
     )
 
@@ -328,6 +335,13 @@ Exemples :
         help="Démarre l'API HTTP + la vue web (consultation depuis l'iPhone, agents distants). "
              "Écoute sur 127.0.0.1 par défaut — voir --host/--port/--allow-write. "
              "Nécessite l'extra jobsearch[server] (FastAPI + uvicorn).",
+    )
+    group.add_argument(
+        "--service",
+        metavar="ACTION",
+        choices=["install", "uninstall", "start", "stop", "restart", "status", "logs"],
+        help="Pilote la persistance de --serve via un agent launchd utilisateur (macOS uniquement). "
+             "install accepte --host/--port/--allow-write. status/logs pour diagnostiquer.",
     )
     group.add_argument(
         "--mcp",
@@ -474,8 +488,14 @@ Exemples :
     parser.add_argument(
         "--allow-write",
         action="store_true",
-        help="Avec --serve/--mcp : active l'écriture (changement de statut à distance). "
+        help="Avec --serve/--mcp/--service install : active l'écriture (changement de statut à distance). "
              "Absent par défaut — lecture seule sans ce drapeau.",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="info",
+        help="Avec --serve : niveau de log uvicorn (défaut : info — nécessaire pour que le "
+             "journal du service launchd ne reste pas vide).",
     )
     parser.add_argument(
         "--mcp-transport",
@@ -525,9 +545,30 @@ Exemples :
             # même try : l'un ou l'autre peut lever selon où vit l'import du SDK.
             from jobsearch.server import run_server
 
-            run_server(host=args.host, port=args.port, allow_write=args.allow_write)
+            run_server(host=args.host, port=args.port, allow_write=args.allow_write, log_level=args.log_level)
         except ImportError:
             _missing_extra("server", "fastapi uvicorn python-multipart")
+    elif args.service:
+        # Stdlib uniquement (jobsearch/service.py) : pas d'import paresseux nécessaire,
+        # importable même sans l'extra [server] (ce module ne démarre jamais le
+        # serveur lui-même, il ne fait que piloter launchd).
+        from jobsearch import service as _service
+
+        action = args.service
+        if action == "install":
+            print(_service.install(host=args.host, port=args.port, allow_write=args.allow_write))
+        elif action == "uninstall":
+            print(_service.uninstall())
+        elif action == "start":
+            print(_service.start())
+        elif action == "stop":
+            print(_service.stop())
+        elif action == "restart":
+            print(_service.restart())
+        elif action == "status":
+            print(_service.status())
+        elif action == "logs":
+            print(_service.logs())
     elif args.mcp:
         # Import paresseux : `mcp` requis seulement ici (extra jobsearch[mcp]).
         # `mcp_server` importe le SDK à l'intérieur de `build_server`, pas au niveau
@@ -581,6 +622,16 @@ Exemples :
         from jobsearch.migrate import run_migrate
 
         run_migrate(apply=args.apply)
+
+    # Alerte « mise à jour disponible » — après le traitement de la commande, jamais
+    # avant : ne doit jamais retarder l'exécution effective. `cli_notice()` avale déjà
+    # toute exception et applique sa propre temporisation (15 min) ; import paresseux
+    # pour ne pas alourdir le chemin critique des commandes qui ne l'utilisent jamais.
+    from jobsearch.updates import cli_notice
+
+    notice = cli_notice()
+    if notice:
+        print(f"\nℹ️  {notice}")
 
 
 if __name__ == "__main__":

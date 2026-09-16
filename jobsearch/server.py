@@ -58,6 +58,53 @@ def _clamp_limit(limit: int) -> int:
     return max(1, min(limit, MAX_LIMIT))
 
 
+# ------------------------------------------------------------------ #
+# Tri/filtre côté serveur — pas de JS côté client (contrainte de la vue web, voir
+# CLAUDE.md) : ce sont ces mêmes fonctions qu'utilisent l'API JSON et les pages HTML,
+# pour rester cohérentes entre les deux.
+# ------------------------------------------------------------------ #
+
+# Candidatures : clé -> fonction d'extraction pour le tri.
+_APP_SORT_KEYS = {
+    "generated_at": lambda a: a.get("generated_at") or "",
+    "company": lambda a: (a.get("company") or "").casefold(),
+    # Ordre du PIPELINE (generated → sent → … → cancelled), pas alphabétique :
+    # trier par chaîne donnerait « generated, rejected, sent », qui ne dit rien
+    # de l'avancement. `STATUSES` porte déjà l'ordre métier.
+    "status": lambda a: STATUSES.index(a["status"]) if a.get("status") in STATUSES else len(STATUSES),
+}
+
+# Offres : clé -> fonction d'extraction.
+_OFFER_SORT_KEYS = {
+    "score": lambda o: o.get("filter_result", {}).get("score") if o.get("filter_result", {}).get("score") is not None else -1,
+    "date_scraped": lambda o: o.get("date_scraped") or "",
+    "company": lambda o: (o.get("company") or "").casefold(),
+}
+
+
+def _sort_items(items: list[dict], keyfuncs: dict, sort: str | None, dir_: str | None, default: str) -> list[dict]:
+    """Tri générique : `sort` doit être une clé connue de `keyfuncs`, repli sur `default`
+    si absent/inconnu (jamais d'erreur 422 pour un paramètre de tri invalide — un lien mal
+    formé ne doit pas casser la page)."""
+    key = keyfuncs.get(sort or default, keyfuncs[default])
+    reverse = (dir_ or "desc") != "asc"
+    return sorted(items, key=key, reverse=reverse)
+
+
+def _scrape_sessions(offers: list[dict]) -> list[str]:
+    """Dates `date_scraped` distinctes des offres passées, triées décroissant.
+
+    Même calcul que `JobSearchApp._scrape_sessions` (`jobsearch/tui.py`) — inspiré de
+    cette méthode sans importer `tui.py` (Textual, démarrage lourd, RÈGLE STRUCTURANTE
+    du module en tête de fichier)."""
+    dates = set()
+    for o in offers:
+        d = o.get("date_scraped", "")
+        if d and len(d) == 10 and d[4] == "-" and d[7] == "-":
+            dates.add(d)
+    return sorted(dates, reverse=True)
+
+
 def _get_token() -> str:
     """Lit `JOBSEARCH_API_TOKEN` depuis `config/.env`, comme les autres modules (voir
     `filter.py`/`generator.py`/`notifier.py`/`scraper.py` : `load_dotenv(PATHS.env_path,
@@ -125,6 +172,8 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
         company: str | None = None,
         q: str | None = None,
         since: str | None = None,
+        sort: str | None = None,
+        dir: str | None = None,
         limit: int = DEFAULT_LIMIT,
     ):
         _check_api_token(x_api_token)
@@ -150,7 +199,7 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
             ]
         if since:
             apps = [a for a in apps if (a.get("generated_at") or "") >= since]
-        apps = sorted(apps, key=lambda a: a.get("generated_at") or "", reverse=True)
+        apps = _sort_items(apps, _APP_SORT_KEYS, sort, dir, default="generated_at")
         apps = apps[: _clamp_limit(limit)]
         return {"count": len(apps), "applications": [application_dict(a, PATHS.data_dir) for a in apps]}
 
@@ -184,6 +233,9 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
         q: str | None = None,
         min_score: int | None = None,
         since: str | None = None,
+        session: str | None = None,
+        sort: str | None = None,
+        dir: str | None = None,
         limit: int = DEFAULT_LIMIT,
     ):
         _check_api_token(x_api_token)
@@ -193,13 +245,15 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
             offers = [o for o in offers if o.get("filter_result", {}).get("score", 0) >= min_score]
         if since:
             offers = [o for o in offers if (o.get("date_scraped") or "") >= since]
+        if session:
+            offers = [o for o in offers if o.get("date_scraped") == session]
         if q:
             needle = q.casefold()
             offers = [
                 o for o in offers
                 if needle in (o.get("title") or "").casefold() or needle in (o.get("company") or "").casefold()
             ]
-        offers = sorted(offers, key=lambda o: o.get("filter_result", {}).get("score", 0), reverse=True)
+        offers = _sort_items(offers, _OFFER_SORT_KEYS, sort, dir, default="score")
         offers = offers[: _clamp_limit(limit)]
         return {"count": len(offers), "offers": [offer_dict(o) for o in offers]}
 
@@ -220,8 +274,13 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
     # Pages web (iPhone) — Jinja2, CSS inline, une colonne, sans JS
     # ------------------------------------------------------------------ #
     def _render(template_name: str, **ctx) -> str:
+        # Alerte « mise à jour disponible » dans le pied de page — même fonction que la
+        # TUI (`status_notice`, sans la temporisation 15 min de la CLI : la page web
+        # reste ouverte, pas relancée à chaque requête). Toute exception déjà avalée.
+        from jobsearch.updates import status_notice
+
         template = _env.get_template(template_name)
-        return template.render(allow_write=app.state.allow_write, **ctx)
+        return template.render(allow_write=app.state.allow_write, update_notice=status_notice(), **ctx)
 
     def _page_response(
         html: str, token_to_set: str | None, request: Request | None = None
@@ -244,11 +303,16 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
         return resp
 
     @app.get("/", response_class=HTMLResponse)
-    def page_index(request: Request, token: str | None = Query(default=None)):
+    def page_index(
+        request: Request,
+        token: str | None = Query(default=None),
+        sort: str = "generated_at",
+        dir: str = "desc",
+    ):
         token_to_set = _check_page_cookie(request, token)
-        apps = sorted(load_applications(PATHS.data_dir), key=lambda a: a.get("generated_at") or "", reverse=True)
+        apps = _sort_items(load_applications(PATHS.data_dir), _APP_SORT_KEYS, sort, dir, default="generated_at")
         apps = [application_dict(a, PATHS.data_dir) for a in apps]
-        html = _render("index.html", applications=apps, active="apps")
+        html = _render("index.html", applications=apps, active="apps", sort=sort, dir=dir)
         return _page_response(html, token_to_set, request)
 
     @app.get("/a/{offer_id}", response_class=HTMLResponse)
@@ -261,13 +325,31 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
         return _page_response(html, token_to_set, request)
 
     @app.get("/offers", response_class=HTMLResponse)
-    def page_offers(request: Request, token: str | None = Query(default=None)):
+    def page_offers(
+        request: Request,
+        token: str | None = Query(default=None),
+        sort: str = "score",
+        dir: str = "desc",
+        session: str | None = None,
+    ):
         token_to_set = _check_page_cookie(request, token)
-        offers = load_filtered_offers(PATHS.data_dir)
-        offers = [o for o in offers if not o.get("duplicate_of") and not o.get("invalid")]
-        offers = sorted(offers, key=lambda o: o.get("filter_result", {}).get("score", 0), reverse=True)
+        all_offers = load_filtered_offers(PATHS.data_dir)
+        all_offers = [o for o in all_offers if not o.get("duplicate_of") and not o.get("invalid")]
+        sessions = _scrape_sessions(all_offers)
+        offers = all_offers
+        if session:
+            offers = [o for o in offers if o.get("date_scraped") == session]
+        offers = _sort_items(offers, _OFFER_SORT_KEYS, sort, dir, default="score")
         offers = [offer_dict(o) for o in offers[:100]]
-        html = _render("offers.html", offers=offers, active="offers")
+        html = _render(
+            "offers.html",
+            offers=offers,
+            active="offers",
+            sort=sort,
+            dir=dir,
+            session=session or "",
+            sessions=sessions,
+        )
         return _page_response(html, token_to_set, request)
 
     @app.post("/a/{offer_id}/status")
@@ -316,8 +398,17 @@ def build_app(*, host: str = "127.0.0.1", allow_write: bool = False) -> FastAPI:
     return app
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8420, allow_write: bool = False) -> None:
-    """Point d'entrée de `jobsearch --serve` (`jobsearch/cli.py`)."""
+def run_server(
+    host: str = "127.0.0.1", port: int = 8420, allow_write: bool = False, log_level: str = "info"
+) -> None:
+    """Point d'entrée de `jobsearch --serve` (`jobsearch/cli.py`).
+
+    `log_level` par défaut à "info" (pas "warning") : uvicorn n'émet SA LIGNE DE
+    DÉMARRAGE et son journal d'accès qu'au niveau "info" — avec "warning", le fichier
+    de log d'un service launchd restait vide en permanence, invisible quand le service
+    tombait silencieusement. Gardé paramétrable pour un usage interactif plus silencieux
+    si besoin (`--log-level warning`).
+    """
     import uvicorn
 
     app = build_app(host=host, allow_write=allow_write)
@@ -328,4 +419,4 @@ def run_server(host: str = "127.0.0.1", port: int = 8420, allow_write: bool = Fa
     if allow_write:
         print("⚠️  Écriture activée (--allow-write) — POST /api/applications/{id}/status est actif.")
     print(f"→ JobSearch sert sur http://{host}:{port} (Ctrl+C pour arrêter)")
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level=log_level)

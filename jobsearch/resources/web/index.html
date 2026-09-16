@@ -2,6 +2,20 @@
 {% block title %}Candidatures — JobSearch{% endblock %}
 {% block content %}
 <h1>Candidatures ({{ applications|length }})</h1>
+<!-- Tri côté serveur, sans JS : GET simple, la page se recharge avec les nouveaux
+     paramètres de requête (contrainte "pas de framework JS", voir CLAUDE.md). -->
+<form method="get" action="/" class="block">
+  <select name="sort">
+    <option value="generated_at" {% if sort == "generated_at" %}selected{% endif %}>Date de génération</option>
+    <option value="company" {% if sort == "company" %}selected{% endif %}>Entreprise</option>
+    <option value="status" {% if sort == "status" %}selected{% endif %}>Statut</option>
+  </select>
+  <select name="dir">
+    <option value="desc" {% if dir == "desc" %}selected{% endif %}>Décroissant</option>
+    <option value="asc" {% if dir == "asc" %}selected{% endif %}>Croissant</option>
+  </select>
+  <button type="submit">Trier</button>
+</form>
 {% if not applications %}
 <p class="muted">Aucune candidature enregistrée.</p>
 {% endif %}

@@ -3,6 +3,8 @@
 {% block content %}
 <h1>Statistiques</h1>
 <p>{{ stats.total }} candidature(s) au total.</p>
+
+<h2>Répartition par statut</h2>
 <table>
 <tr><th>Statut</th><th>Nombre</th></tr>
 {% for s, n in stats.by_status.items() %}
@@ -10,11 +12,50 @@
 {% endfor %}
 </table>
 
-<p class="sub">
-  Taux de réponse : {{ (stats.rates.taux_reponse * 100)|round(1) if stats.rates.taux_reponse is not none else "—" }}% ·
-  Taux d'acceptation : {{ (stats.rates.taux_acceptation * 100)|round(1) if stats.rates.taux_acceptation is not none else "—" }}% ·
-  Délai moyen : {{ stats.rates.delai_moyen_jours|round(1) if stats.rates.delai_moyen_jours is not none else "—" }} j
-</p>
+<h2>Répartition large</h2>
+<!-- "coarse" : regroupement acceptée/refusée/annulée/en attente, calculé par
+     tracker.compute_stats mais absent de l'ancien rendu — CLAUDE.md demande d'afficher
+     tout ce qui est déjà calculé, quasiment gratuit. -->
+<table>
+<tr><th>Catégorie</th><th>Nombre</th></tr>
+{% for c, n in stats.coarse.items() %}
+<tr><td>{{ c }}</td><td>{{ n }}</td></tr>
+{% endfor %}
+</table>
+
+<h2>Métriques de retour de candidature</h2>
+<!-- Les candidatures annulées sont exclues de ces taux (voir tracker.compute_stats). -->
+<table>
+<tr><td>Candidatures envoyées</td><td>{{ stats.rates.sent }}</td></tr>
+<tr><td>Réponses reçues</td><td>{{ stats.rates.responded }}</td></tr>
+<tr><td>Taux de réponse</td><td>{{ (stats.rates.taux_reponse * 100)|round(1) if stats.rates.taux_reponse is not none else "—" }}%</td></tr>
+<tr><td>Taux d'acceptation</td><td>{{ (stats.rates.taux_acceptation * 100)|round(1) if stats.rates.taux_acceptation is not none else "—" }}%</td></tr>
+<tr><td>Délai moyen de réponse</td><td>{{ stats.rates.delai_moyen_jours|round(1) if stats.rates.delai_moyen_jours is not none else "—" }} j ({{ stats.rates.n_delai }} mesure(s))</td></tr>
+</table>
+
+<h2>Localisation des stages</h2>
+{% if stats.by_location %}
+<table>
+<tr><th>Lieu</th><th>Nombre</th></tr>
+{% for loc, n in stats.by_location.items() %}
+<tr><td>{{ loc }}</td><td>{{ n }}</td></tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="muted">Aucune localisation disponible.</p>
+{% endif %}
+
+<h2>Candidatures par mois</h2>
+{% if stats.by_month %}
+<table>
+<tr><th>Mois</th><th>Nombre</th></tr>
+{% for month, n in stats.by_month.items() %}
+<tr><td>{{ month }}</td><td>{{ n }}</td></tr>
+{% endfor %}
+</table>
+{% else %}
+<p class="muted">Aucune donnée mensuelle disponible.</p>
+{% endif %}
 
 <h2>Flux des candidatures</h2>
 <!-- `flow.render_sankey_svg` retourne déjà un SVG embarquable — pas de xmlns car pensé

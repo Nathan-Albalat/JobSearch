@@ -2,6 +2,24 @@
 {% block title %}Offres — JobSearch{% endblock %}
 {% block content %}
 <h1>Offres pertinentes ({{ offers|length }})</h1>
+<form method="get" action="/offers" class="block">
+  <select name="sort">
+    <option value="score" {% if sort == "score" %}selected{% endif %}>Score</option>
+    <option value="date_scraped" {% if sort == "date_scraped" %}selected{% endif %}>Date de collecte</option>
+    <option value="company" {% if sort == "company" %}selected{% endif %}>Entreprise</option>
+  </select>
+  <select name="dir">
+    <option value="desc" {% if dir == "desc" %}selected{% endif %}>Décroissant</option>
+    <option value="asc" {% if dir == "asc" %}selected{% endif %}>Croissant</option>
+  </select>
+  <select name="session">
+    <option value="">Toutes les sessions</option>
+    {% for s in sessions %}
+    <option value="{{ s }}" {% if session == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filtrer</button>
+</form>
 {% if not offers %}
 <p class="muted">Aucune offre au-dessus du seuil pour l'instant.</p>
 {% endif %}

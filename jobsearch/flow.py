@@ -4,6 +4,7 @@ Stdlib uniquement — pas de nouvelle dépendance pour une vue secondaire. Le SV
 construit par concaténation de chaînes (pas de bibliothèque de rendu tierce).
 """
 import os
+import unicodedata
 from collections import Counter
 from html import escape
 
@@ -85,9 +86,28 @@ def by_month_status(apps: list[dict]) -> dict[str, Counter]:
 
 _MARGIN = 40
 _NODE_W = 18
-_COLUMN_GAP_X = 210
 _UNIT_SCALE = 16  # pixels par occurrence
 _NODE_GAP_Y = 8
+_FONT_SIZE = 13
+_LABEL_OFFSET = 6  # distance entre le bord du nœud et le début du texte
+_COLUMN_PADDING = 30  # marge de sécurité entre la fin d'un libellé et la colonne suivante
+
+
+def _text_width(text: str, font_size: int = _FONT_SIZE) -> float:
+    """Largeur approximative (px) d'un texte en SVG, sans moteur de rendu disponible.
+
+    Les caractères "larges" au sens Unicode (émoji, CJK — `east_asian_width` in {W, F})
+    occupent une avance proche d'un carré ; le reste (latin, ponctuation) suit la règle
+    empirique ~0.55em pour une police sans-serif. Volontairement une surestimation légère
+    (mieux vaut un déficit de compacité qu'un débordement de colonne).
+    """
+    width = 0.0
+    for ch in text:
+        if unicodedata.east_asian_width(ch) in ("W", "F"):
+            width += font_size * 1.05
+        else:
+            width += font_size * 0.55
+    return width
 
 
 def render_sankey_svg(apps: list[dict]) -> str:
@@ -116,11 +136,37 @@ def render_sankey_svg(apps: list[dict]) -> str:
             continue
         columns.setdefault(STATUS_RANK.get(status, 0), []).append(status)
 
+    # Libellé complet de chaque statut (avec effectif) — calculé une fois, réutilisé pour
+    # la largeur des colonnes et pour le rendu du texte.
+    labels: dict[str, str] = {
+        status: f"{_STATUS_LABELS.get(status, status)} ({total_by_status[status]})"
+        for col_statuses in columns.values()
+        for status in col_statuses
+    }
+
+    # Largeur de colonne : la position x d'une colonne dépend de la largeur du plus grand
+    # libellé de la colonne précédente (pas d'une constante fixe), pour garantir qu'aucun
+    # texte ne peut jamais déborder sur la colonne suivante quel que soit l'effectif ou la
+    # longueur du libellé.
+    max_label_w: dict[int, float] = {
+        col: max((_text_width(labels[s]) for s in statuses), default=0.0)
+        for col, statuses in columns.items()
+    }
+    col_x: dict[int, float] = {0: float(_MARGIN)}
+    for col in range(1, max_rank + 1):
+        col_x[col] = (
+            col_x[col - 1]
+            + _NODE_W
+            + _LABEL_OFFSET
+            + max_label_w.get(col - 1, 0.0)
+            + _COLUMN_PADDING
+        )
+
     nodes: dict[str, dict] = {}
     for col in range(max_rank + 1):
         statuses_in_col = columns.get(col, [])
         y = _MARGIN
-        x = _MARGIN + col * _COLUMN_GAP_X
+        x = col_x[col]
         for status in statuses_in_col:
             h = max(4, total_by_status[status] * _UNIT_SCALE)
             nodes[status] = {"x": x, "y": y, "w": _NODE_W, "h": h}
@@ -129,7 +175,9 @@ def render_sankey_svg(apps: list[dict]) -> str:
     canvas_h = _MARGIN * 2 + max(
         (n["y"] + n["h"] - _MARGIN for n in nodes.values()), default=100
     )
-    canvas_w = _MARGIN * 2 + _NODE_W + max_rank * _COLUMN_GAP_X + 180  # + espace labels
+    canvas_w = (
+        col_x[max_rank] + _NODE_W + _LABEL_OFFSET + max_label_w.get(max_rank, 0.0) + _MARGIN
+    )
 
     parts = [
         f'<svg width="{canvas_w:.0f}" height="{canvas_h:.0f}" '
@@ -137,23 +185,59 @@ def render_sankey_svg(apps: list[dict]) -> str:
         f'<rect x="0" y="0" width="{canvas_w:.0f}" height="{canvas_h:.0f}" fill="#1e1e1e"/>',
     ]
 
-    # Rubans (ordonnés par rang source puis effectif décroissant, pour un rendu stable).
-    source_offset: dict[str, float] = {s: 0.0 for s in nodes}
-    target_offset: dict[str, float] = {s: 0.0 for s in nodes}
+    # Rubans. L'ordre d'empilement à CHAQUE extrémité suit la position verticale du nœud à
+    # l'AUTRE extrémité (les rubans entrants d'un nœud sont ordonnés par le y de leur nœud
+    # source, et les rubans sortants par le y de leur nœud cible) : deux rubans qui ne se
+    # croisent pas côté source ne se croisent pas non plus côté cible. Sans ce tri par
+    # position (l'ancien code triait par rang puis effectif décroissant, indépendant de la
+    # géométrie réelle), deux rubans pouvaient se croiser en X — cas mesuré : `rejected`
+    # reçoit à la fois de `sent` (gros nœud, rang 1) et de `interview` (petit nœud, rang 3,
+    # positionné plus haut sur son axe) ; sans ce correctif, le ruban de `sent` s'empilait
+    # en premier (donc en haut) alors qu'`interview` est visuellement au-dessus.
+    outgoing: dict[str, list[tuple[str, str, int]]] = {}
+    incoming: dict[str, list[tuple[str, str, int]]] = {}
+    for (source, target), count in transitions.items():
+        if source not in nodes or target not in nodes:
+            continue  # nœud sans occurrence positive (ne devrait pas arriver, robustesse)
+        outgoing.setdefault(source, []).append((source, target, count))
+        incoming.setdefault(target, []).append((source, target, count))
+
+    source_offset: dict[tuple[str, str], float] = {}
+    for source, edges in outgoing.items():
+        # Tri par le CENTRE du nœud, pas par son bord supérieur : deux nœuds de
+        # colonnes différentes commencent tous deux à `_MARGIN` et leur `y` est
+        # donc à égalité, ce qui rendait l'ordre arbitraire. Cas réel mesuré :
+        # `refusée` recevait de `envoyée` (grand nœud, centre bas) et d'`entretien`
+        # (petit nœud, centre haut), tous deux en y=40 — le ruban d'`entretien`
+        # plongeait alors à travers celui d'`envoyée`.
+        edges.sort(key=lambda e: nodes[e[1]]["y"] + nodes[e[1]]["h"] / 2)
+        offset = 0.0
+        for source_s, target_s, count in edges:
+            source_offset[(source_s, target_s)] = offset
+            offset += count * _UNIT_SCALE
+
+    target_offset: dict[tuple[str, str], float] = {}
+    for target, edges in incoming.items():
+        edges.sort(key=lambda e: nodes[e[0]]["y"] + nodes[e[0]]["h"] / 2)
+        offset = 0.0
+        for source_s, target_s, count in edges:
+            target_offset[(source_s, target_s)] = offset
+            offset += count * _UNIT_SCALE
+
+    # Ordre de dessin des rubans lui-même sans incidence visuelle (formes disjointes par
+    # construction), mais trié par rang source pour un rendu stable/reproductible.
     ordered_transitions = sorted(
         transitions.items(),
         key=lambda kv: (STATUS_RANK.get(kv[0][0], 0), -kv[1]),
     )
     for (source, target), count in ordered_transitions:
         if source not in nodes or target not in nodes:
-            continue  # nœud sans occurrence positive (ne devrait pas arriver, robustesse)
+            continue
         ribbon_h = count * _UNIT_SCALE
-        sy0 = nodes[source]["y"] + source_offset[source]
+        sy0 = nodes[source]["y"] + source_offset[(source, target)]
         sy1 = sy0 + ribbon_h
-        ty0 = nodes[target]["y"] + target_offset[target]
+        ty0 = nodes[target]["y"] + target_offset[(source, target)]
         ty1 = ty0 + ribbon_h
-        source_offset[source] += ribbon_h
-        target_offset[target] += ribbon_h
 
         x0 = nodes[source]["x"] + nodes[source]["w"]
         x1 = nodes[target]["x"]
@@ -169,19 +253,28 @@ def render_sankey_svg(apps: list[dict]) -> str:
         )
         parts.append(f'<path d="{path}" fill="{color}" fill-opacity="0.55" stroke="none"/>')
 
-    # Nœuds + libellés.
+    # Nœuds + libellés. Dessinés après les rubans (donc par-dessus), avec un fond sombre
+    # semi-opaque derrière chaque texte : une transition longue (ex. rang 0→4) traverse en
+    # une seule courbe les colonnes intermédiaires, et sans ce fond le libellé en clair
+    # devenait illisible posé sur un ruban semi-transparent.
     for status, n in nodes.items():
         color = STATUS_COLORS.get(status) or "#555555"
         parts.append(
             f'<rect x="{n["x"]:.1f}" y="{n["y"]:.1f}" width="{n["w"]}" height="{n["h"]:.1f}" '
             f'fill="{color}" stroke="#111" stroke-width="1"/>'
         )
-        label = escape(_STATUS_LABELS.get(status, status))
-        text_x = n["x"] + n["w"] + 6
+        label_text = labels[status]
+        label = escape(label_text)
+        text_x = n["x"] + n["w"] + _LABEL_OFFSET
         text_y = n["y"] + n["h"] / 2
+        label_w = _text_width(label_text)
         parts.append(
-            f'<text x="{text_x:.1f}" y="{text_y:.1f}" font-size="13" fill="#eeeeee" '
-            f'dominant-baseline="middle">{label} ({total_by_status[status]})</text>'
+            f'<rect x="{text_x - 3:.1f}" y="{text_y - 9:.1f}" width="{label_w + 6:.1f}" '
+            f'height="18" fill="#1e1e1e" fill-opacity="0.82" rx="3"/>'
+        )
+        parts.append(
+            f'<text x="{text_x:.1f}" y="{text_y:.1f}" font-size="{_FONT_SIZE}" fill="#eeeeee" '
+            f'dominant-baseline="middle">{label}</text>'
         )
 
     parts.append("</svg>")

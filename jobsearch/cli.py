@@ -246,6 +246,15 @@ def cmd_letter_pdf(args) -> None:
 
 
 def main() -> None:
+    # Sous Windows, une sortie redirigée (fichier, pipe, tâche planifiée) prend
+    # l'encodage ANSI (cp1252) : le premier émoji d'un `print` lève alors
+    # UnicodeEncodeError et interrompt la commande. La console elle-même est
+    # en UTF-8 depuis Python 3.6 (PEP 528), d'où le seul cas redirigé à couvrir.
+    if sys.platform.startswith("win"):
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+
     # `--help`/`-h` est exempté au même titre que --migrate/--setup : _check_setup
     # s'exécute AVANT parse_args, donc sans cette exemption le tout premier réflexe
     # d'un nouvel utilisateur (lire l'aide) tombait sur la question de configuration

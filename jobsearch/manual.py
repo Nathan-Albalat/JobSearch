@@ -284,6 +284,9 @@ def create_stub_from_file(
     data_dir: str = PATHS.data_dir,
 ) -> dict:
     """Extrait + sauvegarde le stub d'offre depuis un fichier HTML (sans générer la candidature)."""
+    # Saisie TUI : `~` n'est développé par aucun shell, et « Copier en tant que
+    # chemin » de l'Explorateur Windows entoure le chemin de guillemets.
+    path = os.path.expanduser(path.strip().strip('"').strip("'"))
     if not os.path.exists(path):
         raise FileNotFoundError(f"Fichier introuvable : {path}")
 

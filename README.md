@@ -65,7 +65,7 @@ The TUI is a **view** on the pipeline's files, not a database of its own: report
 | **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. `o` opens the offer in the browser, `O` opens the application folder. |
 | **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. |
 | **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations as a country → cities tree, a GitHub-style daily activity heatmap, an applications-over-time histogram and applications per country over time (line chart), the latter two on a shared day/week/month scale (`t` cycles it), and a status-flow tree of the paths actually taken. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
-| **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`), plus a dedicated "Scraping sources" row, with each file's state (customized / package default / missing). `enter` on a file row opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. `enter` on the "Scraping sources" row opens a modal to enable/disable individual scraping sources (`space` to toggle, `escape` to close) — written immediately to `sources.yaml`, independent from the `fr` group toggled with `--with`/`--without`. |
+| **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`), plus two dedicated rows, "Scraping sources" and "Claude models", with each file's state (customized / package default / missing). `enter` on a file row opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. `enter` on the "Scraping sources" row opens a modal to enable/disable individual scraping sources (`space` to toggle, `escape` to close) — written immediately to `sources.yaml`, independent from the `fr` group toggled with `--with`/`--without`. `enter` on the "Claude models" row opens a modal listing the model of each task (filter, letter, CV): `enter` on a task offers "Latest Haiku/Sonnet/Opus (auto)" or a pinned model, `R` refreshes the model list, `escape` closes — written immediately to `search.yaml`. |
 
 ### Cover letter editing workflow
 
@@ -110,7 +110,7 @@ The main use of the Applications tab: press `e` to open `lettre.md` in your edit
 | Tracking | `o` | Open offer in browser |
 | Stats | `f` | Export the status-flow Sankey diagram |
 | Stats | `t` | Cycle the time scale of the histogram and per-country chart (day · week · month) |
-| Settings | `enter` | On a file row: open it in your editor. On the "Scraping sources" row: open the source-management modal |
+| Settings | `enter` | On a file row: open it in your editor. On the "Scraping sources" row: open the source-management modal. On the "Claude models" row: open the per-task model modal (`R` refreshes the list) |
 
 ### Duplicate offers
 
@@ -321,6 +321,16 @@ SMTP_PORT=587
 SMTP_USER=your_account@gmail.com
 SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx   # Gmail App Password
 ```
+
+### Claude models
+
+Each task (filter, letter, CV) has its own model in `search.yaml` (`models.<task>.model`), editable from the TUI Settings tab ("Claude models" row):
+
+- `auto:haiku` / `auto:sonnet` / `auto:opus` follows the latest model of the family. The list comes from `client.models.list()` (free), cached for 24h in `data/models_cache.json`; when the resolved model changes, a one-time notice is shown in the TUI banner and the CLI output. Offline or without an API key, the last known resolution (then a built-in default) is used — it never blocks a command.
+- An exact identifier (e.g. `claude-sonnet-5-5`) pins the model.
+- `local:<model>` is reserved for a future local-model phase and is rejected for now.
+- `max_tokens` includes the reasoning tokens of recent models (Sonnet 5.5 thinks by default): keep the 16000 default for letter and CV. `effort` is optional and absent by default because Haiku 4.5 rejects it.
+- Letter and CV calls on non-Haiku models use the server-side refusal fallback (falls back to a plain call if the API rejects it). Never used for the filter batch.
 
 ### Update alert
 

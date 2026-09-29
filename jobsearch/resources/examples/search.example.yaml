@@ -110,15 +110,26 @@ dedup:
   title_noise_extra_regex: '20\d\d'
   similarity: 0.9
 
+# Modèles Claude. Format de `model` :
+#   auto:haiku | auto:sonnet | auto:opus  -> le plus récent de la famille (liste mise en
+#                                            cache 24 h ; un avis s'affiche au changement)
+#   claude-sonnet-5-5                     -> identifiant exact : modèle épinglé
+# Modifiable depuis l'onglet Réglages de la TUI (ligne « Modèles Claude »).
+# `max_tokens` inclut les jetons de réflexion des modèles récents (Sonnet 5.5) : ne pas
+# descendre trop bas pour la lettre et le CV. `effort` (low/medium/high…) est optionnel et
+# absent par défaut : Haiku 4.5 le rejette.
 models:
   filter:
-    model: "claude-haiku-4-5-20251001"
+    model: "auto:haiku"
     max_tokens: 512
     batch_min_offers: 6
     batch_poll_seconds: 30
-  generate:
-    model: "claude-sonnet-4-6"
-    max_tokens: 2048
+  letter:
+    model: "auto:sonnet"
+    max_tokens: 16000
+  cv:
+    model: "auto:sonnet"
+    max_tokens: 16000
 
 source_defaults:
   jobspy:

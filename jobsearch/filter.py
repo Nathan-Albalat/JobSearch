@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from jobsearch.config import PATHS, Search, fill_template, get_search
+from jobsearch.models import extract_text
 
 
 # Ancien format de `competences_techniques` (clés fixes, contexte informatique) —
@@ -169,12 +170,13 @@ def build_offer_prompt(template: str, offer: dict) -> str:
 
 def call_claude(client, system_text: str, offer_text: str, search: Search) -> tuple[str, object]:
     response = client.messages.create(
-        model=search.filter_model,
+        model=search.model_for("filter"),
         max_tokens=search.filter_max_tokens,
         system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": offer_text}],
     )
-    return response.content[0].text, response.usage
+    # extract_text : `content[0]` n'est pas du texte avec un modèle qui réfléchit.
+    return extract_text(response, "filter"), response.usage
 
 
 def parse_filter_response(text: str) -> dict:
@@ -226,11 +228,12 @@ def filter_batch(
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
     from anthropic.types.messages.batch_create_params import Request
 
+    filter_model_id = search.model_for("filter")  # résolu une fois pour tout le batch
     requests_list = [
         Request(
             custom_id=offer["id"],
             params=MessageCreateParamsNonStreaming(
-                model=search.filter_model,
+                model=filter_model_id,
                 max_tokens=search.filter_max_tokens,
                 system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": build_offer_prompt(template, offer)}],

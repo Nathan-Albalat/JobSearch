@@ -65,7 +65,7 @@ La TUI n'est qu'une **vue** sur les fichiers du pipeline, pas une base de donné
 | **3 · Candidatures** | Parcours `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle. `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature. |
 | **4 · Suivi** | Statuts et notes de `applications.json` (envoyée / réponse reçue / entretien / acceptée / refusée / annulée, chacun colorisé). Le panneau de droite affiche la timeline de la candidature sélectionnée, reconstruite depuis son historique — dates déduites d'anciennes données suffixées d'un `~`. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation/réponse, délai moyen), répartition des statuts, localisation des offres en arbre pays → villes, heatmap d'activité quotidienne façon GitHub, histogramme des candidatures au cours du temps et candidatures par pays (courbes), ces deux derniers sur une échelle commune jour/semaine/mois (`t` la change), et arbre des parcours de statuts réellement suivis. `f` exporte le flux en diagramme de Sankey HTML autonome. |
-| **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`), plus une ligne dédiée « Sources de scraping », avec leur état (personnalisé / défaut du paquet / absent). `entrée` sur une ligne de fichier l'ouvre dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. `entrée` sur la ligne « Sources de scraping » ouvre une modale pour activer/désactiver individuellement une source de scraping (`espace` pour basculer, `échap` pour fermer) — écrit immédiatement dans `sources.yaml`, indépendamment du groupe `fr` basculé avec `--with`/`--without`. |
+| **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`), plus deux lignes dédiées, « Sources de scraping » et « Modèles Claude », avec leur état (personnalisé / défaut du paquet / absent). `entrée` sur une ligne de fichier l'ouvre dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. `entrée` sur la ligne « Sources de scraping » ouvre une modale pour activer/désactiver individuellement une source de scraping (`espace` pour basculer, `échap` pour fermer) — écrit immédiatement dans `sources.yaml`, indépendamment du groupe `fr` basculé avec `--with`/`--without`. `entrée` sur la ligne « Modèles Claude » ouvre une modale listant le modèle de chaque tâche (filtre, lettre, CV) : `entrée` sur une tâche propose « Dernier Haiku/Sonnet/Opus (auto) » ou un modèle épinglé, `R` rafraîchit la liste, `échap` ferme — écrit immédiatement dans `search.yaml`. |
 
 ### Workflow de retouche d'une lettre
 
@@ -110,7 +110,7 @@ L'usage principal de l'onglet Candidatures : `e` pour ouvrir `lettre.md` dans to
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts |
 | Stats | `t` | Changer l'échelle de temps de l'histogramme et des courbes par pays (jour · semaine · mois) |
-| Réglages | `entrée` | Sur une ligne de fichier : l'ouvrir dans l'éditeur. Sur la ligne « Sources de scraping » : ouvrir la modale de gestion des sources |
+| Réglages | `entrée` | Sur une ligne de fichier : l'ouvrir dans l'éditeur. Sur la ligne « Sources de scraping » : ouvrir la modale de gestion des sources. Sur la ligne « Modèles Claude » : ouvrir la modale des modèles par tâche (`R` rafraîchit la liste) |
 
 ### Offres en doublon
 
@@ -321,6 +321,16 @@ SMTP_PORT=587
 SMTP_USER=ton_compte@gmail.com
 SMTP_PASSWORD=xxxx-xxxx-xxxx-xxxx   # App Password Gmail
 ```
+
+### Modèles Claude
+
+Chaque tâche (filtre, lettre, CV) a son propre modèle dans `search.yaml` (`models.<tâche>.model`), modifiable depuis l'onglet Réglages de la TUI (ligne « Modèles Claude ») :
+
+- `auto:haiku` / `auto:sonnet` / `auto:opus` suit le dernier modèle de la famille. La liste vient de `client.models.list()` (gratuit), mise en cache 24 h dans `data/models_cache.json` ; quand le modèle résolu change, un avis s'affiche une seule fois dans le bandeau de la TUI et en sortie de la CLI. Hors ligne ou sans clé API, la dernière résolution connue (puis un défaut intégré) est utilisée — jamais bloquant.
+- Un identifiant exact (ex. `claude-sonnet-5-5`) épingle le modèle.
+- `local:<modèle>` est réservé à une future phase « modèle local » et refusé pour l'instant.
+- `max_tokens` inclut les jetons de réflexion des modèles récents (Sonnet 5.5 réfléchit par défaut) : garder les 16000 par défaut pour la lettre et le CV. `effort` est optionnel et absent par défaut, car Haiku 4.5 le rejette.
+- Les appels lettre et CV sur un modèle non Haiku utilisent le repli serveur en cas de refus (retour à un appel simple si l'API le rejette). Jamais utilisé pour le batch du filtre.
 
 ### Alerte de mise à jour
 

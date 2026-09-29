@@ -69,7 +69,9 @@ from jobsearch.tracker import (
     mark_status,
     record_generated,
 )
-from jobsearch.config import PATHS, SOURCES_SETTINGS_KEY, get_search, settings_files
+from jobsearch.config import (
+    MODELS_SETTINGS_KEY, PATHS, SOURCES_SETTINGS_KEY, Search, get_search, load_search, settings_files,
+)
 from jobsearch.sources_toggle import load_sources_state, set_source_enabled
 
 
@@ -661,7 +663,7 @@ ouvre toujours le DOSSIER de candidature — même sens partout où ces touches 
   Liste les fichiers de configuration du pipeline (clés API, sujet de
   recherche, profil, sources, prompts, templates, données du CV) avec
   leur état (personnalisé · défaut du paquet · absent) et leur date de
-  modification, plus une ligne dédiée « Sources de scraping ».
+  modification, plus deux lignes dédiées : « Sources de scraping » et « Modèles Claude ».
   Fortement recommandé : le prompt de scoring livré (config/prompts/filter.txt)
   et le pré-filtre de mots-clés (search.yaml) sont génériques — les
   personnaliser avec des exemples et mots-clés réels de ta recherche
@@ -673,6 +675,10 @@ ouvre toujours le DOSSIER de candidature — même sens partout où ces touches 
              individuellement une source (espace pour basculer dans la modale,
              échap pour fermer — écrit immédiatement dans config/sources.yaml,
              indépendant des groupes --with/--without)
+             Sur la ligne « Modèles Claude » : choisir le modèle du filtre, de la
+             lettre et du CV (entrée sur une tâche : dernier Haiku/Sonnet/Opus
+             automatique ou modèle épinglé ; R : rafraîchir la liste ; échap :
+             fermer — écrit immédiatement dans config/search.yaml)
   [b #7aa2f7]r[/]       Recharger après édition (relit search.yaml, invalide le cache)
 """
 
@@ -965,6 +971,131 @@ class SourcesScreen(ModalScreen):
         self.refresh_table()
 
 
+class ModelChoiceScreen(ModalScreen[str]):
+    """Liste de choix d'un modèle pour une tâche — renvoie la spécification choisie
+    (`auto:sonnet`, `claude-sonnet-5-5`…). L'entrée « Modèle local » est grisée (phase ultérieure)."""
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Annuler"),
+    ]
+
+    def __init__(self, task_label: str, current: str) -> None:
+        super().__init__()
+        self._task_label = task_label
+        self._current = current
+
+    def compose(self) -> ComposeResult:
+        from jobsearch.models import list_available
+
+        with Vertical(id="models-choice-box"):
+            yield Label(f"Modèle pour {self._task_label} (entrée : choisir · échap : annuler) :")
+            options = [
+                Option("Dernier Haiku (auto)", id="auto:haiku"),
+                Option("Dernier Sonnet (auto)", id="auto:sonnet"),
+                Option("Dernier Opus (auto)", id="auto:opus"),
+            ]
+            for m in list_available():
+                options.append(Option(f"{m.get('display_name') or m['id']}  [dim]{m['id']}[/dim]", id=m["id"]))
+            options.append(Option("Modèle local (bientôt)", id="local", disabled=True))
+            option_list = OptionList(*options)
+            yield option_list
+
+    def on_mount(self) -> None:
+        option_list = self.query_one(OptionList)
+        for i in range(option_list.option_count):
+            if option_list.get_option_at_index(i).id == self._current:
+                option_list.highlighted = i
+                break
+        else:
+            option_list.highlighted = 0
+        option_list.focus()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        if event.option.id and event.option.id != "local":
+            self.dismiss(event.option.id)
+
+
+class ModelsScreen(ModalScreen):
+    """Choix du modèle Claude de chaque tâche (filtre, lettre, CV).
+
+    Chaque choix est écrit immédiatement dans `search.yaml` (`jobsearch.models.set_task_model`,
+    édition ligne à ligne, commentaires préservés), comme `SourcesScreen`.
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Fermer"),
+        # Pas de conflit avec « une touche = un sens » : `R` n'est lié nulle part ailleurs
+        # (`r` = recharger, en minuscule, au niveau de l'app).
+        Binding("R", "refresh_models", "Rafraîchir la liste", show=False),
+    ]
+
+    def __init__(self, config_dir: str = PATHS.config_dir) -> None:
+        super().__init__()
+        self._config_dir = config_dir
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="models-box"):
+            yield Label("Modèles Claude (entrée : changer · R : rafraîchir la liste · échap : fermer) :")
+            yield DataTable(id="models-table", cursor_type="row")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#models-table", DataTable)
+        table.add_columns("Tâche", "Réglage", "Modèle résolu")
+        self.refresh_table()
+
+    def _search(self):
+        return Search(load_search(self._config_dir))
+
+    def refresh_table(self) -> None:
+        from jobsearch.models import ModelSpecError, TASKS, TASK_LABELS, resolve_model
+
+        table = self.query_one("#models-table", DataTable)
+        previous = None
+        if table.row_count:
+            key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+            previous = str(key.value)
+        table.clear()
+        search = self._search()
+        for task in TASKS:
+            spec = search.get("models", task, "model", default="")
+            try:
+                resolved = resolve_model(spec, refresh=False)
+            except ModelSpecError as e:
+                resolved = f"[red]{e}[/red]"
+            table.add_row(*_cells([TASK_LABELS[task][0].upper() + TASK_LABELS[task][1:], spec, resolved]), key=task)
+        if previous:
+            try:
+                table.move_cursor(row=table.get_row_index(previous))
+            except (KeyError, RowDoesNotExist):
+                pass
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        from jobsearch.models import TASK_LABELS
+
+        event.stop()
+        task = str(event.row_key.value)
+        current = self._search().get("models", task, "model", default="")
+
+        def _apply(spec: str | None) -> None:
+            if not spec:
+                return
+            from jobsearch.models import set_task_model
+
+            set_task_model(task, spec, self._config_dir)
+            get_search.cache_clear()  # même mécanisme que `r` (action_reload)
+            self.refresh_table()
+
+        self.app.push_screen(ModelChoiceScreen(TASK_LABELS[task], current), _apply)
+
+    def action_refresh_models(self) -> None:
+        from jobsearch.models import list_available
+
+        n = len(list_available(refresh=True))
+        self.notify(f"{n} modèle(s) dans la liste." if n else "Liste indisponible (clé API absente ou hors ligne).")
+        self.refresh_table()
+
+
 class StageTUI(App):
     TITLE = "JobSearch — pipeline de stage"
 
@@ -1088,7 +1219,17 @@ class StageTUI(App):
         max-height: 90%;
         align: center middle;
     }
-    HelpScreen, NoteScreen, GenNotesScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen, InvalidReasonScreen, SourcesScreen { align: center middle; }
+    #models-box, #models-choice-box {
+        background: $surface;
+        border: round $accent;
+        padding: 1 2;
+        width: 90%;
+        max-width: 110;
+        height: auto;
+        max-height: 90%;
+        align: center middle;
+    }
+    HelpScreen, NoteScreen, GenNotesScreen, ManualEntryScreen, SessionPickerScreen, DuplicatePickerScreen, ConfirmScreen, InvalidReasonScreen, SourcesScreen, ModelsScreen, ModelChoiceScreen { align: center middle; }
     #bottom-bar { dock: bottom; height: auto; }
     #status-bar { height: 1; background: $panel; color: $text-muted; }
     #update-banner { height: 1; background: $panel; color: $warning; display: none; }
@@ -1249,10 +1390,14 @@ class StageTUI(App):
         commande). `status_notice()` avale déjà toute exception réseau."""
         from jobsearch.updates import status_notice
 
+        from jobsearch.models import model_change_notice
+
         notice = status_notice()
+        model_notice = model_change_notice()  # avale déjà toute exception, affiché une fois
         banner = self.query_one("#update-banner", Static)
-        if notice:
-            banner.update(f" ⬆ {notice}")
+        if notice or model_notice:
+            text = " · ".join(n for n in (f"⬆ {notice}" if notice else "", f"⟳ {model_notice}" if model_notice else "") if n)
+            banner.update(f" {text}")
             banner.styles.display = "block"
         else:
             banner.update("")
@@ -1607,6 +1752,15 @@ class StageTUI(App):
         if not entry:
             widget.update("")
             return
+        if entry.get("kind") == "models":
+            widget.update(
+                f"[b]{entry['role']}[/b]\n\n"
+                "Choisir le modèle Claude de chaque tâche (filtre, lettre, CV) : "
+                "« dernier Haiku/Sonnet/Opus » (suit la famille, avec un avis au changement) "
+                "ou un modèle épinglé (config/search.yaml — écriture immédiate).\n\n"
+                "[dim]entrée : gérer les modèles[/dim]"
+            )
+            return
         if entry.get("kind") == "sources":
             widget.update(
                 f"[b]{entry['role']}[/b]\n\n"
@@ -1636,6 +1790,9 @@ class StageTUI(App):
             # Ligne dédiée : pas un fichier, ouvre la modale de gestion des sources
             # au lieu de tenter de lancer un éditeur sur un chemin qui n'existe pas.
             self.push_screen(SourcesScreen())
+            return
+        if path == MODELS_SETTINGS_KEY:
+            self.push_screen(ModelsScreen())
             return
         entry = next((e for e in settings_files() if e["path"] == path), None)
         if entry is None:

@@ -165,6 +165,9 @@ PATHS = Paths()
 # distinguer des vraies entrées de fichier avant de tenter quoi que ce soit dessus.
 SOURCES_SETTINGS_KEY = "__sources__"
 
+# Même principe pour la ligne « Modèles Claude » : déclencheur de `ModelsScreen`.
+MODELS_SETTINGS_KEY = "__models__"
+
 
 def settings_files() -> list[dict]:
     """Liste des fichiers de configuration éditables, pour l'onglet Réglages de la TUI.
@@ -248,6 +251,13 @@ def settings_files() -> list[dict]:
         "role": "Sources de scraping",
         "path": SOURCES_SETTINGS_KEY,
         "kind": "sources",
+        "state": "action",
+        "mtime": None,
+    })
+    entries.append({
+        "role": "Modèles Claude",
+        "path": MODELS_SETTINGS_KEY,
+        "kind": "models",
         "state": "action",
         "mtime": None,
     })
@@ -357,14 +367,18 @@ DEFAULTS: dict = {
     },
     "models": {
         "filter": {
-            "model": "claude-haiku-4-5-20251001",
+            "model": "auto:haiku",
             "max_tokens": 512,
             "batch_min_offers": 6,
             "batch_poll_seconds": 30,
         },
-        "generate": {
-            "model": "claude-sonnet-4-6",
-            "max_tokens": 2048,
+        "letter": {
+            "model": "auto:sonnet",
+            "max_tokens": 16000,
+        },
+        "cv": {
+            "model": "auto:sonnet",
+            "max_tokens": 16000,
         },
     },
     "sources": {
@@ -413,7 +427,24 @@ def load_search(config_dir: str = PATHS.config_dir) -> dict:
         return dict(DEFAULTS)
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
+    _migrate_legacy_models(data)
     return _deep_merge(DEFAULTS, data)
+
+
+def _migrate_legacy_models(data: dict) -> None:
+    """Rétrocompatibilité : une config antérieure n'a que `models.generate` — ses clés
+    servent de repli, clé par clé, à `models.letter` et `models.cv` (en mémoire seulement)."""
+    models = data.get("models")
+    if not isinstance(models, dict) or not isinstance(models.get("generate"), dict):
+        return
+    for task in ("letter", "cv"):
+        block = models.get(task)
+        if not isinstance(block, dict):
+            block = {}
+        for key in ("model", "max_tokens", "effort"):
+            if key not in block and key in models["generate"]:
+                block[key] = models["generate"][key]
+        models[task] = block
 
 
 @functools.lru_cache(maxsize=8)
@@ -489,11 +520,12 @@ class Search:
 
     @property
     def filter_model(self) -> str:
-        return self.get("models", "filter", "model", default="claude-haiku-4-5-20251001")
+        """Spécification brute (`auto:haiku` ou identifiant épinglé) — voir `model_for`."""
+        return self.get("models", "filter", "model", default="auto:haiku")
 
     @property
     def filter_max_tokens(self) -> int:
-        return int(self.get("models", "filter", "max_tokens", default=512))
+        return self.max_tokens_for("filter")
 
     @property
     def batch_min_offers(self) -> int:
@@ -504,12 +536,46 @@ class Search:
         return int(self.get("models", "filter", "batch_poll_seconds", default=30))
 
     @property
+    def letter_model(self) -> str:
+        return self.get("models", "letter", "model", default="auto:sonnet")
+
+    @property
+    def cv_model(self) -> str:
+        return self.get("models", "cv", "model", default="auto:sonnet")
+
+    @property
     def generate_model(self) -> str:
-        return self.get("models", "generate", "model", default="claude-sonnet-4-6")
+        """Alias de `letter_model` (compatibilité avec un appelant tiers)."""
+        return self.letter_model
+
+    def model_for(self, task: str) -> str:
+        """Identifiant RÉSOLU du modèle d'une tâche (`filter`/`letter`/`cv`) ; les
+        propriétés `*_model` renvoient, elles, la spécification brute."""
+        from jobsearch.models import resolve_model
+
+        default = "auto:haiku" if task == "filter" else "auto:sonnet"
+        return resolve_model(self.get("models", task, "model", default=default))
+
+    def max_tokens_for(self, task: str) -> int:
+        default = 512 if task == "filter" else 16000
+        return int(self.get("models", task, "max_tokens", default=default))
+
+    def effort_for(self, task: str) -> str | None:
+        """`models.<tâche>.effort` — None si absent (Haiku 4.5 rejette `effort`)."""
+        v = self.get("models", task, "effort", default=None)
+        return str(v) if v else None
+
+    @property
+    def letter_max_tokens(self) -> int:
+        return self.max_tokens_for("letter")
+
+    @property
+    def cv_max_tokens(self) -> int:
+        return self.max_tokens_for("cv")
 
     @property
     def generate_max_tokens(self) -> int:
-        return int(self.get("models", "generate", "max_tokens", default=2048))
+        return self.letter_max_tokens
 
     @property
     def enabled_groups(self) -> list[str]:
@@ -753,7 +819,11 @@ if __name__ == "__main__":
     print(f"PATHS          : {PATHS}")
     search = get_search(PATHS.config_dir)
     print(f"threshold      : {search.threshold}")
-    print(f"filter_model   : {search.filter_model}")
-    print(f"generate_model : {search.generate_model}")
+    for _task in ("filter", "letter", "cv"):
+        try:
+            _resolved = search.model_for(_task)
+        except ValueError as _e:
+            _resolved = f"(invalide : {_e})"
+        print(f"model {_task:<9}: {search.get('models', _task, 'model')} -> {_resolved}")
     print(f"prefilter kws  : {len(search.prefilter_keywords)} mot(s)-clé(s)")
     print(f"enabled_groups : {search.enabled_groups}")

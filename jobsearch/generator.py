@@ -8,6 +8,7 @@ from datetime import date
 from dotenv import load_dotenv
 
 from jobsearch.filter import load_profile_text, strip_html
+from jobsearch.models import extract_text
 from jobsearch.cv_pdf import load_cv_data, cv_data_to_text, render_cv_html, write_cv_pdf
 from jobsearch.cv_sync import sync_cv_master
 from jobsearch.letter_pdf import render_letter_pdf
@@ -24,15 +25,46 @@ def load_offer(offer_id: str, data_dir: str) -> dict:
         return json.load(f)
 
 
-def call_sonnet(client, prompt: str, search: Search | None = None) -> str:
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def call_model(client, prompt: str, task: str, search: Search | None = None) -> str:
+    """Appel de génération pour `task` (`"letter"` ou `"cv"`).
+
+    Pièges des modèles récents (Sonnet 5.5) : ils réfléchissent par défaut, donc
+    `content[0]` n'est pas forcément du texte (→ `extract_text`) et les jetons de
+    réflexion comptent dans `max_tokens`. Ni `temperature` ni préremplissage : rejetés.
+    `effort` n'est envoyé que s'il est renseigné (Haiku 4.5 le rejette).
+    """
     if search is None:
         search = get_search()
-    response = client.messages.create(
-        model=search.generate_model,
-        max_tokens=search.generate_max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text
+    model = search.model_for(task)
+    kwargs: dict = {
+        "model": model,
+        "max_tokens": search.max_tokens_for(task),
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    effort = search.effort_for(task)
+    if effort:
+        kwargs["output_config"] = {"effort": effort}
+
+    response = None
+    if "haiku" not in model:
+        # Repli en cas de refus (recommandé pour Sonnet 5.5 / Opus 5.5). Le SDK n'a pas de
+        # paramètre `fallbacks` : passé par extra_body sur l'API bêta.
+        import anthropic
+
+        try:
+            response = client.beta.messages.create(
+                **kwargs, betas=[FALLBACK_BETA], extra_body={"fallbacks": "default"},
+            )
+        except anthropic.BadRequestError as e:
+            if "fallbacks" not in str(e):
+                raise
+            response = None  # modèle qui ne le prend pas en charge : appel sans
+    if response is None:
+        response = client.messages.create(**kwargs)
+    return extract_text(response, task)
 
 
 def _slugify(text: str) -> str:
@@ -107,7 +139,7 @@ def generate_cover_letter(
         "points_forts": points_forts,
         "notes_block": notes_block,
     })
-    return call_sonnet(client, prompt, search=search)
+    return call_model(client, prompt, "letter", search=search)
 
 
 def generate_cv_adapt(
@@ -135,7 +167,7 @@ def generate_cv_adapt(
         "points_forts": points_forts,
         "notes_block": notes_block,
     })
-    raw = call_sonnet(client, prompt, search=search)
+    raw = call_model(client, prompt, "cv", search=search)
 
     raw = raw.strip()
     if raw.startswith("```"):

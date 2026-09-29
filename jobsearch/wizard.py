@@ -1377,14 +1377,15 @@ WELCOME_TEXT = """\
 
 JobSearch automatise la recherche d'un contrat (stage, alternance, CDI…) :
 collecte des offres (RSS, APIs, LinkedIn/Indeed…), filtrage par pertinence
-via Claude Haiku (scoring 0-10), rapport, puis lettre de motivation et CV
-adapté via Claude Sonnet pour les offres retenues.
+par un petit modèle Claude (scoring 0-10), rapport, puis lettre de motivation
+et CV adapté par un modèle plus capable pour les offres retenues (modèles
+modifiables dans l'onglet Réglages de la TUI).
 
 La porte d'entrée du quotidien est l'interface interactive :
   [b]jobsearch --tui[/b]
 
-Coût API : le filtrage (Haiku) est peu coûteux, quelques centimes pour des
-dizaines d'offres. La génération de candidature (Sonnet) coûte plus cher à
+Coût API : le filtrage (petit modèle) est peu coûteux, quelques centimes pour des
+dizaines d'offres. La génération de candidature (modèle plus capable) coûte plus cher à
 l'appel — à réserver aux offres qui t'intéressent vraiment.
 
 Cet assistant configure, dans l'ordre : ta clé API, ton sujet de recherche,

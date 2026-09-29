@@ -643,6 +643,13 @@ Exemples :
     if notice:
         print(f"\nℹ️  {notice}")
 
+    # Avis de bascule de modèle (`auto:<famille>`) : affiché une seule fois, avale toute exception.
+    from jobsearch.models import model_change_notice
+
+    model_notice = model_change_notice()
+    if model_notice:
+        print(f"\nℹ️  {model_notice}")
+
 
 if __name__ == "__main__":
     main()

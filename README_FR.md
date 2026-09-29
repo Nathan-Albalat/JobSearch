@@ -287,7 +287,7 @@ Un transport `streamable-http` existe aussi (`--mcp --mcp-transport streamable-h
 
 ### Coût API
 
-Le filtrage utilise Claude Haiku via l'API Message Batches par défaut (−50% sur les tokens). La génération (lettre + CV) utilise Claude Sonnet, un appel par offre. Recharge des crédits sur [console.anthropic.com](https://console.anthropic.com) si besoin — le scraping lui-même fonctionne sans crédit.
+Le filtrage utilise Claude Haiku via l'API Message Batches par défaut (−50% sur les tokens). La génération (lettre + CV) utilise Claude Sonnet, un appel par offre. Fermer le terminal pendant le filtrage ne fait rien perdre : le batch en cours est enregistré et repris (sans être refacturé) au prochain scrape. Recharge des crédits sur [console.anthropic.com](https://console.anthropic.com) si besoin — le scraping lui-même fonctionne sans crédit.
 
 ### Automatisation toutes les 48h (macOS/Linux)
 

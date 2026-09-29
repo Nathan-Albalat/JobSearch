@@ -287,7 +287,7 @@ Step 4 — Application  : Claude Sonnet drafts a cover letter + adapted CV
 
 ### API cost
 
-Filtering uses Claude Haiku through the Message Batches API by default (−50% on tokens). Generation (letter + CV) uses Claude Sonnet, one-shot per offer. Reload credits at [console.anthropic.com](https://console.anthropic.com) if needed — scraping itself works without any credit.
+Filtering uses Claude Haiku through the Message Batches API by default (−50% on tokens). Generation (letter + CV) uses Claude Sonnet, one-shot per offer. Closing the terminal while filtering does not lose anything: the pending batch is saved and resumed (not billed again) on the next scrape. Reload credits at [console.anthropic.com](https://console.anthropic.com) if needed — scraping itself works without any credit.
 
 ### Automation every 48 hours (macOS/Linux)
 

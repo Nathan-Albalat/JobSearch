@@ -2627,7 +2627,16 @@ class StageTUI(App):
             with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                 new = scrape_all(include_groups=include_groups)
                 self.call_from_thread(self._set_phase, f"Filtrage Claude ({len(new)} nouvelle(s))…")
-                filtered, pertinent = filter_all(threshold=self.threshold)
+
+                def _batch_progress(done, total, batch_id, resumed):
+                    prefix = "Reprise du batch précédent" if resumed else "Batch Claude"
+                    self.call_from_thread(
+                        self._set_phase,
+                        f"{prefix} : {done}/{total} traitées — peut prendre jusqu'à ~1 h ; "
+                        "fermer ne perd rien (repris au prochain scrape)",
+                    )
+
+                filtered, pertinent = filter_all(threshold=self.threshold, progress=_batch_progress)
                 self.call_from_thread(self._set_phase, "Génération du rapport…")
                 report = generate_report(threshold=self.threshold)
             msg = f"Scrape terminé : {len(new)} nouvelle(s), {filtered} filtrée(s), {pertinent} pertinente(s). Rapport : {report}"

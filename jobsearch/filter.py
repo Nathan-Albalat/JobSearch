@@ -4,7 +4,7 @@ import json
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, datetime
 
 import yaml
 from bs4 import BeautifulSoup
@@ -214,59 +214,78 @@ def _prefilter_result() -> dict:
     }
 
 
-def filter_batch(
-    client,
-    to_score: list[tuple[str, dict]],
-    system_text: str,
-    template: str,
-    threshold: int,
-    search: Search,
-) -> tuple[int, int]:
-    """Score les offres via l'API Message Batches (-50% de coût, asynchrone)."""
+_PENDING_NAME = "pending_batch.json"
+
+
+def _pending_path(data_dir: str | None = None) -> str:
+    return os.path.join(data_dir or PATHS.data_dir, _PENDING_NAME)
+
+
+def _load_pending(data_dir: str | None = None) -> dict | None:
+    """Batch en attente, ou None (absent ou illisible)."""
+    try:
+        with open(_pending_path(data_dir), "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("id") or not isinstance(data.get("offers"), dict):
+        return None
+    return data
+
+
+def _save_pending(data: dict, data_dir: str | None = None) -> None:
+    """Écriture atomique (.tmp + os.replace)."""
+    path = _pending_path(data_dir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def _clear_pending(data_dir: str | None = None) -> None:
+    try:
+        os.remove(_pending_path(data_dir))
+    except FileNotFoundError:
+        pass
+
+
+def _wait_batch(client, batch_id: str, total: int, search: Search, progress=None, resumed: bool = False):
+    """Attend la fin du batch ; appelle progress(done, total, batch_id, resumed) à chaque interrogation."""
     import time
 
-    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
-    from anthropic.types.messages.batch_create_params import Request
-
-    filter_model_id = search.model_for("filter")  # résolu une fois pour tout le batch
-    requests_list = [
-        Request(
-            custom_id=offer["id"],
-            params=MessageCreateParamsNonStreaming(
-                model=filter_model_id,
-                max_tokens=search.filter_max_tokens,
-                system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": build_offer_prompt(template, offer)}],
-            ),
-        )
-        for _, offer in to_score
-    ]
-
-    batch = client.messages.batches.create(requests=requests_list)
-    print(f"  Batch créé : {batch.id} ({len(requests_list)} requêtes). Attente des résultats...")
-
     while True:
-        batch = client.messages.batches.retrieve(batch.id)
+        batch = client.messages.batches.retrieve(batch_id)
         if batch.processing_status == "ended":
-            break
+            return batch
         counts = batch.request_counts
-        print(
-            f"  ... en cours : {counts.succeeded + counts.errored}/{len(requests_list)} traitée(s)",
-            end="\r",
-            flush=True,
-        )
+        done = counts.succeeded + counts.errored
+        if progress is not None:
+            progress(done, total, batch_id, resumed)
+        print(f"  ... en cours : {done}/{total} traitée(s)", end="\r", flush=True)
         time.sleep(search.batch_poll_seconds)
 
-    files_by_id = {offer["id"]: (filepath, offer) for filepath, offer in to_score}
+
+def _apply_batch_results(client, batch_id: str, files_by_id: dict[str, str], threshold: int) -> tuple[int, int]:
+    """Applique les résultats d'un batch terminé. files_by_id : offer_id -> chemin du fichier.
+
+    Ignore une offre dont le fichier a disparu ou qui a déjà un filter_result (idempotent).
+    """
     total_filtered = 0
     total_pertinent = 0
     total_errored = 0
 
-    for result in client.messages.batches.results(batch.id):
-        entry = files_by_id.get(result.custom_id)
-        if entry is None:
+    for result in client.messages.batches.results(batch_id):
+        filepath = files_by_id.get(result.custom_id)
+        if filepath is None or not os.path.isfile(filepath):
             continue
-        filepath, offer = entry
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                offer = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if "filter_result" in offer:
+            continue
         if result.result.type != "succeeded":
             total_errored += 1
             print(f"  Erreur batch sur {result.custom_id} ({result.result.type}) — sera retentée au prochain run.", file=sys.stderr)
@@ -291,11 +310,120 @@ def filter_batch(
     return total_filtered, total_pertinent
 
 
+def filter_batch(
+    client,
+    to_score: list[tuple[str, dict]],
+    system_text: str,
+    template: str,
+    threshold: int,
+    search: Search,
+    progress=None,
+    data_dir: str | None = None,
+) -> tuple[int, int]:
+    """Score les offres via l'API Message Batches (-50% de coût, asynchrone)."""
+    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+    from anthropic.types.messages.batch_create_params import Request
+
+    filter_model_id = search.model_for("filter")  # résolu une fois pour tout le batch
+    requests_list = [
+        Request(
+            custom_id=offer["id"],
+            params=MessageCreateParamsNonStreaming(
+                model=filter_model_id,
+                max_tokens=search.filter_max_tokens,
+                system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
+                messages=[{"role": "user", "content": build_offer_prompt(template, offer)}],
+            ),
+        )
+        for _, offer in to_score
+    ]
+
+    batch = client.messages.batches.create(requests=requests_list)
+    # Persisté juste après la création : si le terminal se ferme, le batch (facturé) sera repris.
+    _save_pending({
+        "id": batch.id,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "model": filter_model_id,
+        "offers": {offer["id"]: os.path.basename(fp) for fp, offer in to_score},
+    }, data_dir)
+    print(f"  Batch {batch.id} enregistré ({len(requests_list)} requêtes) — tu peux fermer : "
+          "il sera repris au prochain scrape, sans être refacturé.")
+
+    _wait_batch(client, batch.id, len(requests_list), search, progress)
+
+    files_by_id = {offer["id"]: filepath for filepath, offer in to_score}
+    result = _apply_batch_results(client, batch.id, files_by_id, threshold)
+    _clear_pending(data_dir)
+    return result
+
+
+_BATCH_RESULTS_TTL_DAYS = 29  # résultats conservés 29 jours côté Anthropic
+
+
+def _resume_pending_batch(client, search: Search, threshold: int, offers_dir: str, progress=None,
+                          data_dir: str | None = None):
+    """Reprend un batch interrompu. Retourne (filtered, pertinent, exclude_ids, keep_pending)."""
+    import anthropic
+
+    pending = _load_pending(data_dir)
+    if pending is None:
+        return 0, 0, set(), False
+    batch_id = pending["id"]
+
+    try:
+        age = datetime.now() - datetime.fromisoformat(str(pending.get("created_at")))
+        too_old = age.days >= _BATCH_RESULTS_TTL_DAYS
+    except (ValueError, TypeError):
+        too_old = False
+    if too_old:
+        print(f"  Batch {batch_id} trop ancien, résultats expirés côté Anthropic : les offres seront renvoyées.",
+              file=sys.stderr)
+        _clear_pending(data_dir)
+        return 0, 0, set(), False
+
+    files_by_id = {oid: os.path.join(offers_dir, fn) for oid, fn in pending["offers"].items()}
+    print(f"  Batch précédent {batch_id} trouvé ({len(files_by_id)} offres) — reprise, sans nouvelle facturation.")
+    try:
+        batch = client.messages.batches.retrieve(batch_id)
+        if batch.processing_status != "ended":
+            _wait_batch(client, batch_id, len(files_by_id), search, progress, resumed=True)
+        filtered, pertinent = _apply_batch_results(client, batch_id, files_by_id, threshold)
+    except anthropic.NotFoundError:
+        print(f"  Batch {batch_id} introuvable côté API : abandonné, les offres seront renvoyées.", file=sys.stderr)
+        _clear_pending(data_dir)
+        return 0, 0, set(), False
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
+        # Clé invalide / droits : fichier conservé, l'erreur remonte (pas de boucle silencieuse).
+        print(f"  Erreur d'authentification en reprenant le batch {batch_id} : {e}. "
+              "Batch conservé ; corrige la clé API puis relance.", file=sys.stderr)
+        raise
+    except anthropic.APIStatusError as e:
+        if e.status_code >= 500 or isinstance(e, anthropic.RateLimitError):
+            print(f"  Avertissement : reprise du batch {batch_id} impossible ({e}) — "
+                  "réessai au prochain lancement.", file=sys.stderr)
+            return 0, 0, set(files_by_id), True
+        print(f"  Erreur permanente ({e.status_code}) en reprenant le batch {batch_id} : {e}. "
+              "Batch abandonné, les offres seront renvoyées.", file=sys.stderr)
+        _clear_pending(data_dir)
+        return 0, 0, set(), False
+    except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+        print(f"  Avertissement : reprise du batch {batch_id} impossible ({e}) — "
+              "réessai au prochain lancement.", file=sys.stderr)
+        return 0, 0, set(files_by_id), True
+    except Exception as e:  # inconnu : traité comme transitoire (comportement prudent, pas de double facturation)
+        print(f"  Avertissement : reprise du batch {batch_id} impossible ({e}) — "
+              "réessai au prochain lancement.", file=sys.stderr)
+        return 0, 0, set(files_by_id), True
+    _clear_pending(data_dir)
+    return filtered, pertinent, set(), False
+
+
 def filter_all(
     config_dir: str = PATHS.config_dir,
     data_dir: str = PATHS.data_dir,
     threshold: int | None = None,
     use_batch: bool = True,
+    progress=None,
 ) -> tuple[int, int]:
     load_dotenv(PATHS.env_path, override=True)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -327,11 +455,19 @@ def filter_all(
 
     if not os.path.isdir(offers_dir):
         print("Aucune offre à filtrer (lance d'abord un scrape).")
-        return
+        return 0, 0
+    resumed_filtered, resumed_pertinent, excluded_ids, keep_pending = _resume_pending_batch(
+        client, search, threshold, offers_dir, progress, data_dir
+    )
+    excluded_files = set()
+    if excluded_ids:
+        pend = _load_pending(data_dir) or {}
+        excluded_files = set((pend.get("offers") or {}).values())
     all_files = sorted(f for f in os.listdir(offers_dir) if f.endswith(".json"))
     pending = [
         f for f in all_files
-        if "filter_result" not in json.load(open(os.path.join(offers_dir, f), encoding="utf-8"))
+        if f not in excluded_files
+        and "filter_result" not in json.load(open(os.path.join(offers_dir, f), encoding="utf-8"))
     ]
     total_pending = len(pending)
     print(f"  {total_pending} offre(s) à analyser ({len(all_files) - total_pending} déjà filtrée(s)).")
@@ -353,10 +489,18 @@ def filter_all(
 
     # Mode batch (-50% de coût) dès qu'il y a assez d'offres
     if use_batch and len(to_score) >= search.batch_min_offers:
+        if keep_pending:
+            # Un batch précédent reste à reprendre : ne pas écraser pending_batch.json.
+            print("  Nouveau batch différé : le batch précédent n'a pas pu être repris (réessai au prochain lancement).",
+                  file=sys.stderr)
+            return resumed_filtered, resumed_pertinent
         total_filtered, total_pertinent = filter_batch(
-            client, to_score, system_text, template, threshold, search
+            client, to_score, system_text, template, threshold, search, progress, data_dir
         )
-        return total_filtered, total_pertinent
+        return total_filtered + resumed_filtered, total_pertinent + resumed_pertinent
+
+    total_filtered += resumed_filtered
+    total_pertinent += resumed_pertinent
 
     # Mode séquentiel (petits volumes ou --no-batch)
     for idx, (filepath, offer) in enumerate(to_score, 1):

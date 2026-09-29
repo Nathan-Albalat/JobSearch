@@ -534,6 +534,10 @@ Le filtrage passe par l'**API Message Batches** dès qu'il y a ≥ 6 offres à s
 - Poll toutes les 30 s jusqu'à `processing_status == "ended"`, résultats appariés par `custom_id`
 - Requêtes en erreur → offre non marquée, re-tentée au run suivant
 - `--no-batch` force le mode séquentiel (debug, petits volumes)
+- **Reprise d'un batch interrompu** (`data/pending_batch.json` : `{id, created_at, model, offers: {offer_id: fichier}}`, écriture atomique `.tmp` + `os.replace`). Ordre strict dans `filter_batch` : `batches.create` → écriture du fichier → attente (`_wait_batch`) → application des résultats (`_apply_batch_results`) → effacement. Le fichier n'est effacé qu'**après** l'application ; une coupure pendant l'application le laisse, et la reprise réapplique sans rien doubler (les offres déjà scorées sont sautées). Sans ce fichier, fermer le terminal pendant l'attente laissait le batch facturé chez Anthropic mais jamais récupéré, puis renvoyé et refacturé au scrape suivant.
+- Au début de `filter_all`, `_resume_pending_batch` : batch terminé → application ; en cours → reprise de l'attente puis application ; introuvable (`anthropic.NotFoundError`) → fichier effacé, offres renvoyées normalement. Résultats `errored`/`expired`/`canceled` → offres sans score, renvoyées dans le batch normal. **Erreur réseau/API transitoire** : fichier conservé, offres de ce batch exclues de la sélection du run, et aucun nouveau batch n'est créé dans ce run (il écraserait `pending_batch.json`) — reprise au lancement suivant.
+- **Avancement** : `filter_all(..., progress=cb)` / `filter_batch(..., progress=cb)` appellent `cb(done, total, batch_id, resumed)` à chaque interrogation ; la TUI (`run_scrape`) l'affiche dans le libellé de phase du spinner (« Batch Claude : x/y traitées… » / « Reprise du batch précédent… »), seul moyen de contourner la redirection de stdout de la TUI.
+- **Non géré** : deux processus (TUI et CLI) simultanés sur le même `JOBSEARCH_HOME` — pas de verrou sur `pending_batch.json`.
 
 Mode séquentiel : prompt (~4100 tokens) en bloc `system` avec `cache_control: ephemeral`, TTL 5 min, stats de cache affichées en fin de run.
 

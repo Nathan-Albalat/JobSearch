@@ -3,7 +3,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from jobsearch.cv_pdf import write_cv_pdf, _ABS_TEMPLATES_DIR
+from jobsearch.cv_pdf import write_cv_pdf, import_weasyprint_html, _ABS_TEMPLATES_DIR
 
 _SALUTATION_RE = re.compile(r"^(dear|to whom|madame|monsieur|madame,|hi |hello )", re.IGNORECASE)
 _CLOSING_RE = re.compile(
@@ -222,14 +222,7 @@ def render_letter_pdf(
         base_url = _ABS_TEMPLATES_DIR
     """Rend la lettre en PDF en repliant automatiquement le layout de signature
     (empilé → en ligne → sans signature) pour ne jamais déborder sur une 2e page."""
-    try:
-        from weasyprint import HTML
-    except ImportError:
-        raise ImportError(
-            "WeasyPrint est requis pour générer le PDF. "
-            "Installe-le avec : pip install weasyprint\n"
-            "(Sur macOS, brew install pango peut aussi être nécessaire)"
-        )
+    HTML = import_weasyprint_html()
 
     for layout, include_sig in (("stacked", True), ("inline", True), ("stacked", False)):
         html = render_letter_html(

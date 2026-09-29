@@ -73,9 +73,10 @@ def _check_setup() -> None:
     print("   • jobsearch --setup            assistant guidé (recommandé)")
     # `setup.sh` n'est PAS embarqué dans le paquet : en installation pipx,
     # PACKAGE_ROOT vaut site-packages/ et le script n'y existe pas. Ne le
-    # proposer que s'il est réellement là (dépôt cloné, `pip install -e .`).
+    # proposer que s'il est réellement là (dépôt cloné, `pip install -e .`) — et
+    # jamais sous Windows, où il n'y a pas de bash par défaut.
     setup_sh = os.path.join(PACKAGE_ROOT, "setup.sh")
-    if os.path.isfile(setup_sh):
+    if os.path.isfile(setup_sh) and not sys.platform.startswith("win"):
         print(f"   • bash {setup_sh}")
         print("     copie les fichiers d'exemple, à éditer ensuite à la main")
     sys.exit(1)

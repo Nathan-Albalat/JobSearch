@@ -17,6 +17,7 @@ import time
 import unicodedata
 import webbrowser
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from rich.style import Style
 from textual import work
@@ -1365,17 +1366,40 @@ class StageTUI(App):
 
         editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
         if editor:
-            cmd = shlex.split(editor) + [path]
-            with self.suspend():
-                subprocess.run(cmd, check=False)
+            # posix=False sous Windows : sinon shlex mange les `\` de `C:\...\code.exe`.
+            cmd = shlex.split(editor, posix=not sys.platform.startswith("win")) + [path]
+            try:
+                with self.suspend():
+                    subprocess.run(cmd, check=False)
+            except OSError as e:
+                self.notify_status(f"Éditeur introuvable ({editor}) : {type(e).__name__}: {e}")
             return
 
-        if sys.platform == "darwin":
-            subprocess.run(["open", path], check=False)
-        elif sys.platform.startswith("win"):
-            os.startfile(path)  # type: ignore[attr-defined]
-        else:
-            subprocess.run(["xdg-open", path], check=False)
+        self._open_with_system(path)
+
+    def _open_with_system(self, path: str) -> None:
+        """Ouvre `path` (fichier ou dossier) avec l'application par défaut de l'OS.
+
+        Seul point d'appel des ouvreurs système de la TUI : `open` n'existe que sur
+        macOS — un `subprocess.run(["open", ...])` en dur lève `FileNotFoundError`
+        (que `check=False` ne rattrape pas) et fait planter la TUI sous Linux et
+        Windows. `Popen` + sorties vers DEVNULL : `xdg-open` peut écrire sur le
+        terminal et corrompre l'affichage Textual, et ne doit pas bloquer la TUI.
+        Un ouvreur absent (Linux sans bureau) donne un message, jamais un crash.
+        """
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(path)  # type: ignore[attr-defined]
+                return
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            subprocess.Popen(
+                [opener, path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as e:
+            self.notify_status(f"Impossible d'ouvrir {path} : {type(e).__name__}: {e}")
 
     def refresh_stats(self) -> None:
         stats = compute_stats(PATHS.data_dir)
@@ -1835,13 +1859,13 @@ class StageTUI(App):
                 # c'est un message texte : `isdir` évite d'ouvrir n'importe quoi.
                 target = self.gen_status[oid][1]
                 if os.path.isdir(target):
-                    subprocess.run(["open", target], check=False)
+                    self._open_with_system(target)
             return
         if tab != "letters":
             return
         folder = self._current_row_key("letters-table")
         if folder:
-            subprocess.run(["open", folder], check=False)
+            self._open_with_system(folder)
 
     # ---------- onglet candidatures ----------
 
@@ -1863,7 +1887,7 @@ class StageTUI(App):
         if not os.path.exists(md):
             self.notify_status("Pas de lettre.md dans ce dossier.")
             return
-        subprocess.run(["open", md], check=False)
+        self._open_in_editor(md)
         self.notify_status(f"lettre.md ouverte dans l'éditeur — retouche puis `p` pour régénérer le PDF.")
 
     def action_render_letter_pdf(self) -> None:
@@ -2184,7 +2208,9 @@ class StageTUI(App):
             return
         try:
             path = write_flow_html(DEFAULT_FLOW_PATH, load_applications())
-            webbrowser.open("file://" + os.path.abspath(path))
+            # `as_uri()` et non "file://" + chemin : sous Windows, ce dernier donne
+            # une URI malformée (`file://C:\\Users\\...`).
+            webbrowser.open(Path(path).resolve().as_uri())
         except Exception as e:
             self.notify_status(f"Erreur export Sankey : {type(e).__name__}: {e}")
             return

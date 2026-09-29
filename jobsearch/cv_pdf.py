@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 import yaml
@@ -6,6 +7,41 @@ import yaml
 from jobsearch.config import PATHS
 
 _ABS_TEMPLATES_DIR = PATHS.absolute().templates_dir + os.sep
+
+
+def import_weasyprint_html():
+    """Importe `weasyprint.HTML`, ou lève une `ImportError` au message actionnable.
+
+    Deux échecs distincts : le paquet absent (`ImportError`), et le paquet présent
+    mais les librairies système Pango/GTK introuvables — WeasyPrint lève alors une
+    `OSError` à l'import (« cannot load library 'gobject-2.0-0' »), cas normal sous
+    Windows sans le runtime GTK3. Les appelants (`generator.py`) n'attrapent que
+    `ImportError` pour continuer sans PDF : laisser passer l'`OSError` faisait
+    planter `--generate` APRÈS les appels Sonnet, sans enregistrer la candidature.
+    """
+    try:
+        from weasyprint import HTML
+    except ImportError:
+        raise ImportError(
+            "WeasyPrint est requis pour générer le PDF. "
+            "Installe-le avec : pip install weasyprint"
+        )
+    except OSError as e:
+        if sys.platform.startswith("win"):
+            hint = (
+                "Sous Windows, installe le runtime GTK3 (MSYS2 : pacman -S "
+                "mingw-w64-x86_64-pango, puis définis la variable d'environnement "
+                "WEASYPRINT_DLL_DIRECTORIES=C:\\msys64\\mingw64\\bin) — "
+                "voir https://doc.courtbouillon.org/weasyprint/stable/first_steps.html#windows"
+            )
+        elif sys.platform == "darwin":
+            hint = "Sous macOS : brew install pango"
+        else:
+            hint = "Sous Linux : installe Pango (ex. apt install libpango-1.0-0 libpangoft2-1.0-0)"
+        raise ImportError(
+            f"WeasyPrint est installé mais ses librairies système (Pango/GTK) sont introuvables ({e}).\n{hint}"
+        )
+    return HTML
 
 
 def load_cv_data(cv_dir: str) -> dict:
@@ -150,13 +186,6 @@ def render_cv_html(template_path: str, static_data: dict, adapted: dict) -> str:
 def write_cv_pdf(html_content: str, output_path: str, base_url: str = None) -> None:
     if base_url is None:
         base_url = _ABS_TEMPLATES_DIR
-    try:
-        from weasyprint import HTML
-    except ImportError:
-        raise ImportError(
-            "WeasyPrint est requis pour générer le PDF. "
-            "Installe-le avec : pip install weasyprint\n"
-            "(Sur macOS, brew install pango peut aussi être nécessaire)"
-        )
+    HTML = import_weasyprint_html()
     # base_url permet de résoudre les chemins relatifs (polices locales fonts/)
     HTML(string=html_content, base_url=base_url).write_pdf(output_path)

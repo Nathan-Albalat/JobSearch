@@ -23,7 +23,8 @@ This works on any Python 3.11+ (including 3.12/3.13/3.14) and covers every sourc
   pipx install "jobsearch[jobspy] @ git+https://github.com/Nathan-Albalat/JobSearch" --python python3.11
   ```
   Without it, these two sources are simply skipped with an explanatory message — not an error, the rest of the scrape runs normally.
-- **WeasyPrint** (PDF rendering) needs Pango/Cairo installed at the system level: `brew install pango` on macOS. Without it, `--generate` / `--letter-pdf` fail at the PDF step, though everything else works.
+- **WeasyPrint** (PDF rendering) needs Pango installed at the system level: `brew install pango` on macOS; `apt install libpango-1.0-0 libpangoft2-1.0-0` on Debian/Ubuntu (usually already present on a desktop); on Windows, install [MSYS2](https://www.msys2.org), run `pacman -S mingw-w64-x86_64-pango`, then set `WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin`. Without it, `--generate` still writes the letter (`.md`) and the CV preview (`.html`) and records the application, but skips the PDFs with an explanatory message.
+- **Windows**: use `jobsearch --setup` (`setup.sh` needs bash), and preferably Windows Terminal for the TUI. `--service` (auto-start) is macOS-only (launchd).
 
 For local development instead of `pipx`, use `pip install -e .` (or `pip install -e '.[jobspy]'`) inside this repo's venv.
 

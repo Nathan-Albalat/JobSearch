@@ -23,7 +23,8 @@ C'est tout — `jobsearch --setup` te guide dans un assistant interactif (clé A
   pipx install "jobsearch[jobspy] @ git+https://github.com/Nathan-Albalat/JobSearch" --python python3.11
   ```
   Sans lui, ces deux sources sont simplement ignorées avec un message explicatif — pas une erreur, le reste du scrape tourne normalement.
-- **WeasyPrint** (rendu PDF) requiert Pango/Cairo au niveau système : `brew install pango` sur macOS. Sans elle, `--generate` / `--letter-pdf` échouent à l'étape PDF, le reste fonctionne quand même.
+- **WeasyPrint** (rendu PDF) requiert Pango au niveau système : `brew install pango` sur macOS ; `apt install libpango-1.0-0 libpangoft2-1.0-0` sur Debian/Ubuntu (généralement déjà présent sur un poste de bureau) ; sous Windows, installer [MSYS2](https://www.msys2.org), lancer `pacman -S mingw-w64-x86_64-pango`, puis définir `WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin`. Sans elle, `--generate` écrit quand même la lettre (`.md`) et l'aperçu du CV (`.html`) et enregistre la candidature, mais saute les PDF avec un message explicatif.
+- **Windows** : utiliser `jobsearch --setup` (`setup.sh` exige bash), et de préférence Windows Terminal pour la TUI. `--service` (démarrage automatique) est propre à macOS (launchd).
 
 Pour du développement local plutôt que `pipx` : `pip install -e .` (ou `pip install -e '.[jobspy]'`) dans le venv de ce dépôt.
 

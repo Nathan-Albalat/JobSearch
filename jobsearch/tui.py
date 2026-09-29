@@ -127,28 +127,107 @@ def _hbar(label, value, total, label_w, bar_w=22, style=None):
     return f"{_pad(str(label), label_w)} {color}{bar}{close} {value:>2} ({pct:>3}%)"
 
 
-def render_month_histogram(by_month, height=7, col_w=7):
-    """Histogramme vertical ASCII des candidatures par mois (inspiré d'AsciiStogram)."""
-    if not by_month:
+# Échelles de temps partagées par l'histogramme et le graphe en courbes par pays.
+# Calibrées pour tenir dans ~96 colonnes : max seaux, largeur de colonne de l'histogramme,
+# repère d'axe tous les N seaux, colonnes par seau dans les courbes, libellé.
+_SCALES = {
+    "day": {"max": 90, "col_w": 1, "every": 7, "line_cols": 1, "label": "jour"},
+    "week": {"max": 32, "col_w": 3, "every": 4, "line_cols": 3, "label": "semaine"},
+    "month": {"max": 16, "col_w": 6, "every": 1, "line_cols": 6, "label": "mois"},
+}
+_SCALE_CYCLE = ("day", "week", "month")
+
+
+def _bucket_start(d, scale):
+    """Clé de seau : le jour, le lundi de la semaine ou le 1er du mois."""
+    if scale == "week":
+        return d - timedelta(days=d.weekday())
+    if scale == "month":
+        return d.replace(day=1)
+    return d
+
+
+def _next_bucket(d, scale):
+    if scale == "week":
+        return d + timedelta(days=7)
+    if scale == "month":
+        return date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+    return d + timedelta(days=1)
+
+
+def _bucket_label(d, scale):
+    if scale == "month":
+        return _short_month(d.strftime("%Y-%m"))
+    return d.strftime("%d/%m")
+
+
+def _bucket_axis(by_day_groups, scale, today=None, max_buckets=None):
+    """Liste des seaux (débuts) de la 1re candidature à aujourd'hui, vides inclus, tronquée aux plus récents."""
+    days = [d for d in by_day_groups if d]
+    if not days:
+        return []
+    today = today or date.today()
+    end = _bucket_start(max(today, max(days)), scale)
+    cur = _bucket_start(min(days), scale)
+    out = []
+    while cur <= end:
+        out.append(cur)
+        cur = _next_bucket(cur, scale)
+    max_buckets = max_buckets or _SCALES[scale]["max"]
+    return out[-max_buckets:]
+
+
+def _bucket_counts(by_day, scale, today=None, max_buckets=None):
+    """Agrège `{jour ISO: n}` par jour/semaine/mois -> [(début de seau, total)], seaux vides inclus."""
+    per_day = {}
+    for k, v in (by_day or {}).items():
+        d = _parse_day(k)
+        if d and v:
+            per_day[d] = per_day.get(d, 0) + v
+    axis = _bucket_axis(per_day, scale, today, max_buckets)
+    totals = Counter()
+    for d, n in per_day.items():
+        totals[_bucket_start(d, scale)] += n
+    return [(b, totals.get(b, 0)) for b in axis]
+
+
+def _axis_labels(width, positions_labels):
+    """Ligne d'axe X : place chaque libellé seulement si la place est libre."""
+    axis = [" "] * width
+    for pos, label in positions_labels:
+        if pos < 0 or pos + len(label) > width:
+            continue
+        if all(c == " " for c in axis[max(0, pos - 1):pos + len(label)]):
+            axis[pos:pos + len(label)] = list(label)
+    return "".join(axis).rstrip()
+
+
+def render_time_histogram(buckets, scale="week", height=7):
+    """Histogramme vertical ASCII des candidatures par seau de temps (inspiré d'AsciiStogram)."""
+    if not buckets:
         return "[dim]Aucune donnée temporelle.[/dim]"
-    months = list(by_month.keys())
-    values = [by_month[m] for m in months]
-    top = max(values)
-    # labels d'axe Y (valeur max en haut, 0 en bas) alignés à droite
+    cfg = _SCALES[scale]
+    col_w, every = cfg["col_w"], cfg["every"]
+    values = [v for _, v in buckets]
+    top = max(max(values), 1)
+    bar_w = col_w if col_w == 1 else col_w - 1 if col_w <= 3 else col_w - 2
     y_w = len(str(top))
     lines = []
     for level in range(height, 0, -1):
         threshold = top * level / height
         axis = f"{top:>{y_w}} " if level == height else " " * (y_w + 1)
         cells = "".join(
-            ("█" * (col_w - 2)).center(col_w) if v >= threshold else " " * col_w
+            ("█" * bar_w).center(col_w) if v > 0 and v >= threshold else " " * col_w
             for v in values
         )
         lines.append(f"{axis}┤{cells}")
-    # axe X + labels de mois (MM/YY)
-    lines.append(f"{0:>{y_w}} └" + "─" * (col_w * len(months)))
-    labels = "".join(_short_month(m).center(col_w) for m in months)
-    lines.append(" " * (y_w + 2) + labels)
+    lines.append(f"{0:>{y_w}} └" + "─" * (col_w * len(buckets)))
+    marks = []
+    for i, (b, _) in enumerate(buckets):
+        if i % every == 0:
+            label = _bucket_label(b, scale)
+            marks.append((i * col_w + max(0, (col_w - len(label)) // 2), label))
+    lines.append(" " * (y_w + 2) + _axis_labels(col_w * len(buckets) + 5, marks))
     return "\n".join(lines)
 
 
@@ -319,6 +398,23 @@ def render_location_tree(by_place, total, max_cities=6) -> str:
     return "\n".join(out)
 
 
+def _chart_scale(max_value, max_height=10):
+    """(pas, hauteur, sommet) d'un graphe en courbes : une ligne = `pas` unités entières.
+
+    max <= max_height : une ligne par unité. Sinon le plus petit pas parmi 1, 2, 5, 10, 20, 25,
+    50, 100… tel que ceil(max/pas) <= max_height ; sommet = pas × ceil(max/pas).
+    """
+    m = max(1, int(-(-max_value // 1)))
+    if m <= max_height:
+        return 1, m, m
+    steps = sorted({b * 10 ** k for b in (1, 2, 5) for k in range(0, 7)} | {25 * 10 ** k for k in range(0, 6)})
+    for step in steps:
+        n = -(-m // step)
+        if n <= max_height:
+            return step, n, step * n
+    return m, 1, m
+
+
 def render_line_chart(series, height=8, colors=None) -> str:
     """Graphe en courbes ASCII (portage stdlib de l'algorithme `asciichart`).
 
@@ -330,19 +426,16 @@ def render_line_chart(series, height=8, colors=None) -> str:
     if not series:
         return ""
     n = len(series[0])
-    top = max(max(s) for s in series)
-    top = max(top, 1)
-    height = max(1, min(height, int(top)))
+    step, height, top = _chart_scale(max(max(s) for s in series), height)
     colors = list(colors or [])
     order = sorted(range(len(series)), key=lambda i: sum(series[i]))
-    ratio = height / top
-    label_w = len(str(int(round(top))))
+    label_w = len(str(top))
     offset = label_w + 2  # libellé + espace + caractère d'axe
     grid = [[(" ", None)] * (n + offset) for _ in range(height + 1)]
 
     for y in range(height + 1):
         row = height - y
-        label = str(int(round(y * top / height)))
+        label = str(y * step)
         grid[row] = [(c, None) for c in _pad(label.rjust(label_w), label_w) + " "] + [
             ("┼" if y in (0, height) else "┤", None)
         ] + grid[row][offset:]
@@ -350,7 +443,8 @@ def render_line_chart(series, height=8, colors=None) -> str:
     for i in order:
         s = series[i]
         color = colors[i] if i < len(colors) else None
-        ys = [int(round(v * ratio)) for v in s]
+        # Demi vers le haut (pas l'arrondi bancaire) ; une valeur > 0 reste au-dessus de la ligne 0.
+        ys = [max(1, int(v / step + 0.5)) if v > 0 else 0 for v in s]
         for x in range(n - 1):
             y0, y1 = ys[x], ys[x + 1]
             if y0 == y1:
@@ -369,8 +463,11 @@ def render_line_chart(series, height=8, colors=None) -> str:
     return "\n".join(lines)
 
 
-def render_country_timeline(by_day_country, today=None, top=4, max_days=90) -> str:
-    """Candidatures par pays sur 7 jours glissants, une courbe par pays (`render_line_chart`)."""
+def render_country_timeline(by_day_country, scale="week", today=None, top=4) -> str:
+    """Candidatures par pays et par seau (jour/semaine/mois), une courbe par pays.
+
+    Chaque seau est répété sur `line_cols` colonnes : paliers lisibles façon `asciichart`.
+    """
     per_day = {}
     for k, countries in (by_day_country or {}).items():
         d = _parse_day(k)
@@ -378,10 +475,9 @@ def render_country_timeline(by_day_country, today=None, top=4, max_days=90) -> s
             per_day[d] = countries
     if not per_day:
         return "[dim]Aucune donnée temporelle.[/dim]"
-    today = today or date.today()
-    first = min(per_day)
-    end = max(today, max(per_day))
-    start = max(first, end - timedelta(days=max_days - 1))
+    cfg = _SCALES[scale]
+    cols = cfg["line_cols"]
+    axis_buckets = _bucket_axis(per_day, scale, today)
 
     totals: Counter = Counter()
     for countries in per_day.values():
@@ -393,35 +489,34 @@ def render_country_timeline(by_day_country, today=None, top=4, max_days=90) -> s
     if others:
         groups.append(("Autres", others))
 
-    n_days = (end - start).days + 1
+    per_bucket: dict = {}
+    for d, countries in per_day.items():
+        per_bucket.setdefault(_bucket_start(d, scale), Counter()).update(countries)
     series = []
     for _, members in groups:
-        daily = []
-        for i in range(n_days + 6):  # 6 jours de recul pour la fenêtre glissante
-            d = start - timedelta(days=6) + timedelta(days=i)
-            daily.append(sum(per_day.get(d, {}).get(m, 0) for m in members))
-        series.append([sum(daily[i:i + 7]) for i in range(n_days)])
+        vals = [sum(per_bucket.get(b, {}).get(m, 0) for m in members) for b in axis_buckets]
+        series.append([v for v in vals for _ in range(cols)])
     colors = [_COUNTRY_PALETTE[i % len(_COUNTRY_PALETTE)] for i in range(len(groups))]
 
     chart = render_line_chart(series, height=10, colors=colors)
-    label_w = len(str(max(1, max(max(s) for s in series))))
+    label_w = len(str(_chart_scale(max(max(s) for s in series), 10)[2]))
     offset = label_w + 2
-    axis = [" "] * (offset + n_days + 5)
-    for i in range(n_days):
-        d = start + timedelta(days=i)
-        if d.day == 1 or i == 0:
-            label = _short_month(d.strftime("%Y-%m"))
-            pos = offset + i
-            if all(c == " " for c in axis[max(0, pos - 1):pos + len(label)]):
-                axis[pos:pos + len(label)] = list(label)
+    every = cfg["every"] if scale != "month" else 1
+    marks = [
+        (offset + i * cols, _bucket_label(b, scale))
+        for i, b in enumerate(axis_buckets)
+        if i % every == 0
+    ]
+    axis = _axis_labels(offset + cols * len(axis_buckets) + 5, marks)
     grand = sum(totals.values())
     legend = "   ".join(
         f"[{colors[i]}]●[/] {name}  {sum(totals[m] for m in members)} "
         f"({round(100 * sum(totals[m] for m in members) / grand)}%)"
         for i, (name, members) in enumerate(groups)
     )
-    title = "[dim]Candidatures par pays (7 jours glissants)[/dim]"
-    return "\n".join([title, chart, "".join(axis).rstrip(), "", legend])
+    unit = {"day": "jour", "week": "semaine", "month": "mois"}[scale]
+    title = f"[dim]Candidatures par pays — par {unit}[/dim]"
+    return "\n".join([title, chart, axis, "", legend])
 
 
 class HighlightDataTable(DataTable):
@@ -560,6 +655,7 @@ ouvre toujours le DOSSIER de candidature — même sens partout où ces touches 
   candidatures au cours du temps, parcours des candidatures
   (arbre de statuts) et répartition mensuelle des statuts atteints.
   [b #7aa2f7]f[/]  Exporter le diagramme de Sankey du flux (HTML, ouvert dans le navigateur)
+  [b #7aa2f7]t[/]  Échelle de temps des graphes (histogramme, courbes par pays) : jour · semaine · mois
 
 [b]Onglet Réglages[/b]
   Liste les fichiers de configuration du pipeline (clés API, sujet de
@@ -901,8 +997,8 @@ class StageTUI(App):
     }
     .stats-left { width: 42%; height: auto; padding: 0 1; }
     .stats-right { width: 1fr; height: auto; padding: 0 1; }
-    #stats-time { padding: 1 1; }
-    #stats-months { width: auto; }
+    #stats-heatmap { padding: 1 1; }
+    #stats-months { padding: 1 1; }
     #stats-country-time { padding: 1 1; }
     #letter-detail {
         width: 58%;
@@ -1045,6 +1141,7 @@ class StageTUI(App):
         Binding("v", "set_status('accepted')", show=False),
         Binding("z", "set_status('cancelled')", show=False),
         Binding("f", "export_flow", show=False),
+        Binding("t", "cycle_stats_scale", show=False),
     ]
 
     def __init__(self) -> None:
@@ -1054,6 +1151,7 @@ class StageTUI(App):
         self.gen_checked: set[str] = set()  # coches de l'onglet Génération, filtre optionnel — non persisté
         self.threshold = get_search().threshold
         self.hide_done = False
+        self._stats_scale = "week"  # échelle des graphes temporels de l'onglet Stats : day | week | month
         self.period = "all"  # "all" | "session" | "7d" | "30d"
         self.session_date: str | None = None
         self.gen_status: dict[str, tuple[str, str]] = {}  # id -> (icone, info/dossier)
@@ -1091,9 +1189,8 @@ class StageTUI(App):
                     with Horizontal(id="stats-loc", classes="stats-section"):
                         yield Static("", id="stats-loc-text", classes="stats-left")
                         yield Static("", id="stats-loc-bars", classes="stats-right")
-                    with Horizontal(id="stats-time", classes="stats-section"):
-                        yield Static("", id="stats-months", classes="stats-left")
-                        yield Static("", id="stats-heatmap", classes="stats-right")
+                    yield Static("", id="stats-heatmap", classes="stats-section")
+                    yield Static("", id="stats-months", classes="stats-section")
                     yield Static("", id="stats-country-time", classes="stats-section")
                     yield Static("", id="stats-flow", classes="stats-section")
                     yield Static("", id="stats-flow-months", classes="stats-section")
@@ -1138,7 +1235,8 @@ class StageTUI(App):
         )
         self.query_one("#stats-return").border_title = "Retour de candidature"
         self.query_one("#stats-loc").border_title = "Localisation des stages"
-        self.query_one("#stats-time").border_title = "Candidatures au cours du temps"
+        self.query_one("#stats-heatmap").border_title = "Activité jour par jour"
+        self.query_one("#stats-months").border_title = "Candidatures au cours du temps"
         self.query_one("#stats-country-time").border_title = "Répartition par pays au cours du temps"
         self.query_one("#stats-flow").border_title = "Parcours des candidatures"
         self.query_one("#stats-flow-months").border_title = "Statuts atteints par mois"
@@ -1693,9 +1791,14 @@ class StageTUI(App):
         loc_bars.update(render_location_tree(stats["by_place"], total))
 
         # --- Section 3 : histogramme temporel ---
-        months_widget.update(render_month_histogram(stats["by_month"]))
+        scale = self._stats_scale
         heatmap_widget.update(render_activity_heatmap(stats["by_day"]))
-        country_time_widget.update(render_country_timeline(stats["by_day_country"]))
+        # `[t]` doit être échappé (balise Rich inconnue sinon avalée).
+        months_widget.update(
+            render_time_histogram(_bucket_counts(stats["by_day"], scale), scale)
+            + f"\n\n[dim]\\[t] échelle : jour · semaine · mois (actuelle : {_SCALES[scale]['label']})[/dim]"
+        )
+        country_time_widget.update(render_country_timeline(stats["by_day_country"], scale))
 
         # --- Section 4 : parcours des candidatures (flux) ---
         apps = load_applications()
@@ -2437,6 +2540,13 @@ class StageTUI(App):
             self.notify_status(f"Note enregistrée pour {oid}.")
 
         self.push_screen(NoteScreen(current), save)
+
+    def action_cycle_stats_scale(self) -> None:
+        if self._active_tab() != "stats":
+            return
+        i = _SCALE_CYCLE.index(self._stats_scale)
+        self._stats_scale = _SCALE_CYCLE[(i + 1) % len(_SCALE_CYCLE)]
+        self.refresh_stats()
 
     def action_export_flow(self) -> None:
         if self._active_tab() != "stats":

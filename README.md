@@ -64,7 +64,7 @@ The TUI is a **view** on the pipeline's files, not a database of its own: report
 | **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. `N` attaches a per-offer note (`gen_notes`) injected into the letter and CV prompts; `T` records an offer straight into tracking with no letter/CV at all — no API call, no folder — for offers that don't need one (online form, generic CV). `o` opens the offer in the browser, `O` opens the generated application folder. |
 | **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. `o` opens the offer in the browser, `O` opens the application folder. |
 | **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. |
-| **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations as a country → cities tree, an applications-over-time histogram next to a GitHub-style daily activity heatmap, applications per country over time (line chart, 7-day rolling), and a status-flow tree of the paths actually taken. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
+| **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations as a country → cities tree, a GitHub-style daily activity heatmap, an applications-over-time histogram and applications per country over time (line chart), the latter two on a shared day/week/month scale (`t` cycles it), and a status-flow tree of the paths actually taken. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
 | **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`), plus a dedicated "Scraping sources" row, with each file's state (customized / package default / missing). `enter` on a file row opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. `enter` on the "Scraping sources" row opens a modal to enable/disable individual scraping sources (`space` to toggle, `escape` to close) — written immediately to `sources.yaml`, independent from the `fr` group toggled with `--with`/`--without`. |
 
 ### Cover letter editing workflow
@@ -109,6 +109,7 @@ The main use of the Applications tab: press `e` to open `lettre.md` in your edit
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
 | Stats | `f` | Export the status-flow Sankey diagram |
+| Stats | `t` | Cycle the time scale of the histogram and per-country chart (day · week · month) |
 | Settings | `enter` | On a file row: open it in your editor. On the "Scraping sources" row: open the source-management modal |
 
 ### Duplicate offers

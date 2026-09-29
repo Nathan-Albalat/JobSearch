@@ -39,6 +39,9 @@
 <tr><th>Lieu</th><th>Nombre</th></tr>
 {% for loc, n in stats.by_location.items() %}
 <tr><td>{{ loc }}</td><td>{{ n }}</td></tr>
+{% for city, cn in stats.by_place[loc].cities.items() %}
+<tr class="muted"><td>&nbsp;&nbsp;&nbsp;&nbsp;{{ city }}</td><td>{{ cn }}</td></tr>
+{% endfor %}
 {% endfor %}
 </table>
 {% else %}

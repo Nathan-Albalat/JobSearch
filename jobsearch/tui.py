@@ -16,6 +16,7 @@ import sys
 import time
 import unicodedata
 import webbrowser
+from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -205,6 +206,222 @@ def _short_month(ym):
         return f"{m}/{y[2:]}"
     except (ValueError, IndexError):
         return ym[:5]
+
+
+_DAY_LABELS = ("Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim")
+_MONTH_ABBR = ("Jan", "Fév", "Mar", "Avr", "Mai", "Jui", "Jul", "Aoû", "Sep", "Oct", "Nov", "Déc")
+_HEATMAP_ACCENT = "green"
+_HEATMAP_GLYPHS = ("▪", "░", "▒", "▓", "█")
+_HEATMAP_MAX_WEEKS = 26
+_COUNTRY_PALETTE = ("cyan", "magenta", "yellow", "green", "blue")
+
+
+def _parse_day(value):
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def _heat_cell(n: int, top: int) -> str:
+    """Deux cellules d'affichage pour un jour : niveau 0 (▪ grisé) à 4, seuils relatifs au max."""
+    if n <= 0:
+        return f"[grey30]{_HEATMAP_GLYPHS[0]}[/] "
+    level = min(4, max(1, -(-4 * n // top)))  # ceil(4 * n / top)
+    return f"[{_HEATMAP_ACCENT}]{_HEATMAP_GLYPHS[level]}[/] "
+
+
+def render_activity_heatmap(by_day, today=None) -> str:
+    """Grille d'activité façon GitHub : une case = les candidatures créées ce jour-là."""
+    days = {d: n for d, n in ((_parse_day(k), v) for k, v in (by_day or {}).items()) if d and n > 0}
+    if not days:
+        return "[dim]Aucune donnée temporelle.[/dim]"
+    today = today or date.today()
+    first_monday = min(days) - timedelta(days=min(days).weekday())
+    this_monday = today - timedelta(days=today.weekday())
+    n_weeks = min(_HEATMAP_MAX_WEEKS, (this_monday - first_monday).days // 7 + 1)
+    n_weeks = max(1, n_weeks)
+    start = this_monday - timedelta(weeks=n_weeks - 1)
+    top = max(days.values())
+
+    label_w = 4
+    # En-tête : abréviation du mois au-dessus de la 1re semaine de chaque mois.
+    header = [" "] * (2 * n_weeks + 3)
+    prev_month = None
+    for w in range(n_weeks):
+        monday = start + timedelta(weeks=w)
+        if monday.month != prev_month:
+            label = _MONTH_ABBR[monday.month - 1]
+            pos = 2 * w
+            if all(c == " " for c in header[max(0, pos - 1):pos + len(label)]):
+                header[pos:pos + len(label)] = list(label)
+            prev_month = monday.month
+    lines = [" " * label_w + "".join(header).rstrip()]
+    for row in range(7):
+        cells = []
+        for w in range(n_weeks):
+            d = start + timedelta(weeks=w, days=row)
+            cells.append("  " if d > today else _heat_cell(days.get(d, 0), top))
+        lines.append(_pad(_DAY_LABELS[row], label_w) + "".join(cells).rstrip())
+
+    legend = " ".join(
+        [f"[grey30]{_HEATMAP_GLYPHS[0]}[/]"] + [f"[{_HEATMAP_ACCENT}]{g}[/]" for g in _HEATMAP_GLYPHS[1:]]
+    )
+    lines += ["", f"{' ' * label_w}[dim]Moins[/dim] {legend} [dim]Plus[/dim]", ""]
+
+    # Résumé (sur tout l'historique, pas seulement la fenêtre affichée)
+    ordered = sorted(days)
+    longest = run = 0
+    prev = None
+    for d in ordered:
+        run = run + 1 if prev is not None and (d - prev).days == 1 else 1
+        longest = max(longest, run)
+        prev = d
+    cursor = today if today in days else today - timedelta(days=1)
+    current = 0
+    while cursor in days:
+        current += 1
+        cursor -= timedelta(days=1)
+    busiest = max(ordered, key=lambda d: (days[d], d))
+    weeks_active = {d - timedelta(days=d.weekday()) for d in ordered}
+    avg = sum(days.values()) / len(weeks_active)
+    lines += [
+        f"Jours actifs : [b]{len(days)}[/b]   Série la plus longue : [b]{longest}[/b] j   "
+        f"Série en cours : [b]{current}[/b] j",
+        f"Jour le plus actif : [b]{busiest.strftime('%d/%m/%Y')}[/b] ({days[busiest]})   "
+        f"Moyenne : [b]{avg:.1f}[/b] / semaine active",
+    ]
+    return "\n".join(lines)
+
+
+def render_location_tree(by_place, total, max_cities=6) -> str:
+    """Arbre pays → villes : une barre par pays, ses villes indentées dessous."""
+    if not by_place or not total:
+        return "[dim]Aucune donnée.[/dim]"
+    unknown = "Non précisée"
+    rows = []  # (label, valeur, style)
+    for country, info in by_place.items():
+        rows.append((country, info["total"], "cyan"))
+        cities = info.get("cities", {})
+        named = [(c, n) for c, n in cities.items() if c != unknown]
+        if len(named) > max_cities:
+            keep, rest = named[:max_cities - 1], named[max_cities - 1:]
+            named = keep + [(f"Autres ({len(rest)} villes)", sum(n for _, n in rest))]
+        if unknown in cities:
+            named.append((unknown, cities[unknown]))
+        rows += [("  " + c, n, "dim cyan") for c, n in named]
+    label_w = min(26, max(_visible_width(r[0]) for r in rows))
+    out = []
+    for label, value, style in rows:
+        while _visible_width(label) > label_w:
+            label = label[:-1]
+        out.append(_hbar(label, value, total, label_w, style=style))
+    return "\n".join(out)
+
+
+def render_line_chart(series, height=8, colors=None) -> str:
+    """Graphe en courbes ASCII (portage stdlib de l'algorithme `asciichart`).
+
+    `series` : liste de listes de valeurs de même longueur. Axe Y étiqueté à gauche
+    (`┼` sur 0 et le max, `┤` ailleurs), segments `─ │ ╭ ╮ ╰ ╯`. La série au plus grand
+    cumul est dessinée en dernier pour rester lisible. Chaque ligne a la même largeur.
+    """
+    series = [list(s) for s in series if s]
+    if not series:
+        return ""
+    n = len(series[0])
+    top = max(max(s) for s in series)
+    top = max(top, 1)
+    height = max(1, min(height, int(top)))
+    colors = list(colors or [])
+    order = sorted(range(len(series)), key=lambda i: sum(series[i]))
+    ratio = height / top
+    label_w = len(str(int(round(top))))
+    offset = label_w + 2  # libellé + espace + caractère d'axe
+    grid = [[(" ", None)] * (n + offset) for _ in range(height + 1)]
+
+    for y in range(height + 1):
+        row = height - y
+        label = str(int(round(y * top / height)))
+        grid[row] = [(c, None) for c in _pad(label.rjust(label_w), label_w) + " "] + [
+            ("┼" if y in (0, height) else "┤", None)
+        ] + grid[row][offset:]
+
+    for i in order:
+        s = series[i]
+        color = colors[i] if i < len(colors) else None
+        ys = [int(round(v * ratio)) for v in s]
+        for x in range(n - 1):
+            y0, y1 = ys[x], ys[x + 1]
+            if y0 == y1:
+                grid[height - y0][x + offset] = ("─", color)
+            else:
+                grid[height - y1][x + offset] = ("╰" if y0 > y1 else "╭", color)
+                grid[height - y0][x + offset] = ("╮" if y0 > y1 else "╯", color)
+                for y in range(min(y0, y1) + 1, max(y0, y1)):
+                    grid[height - y][x + offset] = ("│", color)
+        if n == 1:
+            grid[height - ys[0]][offset] = ("─", color)
+
+    lines = []
+    for row in grid:
+        lines.append("".join(f"[{c}]{ch}[/]" if c else ch for ch, c in row))
+    return "\n".join(lines)
+
+
+def render_country_timeline(by_day_country, today=None, top=4, max_days=90) -> str:
+    """Candidatures par pays sur 7 jours glissants, une courbe par pays (`render_line_chart`)."""
+    per_day = {}
+    for k, countries in (by_day_country or {}).items():
+        d = _parse_day(k)
+        if d and countries:
+            per_day[d] = countries
+    if not per_day:
+        return "[dim]Aucune donnée temporelle.[/dim]"
+    today = today or date.today()
+    first = min(per_day)
+    end = max(today, max(per_day))
+    start = max(first, end - timedelta(days=max_days - 1))
+
+    totals: Counter = Counter()
+    for countries in per_day.values():
+        totals.update(countries)
+    ranked = [c for c, _ in totals.most_common()]
+    shown = ranked[:top]
+    others = ranked[top:]
+    groups = [(c, [c]) for c in shown]
+    if others:
+        groups.append(("Autres", others))
+
+    n_days = (end - start).days + 1
+    series = []
+    for _, members in groups:
+        daily = []
+        for i in range(n_days + 6):  # 6 jours de recul pour la fenêtre glissante
+            d = start - timedelta(days=6) + timedelta(days=i)
+            daily.append(sum(per_day.get(d, {}).get(m, 0) for m in members))
+        series.append([sum(daily[i:i + 7]) for i in range(n_days)])
+    colors = [_COUNTRY_PALETTE[i % len(_COUNTRY_PALETTE)] for i in range(len(groups))]
+
+    chart = render_line_chart(series, height=10, colors=colors)
+    label_w = len(str(max(1, max(max(s) for s in series))))
+    offset = label_w + 2
+    axis = [" "] * (offset + n_days + 5)
+    for i in range(n_days):
+        d = start + timedelta(days=i)
+        if d.day == 1 or i == 0:
+            label = _short_month(d.strftime("%Y-%m"))
+            pos = offset + i
+            if all(c == " " for c in axis[max(0, pos - 1):pos + len(label)]):
+                axis[pos:pos + len(label)] = list(label)
+    grand = sum(totals.values())
+    legend = "   ".join(
+        f"[{colors[i]}]●[/] {name}  {sum(totals[m] for m in members)} "
+        f"({round(100 * sum(totals[m] for m in members) / grand)}%)"
+        for i, (name, members) in enumerate(groups)
+    )
+    title = "[dim]Candidatures par pays (7 jours glissants)[/dim]"
+    return "\n".join([title, chart, "".join(axis).rstrip(), "", legend])
 
 
 class HighlightDataTable(DataTable):
@@ -684,7 +901,9 @@ class StageTUI(App):
     }
     .stats-left { width: 42%; height: auto; padding: 0 1; }
     .stats-right { width: 1fr; height: auto; padding: 0 1; }
-    #stats-months { padding: 1 1; }
+    #stats-time { padding: 1 1; }
+    #stats-months { width: auto; }
+    #stats-country-time { padding: 1 1; }
     #letter-detail {
         width: 58%;
         border-left: solid $accent;
@@ -872,7 +1091,10 @@ class StageTUI(App):
                     with Horizontal(id="stats-loc", classes="stats-section"):
                         yield Static("", id="stats-loc-text", classes="stats-left")
                         yield Static("", id="stats-loc-bars", classes="stats-right")
-                    yield Static("", id="stats-months", classes="stats-section")
+                    with Horizontal(id="stats-time", classes="stats-section"):
+                        yield Static("", id="stats-months", classes="stats-left")
+                        yield Static("", id="stats-heatmap", classes="stats-right")
+                    yield Static("", id="stats-country-time", classes="stats-section")
                     yield Static("", id="stats-flow", classes="stats-section")
                     yield Static("", id="stats-flow-months", classes="stats-section")
             with TabPane("6 · Réglages", id="settings"):
@@ -916,7 +1138,8 @@ class StageTUI(App):
         )
         self.query_one("#stats-return").border_title = "Retour de candidature"
         self.query_one("#stats-loc").border_title = "Localisation des stages"
-        self.query_one("#stats-months").border_title = "Candidatures au cours du temps"
+        self.query_one("#stats-time").border_title = "Candidatures au cours du temps"
+        self.query_one("#stats-country-time").border_title = "Répartition par pays au cours du temps"
         self.query_one("#stats-flow").border_title = "Parcours des candidatures"
         self.query_one("#stats-flow-months").border_title = "Statuts atteints par mois"
         self._check_update_banner()
@@ -1409,12 +1632,17 @@ class StageTUI(App):
         loc_text = self.query_one("#stats-loc-text", Static)
         loc_bars = self.query_one("#stats-loc-bars", Static)
         months_widget = self.query_one("#stats-months", Static)
+        heatmap_widget = self.query_one("#stats-heatmap", Static)
+        country_time_widget = self.query_one("#stats-country-time", Static)
         flow_widget = self.query_one("#stats-flow", Static)
         flow_months_widget = self.query_one("#stats-flow-months", Static)
 
         if stats["total"] == 0:
             header.update("[b]Statistiques[/b]  [dim]— aucune candidature enregistrée pour l'instant.[/dim]")
-            for w in (return_text, status_bars, loc_text, loc_bars, months_widget, flow_widget, flow_months_widget):
+            for w in (
+                return_text, status_bars, loc_text, loc_bars, months_widget, heatmap_widget,
+                country_time_widget, flow_widget, flow_months_widget,
+            ):
                 w.update("")
             return
 
@@ -1450,17 +1678,24 @@ class StageTUI(App):
         locs = list(stats["by_location"].items())
         n_pays = len(locs)
         top_pays = locs[0][0] if locs else "—"
+        city_counts: Counter = Counter()
+        for info in stats["by_place"].values():
+            for city, n in info["cities"].items():
+                if city != "Non précisée":
+                    city_counts[city] += n
+        top_city = city_counts.most_common(1)[0][0] if city_counts else "—"
         loc_text.update(
-            f"Pays distincts : [b]{n_pays}[/b]\n\n"
-            f"Le plus fréquent :\n[b]{top_pays}[/b]"
+            f"Pays distincts : [b]{n_pays}[/b]\n"
+            f"Villes distinctes : [b]{len(city_counts)}[/b]\n\n"
+            f"Pays le plus fréquent :\n[b]{top_pays}[/b]\n\n"
+            f"Ville la plus fréquente :\n[b]{top_city}[/b]"
         )
-        loc_lw = min(18, max((len(l) for l, _ in locs[:8]), default=3))
-        loc_bars.update("\n".join(
-            _hbar(l[:loc_lw], v, total, loc_lw, style="cyan") for l, v in locs[:8]
-        ))
+        loc_bars.update(render_location_tree(stats["by_place"], total))
 
         # --- Section 3 : histogramme temporel ---
         months_widget.update(render_month_histogram(stats["by_month"]))
+        heatmap_widget.update(render_activity_heatmap(stats["by_day"]))
+        country_time_widget.update(render_country_timeline(stats["by_day_country"]))
 
         # --- Section 4 : parcours des candidatures (flux) ---
         apps = load_applications()

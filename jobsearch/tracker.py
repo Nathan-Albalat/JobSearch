@@ -246,38 +246,71 @@ _COUNTRY_ALIASES_RE = re.compile(
 )
 
 
-def _application_location(app: dict, data_dir: str) -> str:
-    """Localisation d'une candidature (regroupée par pays), via jointure avec l'offre JSON.
+_ADDRESS_LOCALITY_RE = re.compile(r"""addressLocality['"]?\s*:\s*['"]([^'"]+)['"]""")
+UNKNOWN_CITY = "Non précisée"
 
-    1) code pays connu (`country`) → nom lisible ; 2) sinon alias de nom de pays
+
+def _city_from_offer(location: str) -> str | None:
+    """Ville d'une offre, ou `None` quand `location` n'en contient pas de façon fiable.
+
+    Blob JSON-LD → `addressLocality` ; sinon premier segment d'une `location` à ≥ 2 segments
+    séparés par des virgules, sauf s'il s'agit d'un nom/code de pays (« Nederland » seul,
+    « Pays-Bas (Zoetermeer HQ) ou autre… » → `None`).
+    """
+    if not location:
+        return None
+    if "@type" in location:
+        match = _ADDRESS_LOCALITY_RE.search(location)
+        return match.group(1).strip() if match else None
+    if location.lstrip().startswith(("[{", "{")):
+        return None
+    parts = [p.strip() for p in location.split(",")]
+    if len(parts) < 2 or not parts[0]:
+        return None
+    first = parts[0]
+    if _COUNTRY_ALIASES_RE.fullmatch(first) or first.upper() in _COUNTRY_NAMES:
+        return None
+    return first
+
+
+def _application_place(app: dict, data_dir: str) -> tuple[str, str | None]:
+    """`(pays, ville)` d'une candidature, via jointure avec l'offre JSON.
+
+    Pays : 1) code pays connu (`country`) → nom lisible ; 2) sinon alias de nom de pays
     trouvé dans `location` (anglais/français/local, en limites de mots) → nom
     canonique ; 3) sinon dernier segment d'une `location` propre (ex. « Netherlands »)
     ; 4) sinon « Inconnu ». Les blobs JSON-LD bruts et les candidatures manuelles
-    sans offre → repli propre.
+    sans offre → repli propre. Ville : voir `_city_from_offer` (`None` si indéterminable).
     """
     offer_path = os.path.join(data_dir, "offers", f"{app.get('offer_id', '')}.json")
     if not os.path.exists(offer_path):
-        return "Inconnu"
+        return "Inconnu", None
     try:
         with open(offer_path, encoding="utf-8") as f:
             offer = json.load(f)
     except (json.JSONDecodeError, OSError):
-        return "Inconnu"
+        return "Inconnu", None
 
     country = (offer.get("country") or "").strip()
-    if country.upper() in _COUNTRY_NAMES:
-        return _COUNTRY_NAMES[country.upper()]
-
     location = (offer.get("location") or "").strip()
+    city = _city_from_offer(location)
+    if country.upper() in _COUNTRY_NAMES:
+        return _COUNTRY_NAMES[country.upper()], city
+
     # Ignore les blobs JSON-LD bruts (ex. "[{'@type': 'Place', ...}]").
     if location and "@type" not in location and not location.lstrip().startswith(("[{", "{")):
         match = _COUNTRY_ALIASES_RE.search(location)
         if match:
-            return _COUNTRY_ALIASES[match.group(1).lower()]
-        return location.split(",")[-1].strip() or "Inconnu"
+            return _COUNTRY_ALIASES[match.group(1).lower()], city
+        return (location.split(",")[-1].strip() or "Inconnu"), city
     if country:
-        return country
-    return "Inconnu"
+        return country, city
+    return "Inconnu", city
+
+
+def _application_location(app: dict, data_dir: str) -> str:
+    """Pays d'une candidature (wrapper de `_application_place`)."""
+    return _application_place(app, data_dir)[0]
 
 
 def compute_stats(data_dir: str = PATHS.data_dir) -> dict:
@@ -297,15 +330,30 @@ def compute_stats(data_dir: str = PATHS.data_dir) -> dict:
         "En attente": len(apps) - accepted - rejected - cancelled - generated,
     }
 
-    by_location = Counter(_application_location(a, data_dir) for a in apps)
-
+    # Une seule passe : chaque _application_place ouvre un JSON d'offre.
+    by_location: Counter = Counter()
+    place_cities: dict[str, Counter] = {}
     by_month: dict[str, int] = {}
+    by_day: dict[str, int] = {}
+    by_day_country: dict[str, dict[str, int]] = {}
     for a in apps:
+        country, city = _application_place(a, data_dir)
+        by_location[country] += 1
+        place_cities.setdefault(country, Counter())[city or UNKNOWN_CITY] += 1
         g = a.get("generated_at")
         if g:
-            month = str(g)[:7]  # YYYY-MM
-            by_month[month] = by_month.get(month, 0) + 1
+            by_month[str(g)[:7]] = by_month.get(str(g)[:7], 0) + 1  # YYYY-MM
+            day = str(g)[:10]
+            by_day[day] = by_day.get(day, 0) + 1
+            per_country = by_day_country.setdefault(day, {})
+            per_country[country] = per_country.get(country, 0) + 1
     by_month = dict(sorted(by_month.items()))
+    by_day = dict(sorted(by_day.items()))
+    by_day_country = dict(sorted(by_day_country.items()))
+    by_place = {
+        country: {"total": by_location[country], "cities": dict(place_cities[country].most_common())}
+        for country, _ in by_location.most_common()
+    }
 
     # --- Métriques de retour de candidature (les annulées sont exclues) ---
     sent = sum(1 for a in active if a.get("status") != "generated")
@@ -336,6 +384,9 @@ def compute_stats(data_dir: str = PATHS.data_dir) -> dict:
         "coarse": coarse,
         "by_location": dict(by_location.most_common()),
         "by_month": by_month,
+        "by_day": by_day,
+        "by_place": by_place,
+        "by_day_country": by_day_country,
         "rates": rates,
     }
 

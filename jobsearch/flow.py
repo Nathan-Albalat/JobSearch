@@ -38,34 +38,37 @@ def build_transitions(apps: list[dict]) -> dict[tuple[str, str], int]:
 
 
 def flow_tree(apps: list[dict]) -> dict:
-    """Même information que `build_transitions`, en arbre — pour le rendu texte de la TUI.
+    """Trie des historiques réels — pour le rendu texte de la TUI.
 
-    Retourne `{"generated": {"total": int, "children": {statut: {...}}}}`. Une candidature
-    sans historique exploitable n'apparaît nulle part (racine unique `generated`, point
-    d'entrée de toute candidature).
+    Retourne `{"generated": {"total": int, "children": {statut: {...}}}}`. Chaque candidature
+    parcourt l'arbre depuis la racine `generated` en suivant son propre historique, et chaque
+    nœud du préfixe voit son `total` incrémenté : un chemin affiché a donc réellement été suivi
+    par au moins une candidature. Construire l'arbre depuis les transitions agrégées de
+    `build_transitions` recollait à tort des bouts de chemins de candidatures différentes
+    (`answered -> interview` d'une candidature, `interview -> rejected` d'une autre, affichés
+    comme `answered -> interview -> rejected`) ; le Sankey, lui, représente des nœuds de statut
+    et non des chemins, et n'a pas ce défaut. Une candidature sans historique exploitable
+    n'apparaît nulle part (racine unique `generated`, point d'entrée de toute candidature).
     """
-    transitions = build_transitions(apps)
-    children_of: dict[str, list[tuple[str, int]]] = {}
-    for (source, target), count in transitions.items():
-        children_of.setdefault(source, []).append((target, count))
-
-    root_total = 0
+    root: dict = {"total": 0, "children": {}}
     for app in apps:
         history = ensure_history(app)
-        if history and history[0]["status"] == "generated":
-            root_total += 1
+        if not history or history[0]["status"] != "generated":
+            continue
+        root["total"] += 1
+        node = root
+        for event in history[1:]:
+            child = node["children"].setdefault(event["status"], {"total": 0, "children": {}})
+            child["total"] += 1
+            node = child
 
-    def build(status: str, total: int, visited: frozenset) -> dict:
-        node = {"total": total, "children": {}}
-        if status in visited:
-            # Transition en arrière (ex. correction de saisie) : évite une récursion infinie.
-            return node
-        visited = visited | {status}
-        for target, count in sorted(children_of.get(status, []), key=lambda x: -x[1]):
-            node["children"][target] = build(target, count, visited)
-        return node
+    def sort_children(node: dict) -> None:
+        node["children"] = dict(sorted(node["children"].items(), key=lambda kv: -kv[1]["total"]))
+        for child in node["children"].values():
+            sort_children(child)
 
-    return {"generated": build("generated", root_total, frozenset())}
+    sort_children(root)
+    return {"generated": root}
 
 
 def by_month_status(apps: list[dict]) -> dict[str, Counter]:

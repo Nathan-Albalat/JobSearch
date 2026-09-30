@@ -213,6 +213,7 @@ jobsearch --mcp                          # transport stdio, lecture seule
 jobsearch --mcp --allow-write            # autorise aussi mark_application_status
 
 jobsearch --mark <offer_id> sent --note "Candidature envoyée via le site"
+jobsearch --undo-status <offer_id>     # retire la dernière étape du parcours (erreur de saisie)
 
 # Migration config perso + données du dépôt vers JOBSEARCH_HOME (copie uniquement, jamais destructif)
 jobsearch --migrate            # aperçu à blanc, n'écrit rien
@@ -320,6 +321,7 @@ Workflow de retouche : ouvrir la lettre avec `e` (éditeur par défaut), modifie
 | Candidatures | `o` | Ouvrir l'offre dans le navigateur |
 | Candidatures | `O` | Ouvrir le dossier de la candidature |
 | Suivi | `s`/`a`/`i`/`j`/`v`/`z` | Statut → sent / answered / interview / rejected / accepted / cancelled |
+| Suivi | `retour arrière` | Retirer la dernière étape du parcours (erreur de saisie) — confirmation, puis retour au statut précédent |
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts (HTML, ouvert dans le navigateur) |
@@ -587,6 +589,7 @@ Le générateur (Claude Sonnet) n'utilise pas le caching — chaque appel est on
 
 ### Suivi / historique des statuts
 - **`ensure_history()` doit être appelée AVANT toute mutation de `app`** (`jobsearch/tracker.py`). Elle déduit l'événement de réponse depuis `status` + `responded_at` : l'appeler après avoir écrit le nouveau statut réécrit le passé avec celui-ci. Le bug réel : un passage `interview` → `rejected` produisait `[generated, sent, rejected]` et effaçait purement et simplement l'étape « entretien » (la garde anti-doublon voyait alors un dernier événement déjà au bon statut et n'ajoutait rien). Même piège dans `record_generated` avec `generated_at`.
+- **Corriger une erreur de saisie : `undo_last_status`** (`jobsearch/tracker.py`, touche `retour arrière` de l'onglet Suivi, `--undo-status`). Changer de statut ne suffisait pas : l'événement fautif restait dans `history`, donc dans la timeline, l'arbre de parcours et le Sankey. Retire le dernier événement (jamais l'étape initiale `generated`), remet `status` sur l'événement précédent, et efface `sent_at`/`responded_at` quand plus aucun événement restant ne les justifie — ils alimentent le taux de réponse et le délai moyen. Une erreur plus ancienne se corrige en annulant plusieurs fois puis en ressaisissant les statuts.
 - **Historique reconstruit ≠ dates réelles** : pour les candidatures antérieures à l'introduction de `history`, les événements sont déduits des anciennes dates ponctuelles et marqués `inferred` (affichés avec un `~`). Ils datent du moment où le statut a été *changé*, pas de l'événement lui-même (le jour où l'on marque « entretien », pas le jour de l'entretien).
 - **L'arbre de parcours suit les chemins réels, le Sankey les transitions** : `flow_tree` (`jobsearch/flow.py`) est un trie des historiques (chaque candidature incrémente les nœuds de son propre préfixe). L'ancienne version enchaînait les transitions agrégées de `build_transitions` et recollait des bouts de candidatures différentes (`answered → interview` + `interview → rejected` affichés comme un chemin `answered → interview → rejected` que personne n'avait suivi). Le Sankey représente des nœuds de statut, pas des chemins : agrégé, il reste correct.
 - **Stats géographiques/temporelles** : `tracker.compute_stats` calcule `by_day`, `by_place` et `by_day_country` en une seule passe (`_application_place` ouvre un JSON d'offre par candidature — ne pas l'appeler deux fois). La ville vient de `addressLocality` (JSON-LD) ou du 1er segment d'une `location` à ≥ 2 segments qui n'est pas un pays ; sinon « Non précisée ».

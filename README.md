@@ -108,6 +108,7 @@ The main use of the Applications tab: press `e` to open `lettre.md` in your edit
 | Applications | `o` | Open offer in browser |
 | Applications | `O` | Open application folder |
 | Tracking | `s`/`a`/`i`/`j`/`v`/`z` | Status → sent / answered / interview / rejected / accepted / cancelled |
+| Tracking | `backspace` | Remove the last step of the application path (input mistake) — asks for confirmation, then reverts to the previous status |
 | Tracking | `n` | Edit note |
 | Tracking | `o` | Open offer in browser |
 | Stats | `f` | Export the status-flow Sankey diagram |

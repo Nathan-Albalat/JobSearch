@@ -67,6 +67,7 @@ from jobsearch.tracker import (
     ensure_history,
     load_applications,
     mark_status,
+    undo_last_status,
     record_generated,
 )
 from jobsearch.config import (
@@ -645,6 +646,7 @@ ouvre toujours le DOSSIER de candidature — même sens partout où ces touches 
   [b #7aa2f7]j[/]  Statut → refusée (rejected)
   [b #7aa2f7]v[/]  Statut → acceptée (accepted)
   [b #7aa2f7]z[/]  Statut → annulée (offre qui n'existe plus)
+  [b #7aa2f7]retour arrière[/]  Retirer la dernière étape du parcours (erreur de saisie)
   [b #7aa2f7]n[/]  Éditer la note de la candidature
   [b #7aa2f7]o[/]  Ouvrir l'offre dans le navigateur
   (envoyée en jaune · réponse en ambre · entretien en violet ·
@@ -1281,6 +1283,7 @@ class StageTUI(App):
         Binding("j", "set_status('rejected')", show=False),
         Binding("v", "set_status('accepted')", show=False),
         Binding("z", "set_status('cancelled')", show=False),
+        Binding("backspace", "undo_status", show=False),
         Binding("f", "export_flow", show=False),
         Binding("t", "cycle_stats_scale", show=False),
     ]
@@ -2688,6 +2691,41 @@ class StageTUI(App):
         self.refresh_track()
         self.refresh_stats()
         self.notify_status(f"{oid} → {status}")
+
+    def action_undo_status(self) -> None:
+        """`retour arrière` : retire la dernière étape du parcours (erreur de saisie)."""
+        if self._active_tab() != "track":
+            return
+        oid = self._current_row_key("track-table")
+        if not oid:
+            return
+        app = next((a for a in load_applications() if a["offer_id"] == oid), None)
+        if app is None:
+            return
+        history = ensure_history(app)
+        if len(history) <= 1:
+            self.notify_status("Rien à annuler : le parcours ne contient que l'étape initiale.")
+            return
+        last, prev = history[-1], history[-2]
+        label = lambda s: _STATUS_LABELS.get(s, s)
+        message = (
+            f"Retirer « {label(last['status'])} » ({last['at'][:16].replace('T', ' ')}) du parcours "
+            f"de {app.get('company', oid)} ?\nLe statut redevient « {label(prev['status'])} »."
+        )
+
+        def _confirm(ok: bool | None) -> None:
+            if not ok:
+                return
+            try:
+                undo_last_status(oid)
+            except (KeyError, ValueError) as e:
+                self.notify_status(f"Erreur : {e}")
+                return
+            self.refresh_track()
+            self.refresh_stats()
+            self.notify_status(f"{oid} : « {label(last['status'])} » retiré, retour à « {label(prev['status'])} ».")
+
+        self.push_screen(ConfirmScreen(message), _confirm)
 
     def action_edit_note(self) -> None:
         if self._active_tab() != "track":

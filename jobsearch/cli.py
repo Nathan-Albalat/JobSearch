@@ -374,6 +374,12 @@ Exemples :
         help=f"Met à jour le statut d'une candidature ({', '.join(STATUSES)})",
     )
     group.add_argument(
+        "--undo-status",
+        metavar="OFFER_ID",
+        help="Retire la dernière étape du parcours d'une candidature (erreur de saisie) "
+             "et revient au statut précédent",
+    )
+    group.add_argument(
         "--mark-duplicate",
         nargs=2,
         metavar=("OFFER_ID", "TARGET_ID"),
@@ -612,6 +618,15 @@ Exemples :
         except (KeyError, ValueError) as e:
             sys.exit(f"Erreur : {e}")
         print(f"Candidature {offer_id} ({app['company']}) → statut : {status}")
+    elif args.undo_status:
+        from jobsearch.tracker import undo_last_status
+
+        try:
+            app, removed = undo_last_status(args.undo_status)
+        except (KeyError, ValueError) as e:
+            sys.exit(f"Erreur : {e}")
+        print(f"Candidature {args.undo_status} ({app.get('company', '?')}) : étape « {removed['status']} » "
+              f"du {removed['at'][:10]} retirée → statut : {app['status']}")
     elif args.mark_duplicate:
         offer_id, target_id = args.mark_duplicate
         try:

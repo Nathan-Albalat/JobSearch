@@ -108,6 +108,7 @@ L'usage principal de l'onglet Candidatures : `e` pour ouvrir `lettre.md` dans to
 | Candidatures | `o` | Ouvrir l'offre dans le navigateur |
 | Candidatures | `O` | Ouvrir le dossier de la candidature |
 | Suivi | `s`/`a`/`i`/`j`/`v`/`z` | Statut → sent / answered / interview / rejected / accepted / cancelled |
+| Suivi | `retour arrière` | Retirer la dernière étape du parcours (erreur de saisie) — confirmation, puis retour au statut précédent |
 | Suivi | `n` | Éditer la note |
 | Suivi | `o` | Ouvrir l'offre dans le navigateur |
 | Stats | `f` | Exporter le diagramme de Sankey du flux de statuts |

@@ -159,6 +159,38 @@ def mark_status(offer_id: str, status: str, note: str = "", data_dir: str = PATH
     raise KeyError(f"Aucune candidature pour l'offre '{offer_id}'. Lance d'abord --generate.")
 
 
+def undo_last_status(offer_id: str, data_dir: str = PATHS.data_dir) -> tuple[dict, dict]:
+    """Retire le dernier événement du parcours (erreur de saisie) et revient au statut précédent.
+
+    Retourne `(app, removed_event)`. Refuse de retirer l'événement initial (`generated`) :
+    une candidature a toujours au moins ce point d'entrée. Changer de statut ne suffisait
+    pas à corriger une erreur : l'événement fautif restait dans `history`, donc dans la
+    timeline, l'arbre de parcours et le Sankey.
+
+    `sent_at`/`responded_at` sont remis en cohérence avec l'historique restant : ils
+    alimentent le taux de réponse et le délai moyen de `compute_stats`, et une date posée
+    par l'événement retiré fausserait ces métriques.
+    """
+    apps = load_applications(data_dir)
+    for app in apps:
+        if app["offer_id"] != offer_id:
+            continue
+        history = ensure_history(app)  # avant toute mutation, comme mark_status
+        if len(history) <= 1:
+            raise ValueError("Rien à annuler : le parcours ne contient que l'étape initiale.")
+        removed = history.pop()
+        app["history"] = history
+        app["status"] = history[-1]["status"]
+        remaining = {e["status"] for e in history}
+        if "sent" not in remaining and not remaining & RESPONSE_STATUSES:
+            app.pop("sent_at", None)
+        if not remaining & RESPONSE_STATUSES:
+            app.pop("responded_at", None)
+        save_applications(apps, data_dir)
+        return app, removed
+    raise KeyError(f"Aucune candidature pour l'offre '{offer_id}'.")
+
+
 def set_note(offer_id: str, note: str, data_dir: str = PATHS.data_dir) -> dict:
     """Remplace la note libre d'une candidature (ne concatène pas).
 

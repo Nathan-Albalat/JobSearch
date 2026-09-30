@@ -264,7 +264,8 @@ def main() -> None:
     # gestion (installer/diagnostiquer l'agent launchd), pas une commande du pipeline —
     # `--service status` doit pouvoir répondre même sur un JOBSEARCH_HOME pas encore
     # configuré (ex: diagnostiquer avant d'avoir fini --setup).
-    _EXEMPT = {"--migrate", "--setup", "--help", "-h", "--service"}
+    # --upgrade aussi : mettre à jour l'outil ne doit pas exiger une config complète.
+    _EXEMPT = {"--migrate", "--setup", "--help", "-h", "--service", "--upgrade"}
     if not _EXEMPT.intersection(sys.argv[1:]):
         _check_setup()
 
@@ -345,6 +346,12 @@ Exemples :
         help="Démarre l'API HTTP + la vue web (consultation depuis l'iPhone, agents distants). "
              "Écoute sur 127.0.0.1 par défaut — voir --host/--port/--allow-write. "
              "Nécessite l'extra jobsearch[server] (FastAPI + uvicorn).",
+    )
+    group.add_argument(
+        "--upgrade",
+        action="store_true",
+        help="Met à jour jobsearch vers la dernière version (lance `pipx upgrade jobsearch` en "
+             "installation pipx, affiche la commande à lancer sinon). Config et données inchangées.",
     )
     group.add_argument(
         "--service",
@@ -558,6 +565,11 @@ Exemples :
             run_server(host=args.host, port=args.port, allow_write=args.allow_write, log_level=args.log_level)
         except ImportError:
             _missing_extra("server", "fastapi uvicorn python-multipart")
+    elif args.upgrade:
+        from jobsearch.updates import run_upgrade
+
+        # Sortie immédiate : l'alerte de fin de main() répéterait ce qui vient d'être dit.
+        sys.exit(run_upgrade())
     elif args.service:
         # Stdlib uniquement (jobsearch/service.py) : pas d'import paresseux nécessaire,
         # importable même sans l'extra [server] (ce module ne démarre jamais le

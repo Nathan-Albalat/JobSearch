@@ -31,8 +31,10 @@ For local development instead of `pipx`, use `pip install -e .` (or `pip install
 ### Updating
 
 ```bash
-pipx upgrade jobsearch
+jobsearch --upgrade      # runs `pipx upgrade jobsearch` for you
 ```
+
+`--upgrade` detects how the tool was installed: with pipx it runs the upgrade itself (except on Windows, where a running `jobsearch.exe` can't replace itself — it prints the command to run from a fresh terminal); for a cloned repo or a plain pip install it prints the right command instead. `pipx upgrade jobsearch` still works directly.
 
 Your config and data are preserved: they live under `~/.jobsearch/`, outside the package. A prompt or template you customised keeps your version; the ones you never touched pick up improvements automatically. The `[jobspy]` extra is preserved too — pipx remembers the original install spec, so there's nothing to re-specify.
 
@@ -334,7 +336,7 @@ Each task (filter, letter, CV) has its own model in `search.yaml` (`models.<task
 
 ### Update alert
 
-`jobsearch` checks the public repo's latest release (`api.github.com`, anonymous, stdlib only) and lets you know when a newer version is out — in the CLI output (throttled to once every 15 minutes), in the TUI's status bar, and in the web view's footer. Fully non-blocking: the network check is cached for 24h in `data/update_check.json`, and any failure (offline, rate-limited, unexpected response) is silently ignored — it never delays or breaks a command. The message points to `pipx upgrade jobsearch`.
+`jobsearch` checks the public repo's latest release (`api.github.com`, anonymous, stdlib only) and lets you know when a newer version is out — in the CLI output (throttled to once every 15 minutes), in the TUI's status bar, and in the web view's footer. Fully non-blocking: the network check is cached for 24h in `data/update_check.json`, and any failure (offline, rate-limited, unexpected response) is silently ignored — it never delays or breaks a command. The message points to `jobsearch --upgrade`.
 
 ### Troubleshooting
 

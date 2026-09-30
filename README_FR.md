@@ -31,8 +31,10 @@ Pour du développement local plutôt que `pipx` : `pip install -e .` (ou `pip in
 ### Mettre à jour
 
 ```bash
-pipx upgrade jobsearch
+jobsearch --upgrade      # lance `pipx upgrade jobsearch` pour toi
 ```
+
+`--upgrade` détecte le mode d'installation : avec pipx, il lance la mise à jour lui-même (sauf sous Windows, où un `jobsearch.exe` en cours d'exécution ne peut pas se remplacer — il affiche la commande à lancer depuis un nouveau terminal) ; pour un dépôt cloné ou une installation pip classique, il affiche la bonne commande. `pipx upgrade jobsearch` fonctionne toujours directement.
 
 Ta configuration et tes données sont préservées : elles vivent sous `~/.jobsearch/`, en dehors du paquet. Un prompt ou un template que tu as personnalisé garde ta version ; ceux que tu n'as jamais touchés récupèrent automatiquement les améliorations. L'extra `[jobspy]` est conservé — pipx mémorise la commande d'installation d'origine, tu n'as rien à repréciser.
 
@@ -334,7 +336,7 @@ Chaque tâche (filtre, lettre, CV) a son propre modèle dans `search.yaml` (`mod
 
 ### Alerte de mise à jour
 
-`jobsearch` vérifie la dernière release du dépôt public (`api.github.com`, anonyme, stdlib uniquement) et prévient quand une version plus récente existe — dans la sortie de la CLI (limité à une fois toutes les 15 minutes), dans la barre de statut de la TUI, et dans le pied de page de la vue web. Entièrement non-bloquant : la vérification réseau est mise en cache 24h dans `data/update_check.json`, et tout échec (hors ligne, quota dépassé, réponse inattendue) est ignoré en silence — jamais de ralentissement ni de commande cassée. Le message pointe vers `pipx upgrade jobsearch`.
+`jobsearch` vérifie la dernière release du dépôt public (`api.github.com`, anonyme, stdlib uniquement) et prévient quand une version plus récente existe — dans la sortie de la CLI (limité à une fois toutes les 15 minutes), dans la barre de statut de la TUI, et dans le pied de page de la vue web. Entièrement non-bloquant : la vérification réseau est mise en cache 24h dans `data/update_check.json`, et tout échec (hors ligne, quota dépassé, réponse inattendue) est ignoré en silence — jamais de ralentissement ni de commande cassée. Le message pointe vers `jobsearch --upgrade`.
 
 ### Résolution de problèmes
 

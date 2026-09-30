@@ -153,6 +153,9 @@ files/
 # Assistant d'installation interactif (première utilisation)
 jobsearch --setup
 
+# Mettre à jour l'outil (pipx : lance la mise à jour ; dépôt cloné / pip : affiche la commande)
+jobsearch --upgrade
+
 # Pipeline complet (scrape + filtre + rapport)
 jobsearch --scrape
 
@@ -434,7 +437,8 @@ Module **stdlib uniquement** (`urllib.request`, `json`, `os`, `time`) — aucune
 - **Deux temporisations distinctes, dans `data/update_check.json` (`JOBSEARCH_HOME`), qui ne servent PAS la même chose** : `checked_at` limite l'appel réseau GitHub à une fois toutes les 24h (`check_for_update`) — sans lui, chaque commande ralentirait au démarrage et l'API anonyme finirait par renvoyer 403 (rate limit) ; `notified_at` limite l'affichage du message en CLI à une fois toutes les 15 minutes (`cli_notice`) — sans lui, une session de plusieurs commandes rapprochées republierait le message en boucle même avec le cache réseau déjà à jour. Ne jamais fusionner les deux : le cache réseau peut rester valide 24h pendant que la notification CLI, elle, doit réapparaître bien plus souvent.
 - **Ne jamais nuire** : toute exception (hors ligne, API indisponible, quota 403, JSON inattendu, cache corrompu, disque plein) est avalée à l'intérieur de `check_for_update`/`cli_notice`/`status_notice` — ces trois fonctions ne lèvent jamais, retournent `None` en silence. Délai réseau court (`_TIMEOUT`, 3s).
 - **Trois points d'affichage**, chacun avec sa propre fonction adaptée à son rythme d'appel : `cli_notice()` (CLI, `jobsearch/cli.py`, en fin de `main()`, avec la temporisation 15 min) ; `status_notice()` (TUI, `jobsearch/tui.py`, bannière persistante `#update-banner` peuplée une fois à `on_mount`, et vue web, `jobsearch/server.py`/`base.html`, pied de page peuplé à chaque rendu — pas de temporisation 15 min dans ces deux cas : ce sont des interfaces déjà ouvertes, pas une sortie répétée à chaque commande).
-- Message : version disponible, version actuelle, commande de mise à jour (`pipx upgrade jobsearch`).
+- Message : version disponible, version actuelle, commande de mise à jour (`jobsearch --upgrade`).
+- **`jobsearch --upgrade`** (`run_upgrade`, même module, exempté de `_check_setup`) : détecte le mode d'installation (`_install_mode` : `dev` si `PROJECT_ROOT/.git` existe, `pipx` si `sys.prefix` contient un segment `pipx`, `pip` sinon). **Seul le mode pipx lance lui-même `pipx upgrade jobsearch`**, et jamais sous Windows (le `jobsearch.exe` en cours d'exécution est verrouillé, pipx ne peut pas le remplacer depuis le processus qu'il met à jour) ; les autres modes affichent la commande — un `git pull` automatique sur un dépôt de travail pourrait entrer en conflit avec des modifications locales. Rappelle `jobsearch --service restart` si l'agent launchd est installé (il tourne sinon sur l'ancien code). Pas de mise à jour automatique en arrière-plan, volontairement : chaque utilisateur exécuterait sans contrôle le code publié sur le dépôt.
 
 ---
 

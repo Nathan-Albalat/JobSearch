@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import sys
 import time
 import urllib.request
 
@@ -121,7 +124,81 @@ def check_for_update(*, force: bool = False) -> str | None:
 
 def update_message(latest_tag: str) -> str:
     version = latest_tag.strip().lstrip("vV")
-    return f"Mise à jour disponible : v{version} (actuelle : {__version__}) — `pipx upgrade jobsearch`"
+    return f"Mise à jour disponible : v{version} (actuelle : {__version__}) — `jobsearch --upgrade`"
+
+
+_REPO_SPEC = "jobsearch @ git+https://github.com/Nathan-Albalat/JobSearch"
+
+
+def _install_mode() -> str:
+    """`dev` (dépôt cloné, `pip install -e .`), `pipx`, ou `pip` (tout le reste)."""
+    from jobsearch.config import PROJECT_ROOT
+
+    if os.path.isdir(os.path.join(PROJECT_ROOT, ".git")):
+        return "dev"
+    if "pipx" in os.path.normpath(sys.prefix).split(os.sep):
+        return "pipx"
+    return "pip"
+
+
+def run_upgrade() -> int:
+    """`jobsearch --upgrade` : met à jour l'outil selon son mode d'installation.
+
+    Seul le mode pipx lance la mise à jour lui-même. Les autres affichent la commande :
+    - dev : un `git pull` sur un dépôt de travail peut entrer en conflit avec des
+      modifications locales, c'est au développeur de le lancer ;
+    - pip : l'environnement peut être partagé avec d'autres paquets ;
+    - pipx sous Windows : `jobsearch.exe` est verrouillé tant qu'il tourne, pipx ne
+      peut pas le remplacer depuis le processus même qu'il met à jour.
+    La config et les données (`JOBSEARCH_HOME`) ne sont jamais touchées.
+    """
+    latest = check_for_update(force=True)
+    if latest:
+        print(f"Nouvelle version disponible : {latest} (actuelle : {__version__}).")
+    else:
+        print(f"Version actuelle : {__version__} — aucune release plus récente trouvée "
+              "(ou vérification impossible hors ligne).")
+
+    mode = _install_mode()
+    if mode == "dev":
+        from jobsearch.config import PROJECT_ROOT
+
+        print("Installation de développement (dépôt cloné) : mets à jour à la main —\n"
+              f"  git -C \"{PROJECT_ROOT}\" pull\n"
+              "  pip install -e .   (dans le venv du dépôt, seulement si les dépendances ont changé)")
+        return 0
+    if mode == "pip":
+        print("Installation pip : lance —\n"
+              f"  \"{sys.executable}\" -m pip install --upgrade \"{_REPO_SPEC}\"")
+        return 0
+
+    # pipx
+    if sys.platform.startswith("win"):
+        print("Sous Windows, jobsearch ne peut pas se remplacer lui-même pendant qu'il tourne.\n"
+              "Ferme la TUI et lance dans un nouveau terminal :\n  pipx upgrade jobsearch")
+        return 0
+    if not latest:
+        print("Rien à mettre à jour.")
+        return 0
+    pipx = shutil.which("pipx")
+    if not pipx:
+        print("pipx introuvable dans le PATH. Lance toi-même : pipx upgrade jobsearch")
+        return 1
+    print("Lancement de : pipx upgrade jobsearch\n")
+    code = subprocess.run([pipx, "upgrade", "jobsearch"], check=False).returncode
+    if code != 0:
+        print(f"\npipx a échoué (code {code}) — la version installée est inchangée.")
+        return code
+    print("\nMise à jour terminée. Ta config et tes données (~/.jobsearch/) sont inchangées.")
+    try:
+        from jobsearch import service
+
+        if os.path.exists(service.plist_path()):
+            print("Le service web tourne encore sur l'ancienne version : "
+                  "`jobsearch --service restart` pour le relancer.")
+    except Exception:
+        pass
+    return 0
 
 
 def cli_notice() -> str | None:

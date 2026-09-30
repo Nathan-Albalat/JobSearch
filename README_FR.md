@@ -65,7 +65,7 @@ La TUI n'est qu'une **vue** sur les fichiers du pipeline, pas une base de donné
 | **1 · Offres** | Tableau des offres scorées, triable, avec panneau de détail. Coche les offres (`espace`) pour les mettre en file de génération — lignes cochées surlignées en vert, offres de la dernière session en bleu foncé. La colonne `✓` est une cascade à 5 états : `▶` cochée > `⛔` marquée invalide (offre morte/fermée/mauvais type de contrat — `X` pour marquer, motif au choix) > `⧉` doublon manuel confirmé > `✓` déjà candidatée > `?` doublon suspecté (même entreprise, non tranché — `m` pour confirmer). |
 | **2 · Génération** | La file de génération, persistée dans `data/gen_queue.json`. Coche des lignes pour restreindre `g`/`L` à ce sous-ensemble — sinon toutes les offres en attente sont traitées. Lance la génération (lettre + CV, ou lettre seule) en tâche de fond. `N` attache une note par offre (`gen_notes`) injectée dans les prompts lettre et CV ; `T` enregistre directement dans le suivi sans rien générer — aucun appel API, aucun dossier — pour les offres qui n'ont besoin ni de lettre ni de CV (formulaire en ligne, CV générique). `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature générée. |
 | **3 · Candidatures** | Parcours `output/candidatures/`, aperçu lettre/CV, régénération des PDF après retouche manuelle. `o` ouvre l'offre dans le navigateur, `O` ouvre le dossier de la candidature. |
-| **4 · Suivi** | Statuts et notes de `applications.json` (envoyée / réponse reçue / entretien / acceptée / refusée / annulée, chacun colorisé). Le panneau de droite affiche la timeline de la candidature sélectionnée, reconstruite depuis son historique — dates déduites d'anciennes données suffixées d'un `~`. |
+| **4 · Suivi** | Statuts et notes de `applications.json` (envoyée / réponse reçue / entretien / acceptée / refusée / annulée, chacun colorisé). Le panneau de droite affiche la timeline de la candidature sélectionnée, reconstruite depuis son historique — dates déduites d'anciennes données suffixées d'un `~`. Un statut saisi par erreur s'annule avec `retour arrière`, qui retire la dernière étape du parcours. |
 | **5 · Stats** | Métriques de retour (taux d'acceptation/réponse, délai moyen), répartition des statuts, localisation des offres en arbre pays → villes, heatmap d'activité quotidienne façon GitHub, histogramme des candidatures au cours du temps et candidatures par pays (courbes), ces deux derniers sur une échelle commune jour/semaine/mois (`t` la change), et arbre des parcours de statuts réellement suivis. `f` exporte le flux en diagramme de Sankey HTML autonome. |
 | **6 · Réglages** | Tous les fichiers de config éditables (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, les 3 prompts, les 2 templates HTML, `cv_data.yaml`), plus deux lignes dédiées, « Sources de scraping » et « Modèles Claude », avec leur état (personnalisé / défaut du paquet / absent). `entrée` sur une ligne de fichier l'ouvre dans l'éditeur ; un bandeau rappelle de personnaliser le prompt de scoring et le pré-filtre. `entrée` sur la ligne « Sources de scraping » ouvre une modale pour activer/désactiver individuellement une source de scraping (`espace` pour basculer, `échap` pour fermer) — écrit immédiatement dans `sources.yaml`, indépendamment du groupe `fr` basculé avec `--with`/`--without`. `entrée` sur la ligne « Modèles Claude » ouvre une modale listant le modèle de chaque tâche (filtre, lettre, CV) : `entrée` sur une tâche propose « Dernier Haiku/Sonnet/Opus (auto) » ou un modèle épinglé, `R` rafraîchit la liste, `échap` ferme — écrit immédiatement dans `search.yaml`. |
 
@@ -121,7 +121,7 @@ La déduplication automatique ne peut pas attraper tous les doublons inter-sourc
 
 ### Offres invalides
 
-Marquer un doublon exige une candidature cible existante. Certaines offres meurent tout simplement d'elles-mêmes — fermées, annulées, ou dont le type de contrat ne convient finalement pas — sans rien à quoi les rattacher. `i` (onglet Offres) les marque comme invalides à la place : choisis un motif dans la modale, l'offre sort alors du bucket « à candidater » du rapport et de la file de génération, tout en restant visible avec un marqueur `⛔` (masquable aussi avec `h`). Refusé pour une offre ayant déjà une candidature — utilise plutôt le statut « annulée » (`z`, onglet Suivi) dans ce cas.
+Marquer un doublon exige une candidature cible existante. Certaines offres meurent tout simplement d'elles-mêmes — fermées, annulées, ou dont le type de contrat ne convient finalement pas — sans rien à quoi les rattacher. `X` (onglet Offres) les marque comme invalides à la place : choisis un motif dans la modale, l'offre sort alors du bucket « à candidater » du rapport et de la file de génération, tout en restant visible avec un marqueur `⛔` (masquable aussi avec `h`). Refusé pour une offre ayant déjà une candidature — utilise plutôt le statut « annulée » (`z`, onglet Suivi) dans ce cas.
 
 ---
 
@@ -129,6 +129,7 @@ Marquer un doublon exige une candidature cible existante. Certaines offres meure
 
 ```bash
 jobsearch --setup                          # assistant d'installation interactif
+jobsearch --upgrade                        # met à jour l'outil (lance pipx upgrade pour toi)
 jobsearch --scrape                         # collecte + filtre + rapport
 jobsearch --scrape --threshold 7           # seuil de pertinence personnalisé
 jobsearch --scrape --with fr               # inclut aussi les sources FR-only (HelloWork, WTTJ FR)
@@ -143,6 +144,7 @@ jobsearch --serve                          # API HTTP + vue web mobile (extra `j
 jobsearch --mcp                            # serveur MCP pour Claude Code / app Claude (extra `jobsearch[mcp]`)
 jobsearch --applications                   # tableau de suivi
 jobsearch --mark <offer_id> <status>       # met à jour le statut d'une candidature
+jobsearch --undo-status <offer_id>         # retire la dernière étape du parcours (erreur de saisie)
 jobsearch --mark-duplicate <offer_id> <target_id>  # marque comme doublon d'une candidature existante
 jobsearch --unmark-duplicate <offer_id>
 jobsearch --mark-invalid <offer_id> --reason closed|cancelled|contract|other  # écarte une offre morte/hors-sujet

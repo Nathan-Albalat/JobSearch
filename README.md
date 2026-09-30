@@ -65,7 +65,7 @@ The TUI is a **view** on the pipeline's files, not a database of its own: report
 | **1 · Offers** | Table of scored offers, sortable, with a detail panel. Check offers (`space`) to queue them for generation — checked rows highlighted in green, offers from the latest scrape session in dark blue. The `✓` column cascades through 5 states: `▶` checked > `⛔` marked invalid (dead/closed/wrong contract type — press `X` to mark, pick a reason) > `⧉` confirmed manual duplicate > `✓` already applied > `?` suspected duplicate (same company, not yet resolved — press `m` to confirm). |
 | **2 · Generation** | The generation queue, persisted in `data/gen_queue.json`. Check rows to restrict `g`/`L` to a subset — otherwise all pending offers are processed. Runs letter + CV generation (or letter only) in the background. `N` attaches a per-offer note (`gen_notes`) injected into the letter and CV prompts; `T` records an offer straight into tracking with no letter/CV at all — no API call, no folder — for offers that don't need one (online form, generic CV). `o` opens the offer in the browser, `O` opens the generated application folder. |
 | **3 · Applications** | Browse `output/candidatures/`, preview the letter/CV, regenerate the PDFs after manual edits. `o` opens the offer in the browser, `O` opens the application folder. |
-| **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. |
+| **4 · Tracking** | Statuses and notes from `applications.json` (sent / answered / interview / accepted / rejected / cancelled, each colour-coded). The right panel shows the timeline of the selected application, rebuilt from its history — dates inferred from older data are suffixed with `~`. A mistaken status can be undone with `backspace`, which removes the last step of the path. |
 | **5 · Stats** | Response metrics (acceptance/response rate, average delay), status breakdown, offer locations as a country → cities tree, a GitHub-style daily activity heatmap, an applications-over-time histogram and applications per country over time (line chart), the latter two on a shared day/week/month scale (`t` cycles it), and a status-flow tree of the paths actually taken. Press `f` to export the flow as a self-contained Sankey HTML diagram. |
 | **6 · Settings** | Every editable config file (`.env`, `search.yaml`, `profile.yaml`, `sources.yaml`, the 3 prompts, the 2 HTML templates, `cv_data.yaml`), plus two dedicated rows, "Scraping sources" and "Claude models", with each file's state (customized / package default / missing). `enter` on a file row opens it in your editor; a banner reminds you to personalize the scoring prompt and pre-filter. `enter` on the "Scraping sources" row opens a modal to enable/disable individual scraping sources (`space` to toggle, `escape` to close) — written immediately to `sources.yaml`, independent from the `fr` group toggled with `--with`/`--without`. `enter` on the "Claude models" row opens a modal listing the model of each task (filter, letter, CV): `enter` on a task offers "Latest Haiku/Sonnet/Opus (auto)" or a pinned model, `R` refreshes the model list, `escape` closes — written immediately to `search.yaml`. |
 
@@ -121,7 +121,7 @@ Cross-source deduplication can't catch every repost. The pipeline follows "the m
 
 ### Invalid offers
 
-Marking a duplicate requires a target application to point at. Some offers just die on their own — closed, cancelled, or turning out to be the wrong contract type — with nothing to link them to. `i` (Offers tab) marks these as invalid instead: pick a reason from the modal, and the offer drops out of the "to apply" bucket of the report and out of the generation queue, staying visible with a `⛔` marker (hide it too with `h`). Refused for offers that already have an application — use the "cancelled" status (`z`, Tracking tab) for those instead.
+Marking a duplicate requires a target application to point at. Some offers just die on their own — closed, cancelled, or turning out to be the wrong contract type — with nothing to link them to. `X` (Offers tab) marks these as invalid instead: pick a reason from the modal, and the offer drops out of the "to apply" bucket of the report and out of the generation queue, staying visible with a `⛔` marker (hide it too with `h`). Refused for offers that already have an application — use the "cancelled" status (`z`, Tracking tab) for those instead.
 
 ---
 
@@ -129,6 +129,7 @@ Marking a duplicate requires a target application to point at. Some offers just 
 
 ```bash
 jobsearch --setup                          # interactive first-install wizard
+jobsearch --upgrade                        # update the tool (runs pipx upgrade for you)
 jobsearch --scrape                         # collect + filter + report
 jobsearch --scrape --threshold 7           # custom relevance threshold
 jobsearch --scrape --with fr               # also include FR-only sources (HelloWork, WTTJ FR)
@@ -143,6 +144,7 @@ jobsearch --serve                          # HTTP API + mobile web view (extra `
 jobsearch --mcp                            # MCP server for Claude Code / Claude app (extra `jobsearch[mcp]`)
 jobsearch --applications                   # tracking table
 jobsearch --mark <offer_id> <status>       # update an application's status
+jobsearch --undo-status <offer_id>         # remove the last step of the path (input mistake)
 jobsearch --mark-duplicate <offer_id> <target_id>  # mark as duplicate of an existing application
 jobsearch --unmark-duplicate <offer_id>
 jobsearch --mark-invalid <offer_id> --reason closed|cancelled|contract|other  # mark a dead/off-topic offer

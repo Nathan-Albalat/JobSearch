@@ -127,7 +127,8 @@ def _launchctl_bootstrap(path: str) -> tuple[bool, str]:
     if res.returncode == 0:
         return True, "chargé (launchctl bootstrap)"
     res2 = _run(["launchctl", "load", "-w", path])
-    if res2.returncode == 0:
+    # `load` renvoie 0 même quand il n'a rien chargé : on vérifie.
+    if res2.returncode == 0 and _is_loaded():
         return True, "chargé (launchctl load, repli)"
     detail = (res.stderr or res.stdout or "").strip() or (res2.stderr or res2.stdout or "").strip()
     return False, f"échec du chargement launchd : {detail or 'erreur inconnue'}"
@@ -196,6 +197,12 @@ def restart() -> str:
     if not _is_macos():
         return _not_macos_message()
     stop_msg = stop()
+    # `bootout` est asynchrone : un `bootstrap` immédiat échoue tant que l'agent n'est pas déchargé.
+    import time
+    for _ in range(50):
+        if not _is_loaded():
+            break
+        time.sleep(0.1)
     start_msg = start()
     return f"{stop_msg}\n{start_msg}"
 

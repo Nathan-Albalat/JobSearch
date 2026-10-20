@@ -168,10 +168,20 @@ def build_offer_prompt(template: str, offer: dict) -> str:
     }, warn=False)
 
 
+def _filter_params(search: Search, model_id: str | None = None) -> dict:
+    """Modèle, budget et réflexion du filtre — partagés par les modes séquentiel et batch."""
+    params = {
+        "model": model_id or search.model_for("filter"),
+        "max_tokens": search.filter_max_tokens,
+    }
+    if not search.filter_thinking:
+        params["thinking"] = {"type": "disabled"}
+    return params
+
+
 def call_claude(client, system_text: str, offer_text: str, search: Search) -> tuple[str, object]:
     response = client.messages.create(
-        model=search.model_for("filter"),
-        max_tokens=search.filter_max_tokens,
+        **_filter_params(search),
         system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": offer_text}],
     )
@@ -291,6 +301,11 @@ def _apply_batch_results(client, batch_id: str, files_by_id: dict[str, str], thr
             print(f"  Erreur batch sur {result.custom_id} ({result.result.type}) — sera retentée au prochain run.", file=sys.stderr)
             continue
         msg = result.result.message
+        if msg.stop_reason == "max_tokens":
+            total_errored += 1
+            print(f"  Réponse tronquée pour {result.custom_id} (max_tokens atteint) — "
+                  "augmente models.filter.max_tokens dans search.yaml.", file=sys.stderr)
+            continue
         raw = next((b.text for b in msg.content if b.type == "text"), "")
         try:
             parsed = parse_filter_response(raw)
@@ -329,8 +344,7 @@ def filter_batch(
         Request(
             custom_id=offer["id"],
             params=MessageCreateParamsNonStreaming(
-                model=filter_model_id,
-                max_tokens=search.filter_max_tokens,
+                **_filter_params(search, filter_model_id),
                 system=[{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": build_offer_prompt(template, offer)}],
             ),

@@ -368,7 +368,8 @@ DEFAULTS: dict = {
     "models": {
         "filter": {
             "model": "auto:haiku",
-            "max_tokens": 512,
+            "max_tokens": 1024,
+            "thinking": False,
             "batch_min_offers": 6,
             "batch_poll_seconds": 30,
         },
@@ -528,6 +529,12 @@ class Search:
         return self.max_tokens_for("filter")
 
     @property
+    def filter_thinking(self) -> bool:
+        """`models.filter.thinking` — faux par défaut : un modèle qui réfléchit (Haiku 5.5)
+        épuise `max_tokens` avant la fin du JSON, et l'offre n'est jamais scorée."""
+        return bool(self.get("models", "filter", "thinking", default=False))
+
+    @property
     def batch_min_offers(self) -> int:
         return int(self.get("models", "filter", "batch_min_offers", default=6))
 
@@ -557,8 +564,13 @@ class Search:
         return resolve_model(self.get("models", task, "model", default=default))
 
     def max_tokens_for(self, task: str) -> int:
-        default = 512 if task == "filter" else 16000
-        return int(self.get("models", task, "max_tokens", default=default))
+        default = 1024 if task == "filter" else 16000
+        value = int(self.get("models", task, "max_tokens", default=default))
+        # Ancien défaut écrit par `--setup` dans les search.yaml existants : trop juste
+        # pour Haiku 5.5, même sans réflexion (514 tokens mesurés).
+        if task == "filter" and value == 512:
+            return 1024
+        return value
 
     def effort_for(self, task: str) -> str | None:
         """`models.<tâche>.effort` — None si absent (Haiku 4.5 rejette `effort`)."""

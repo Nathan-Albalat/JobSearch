@@ -121,7 +121,7 @@ dedup:
 models:
   filter:
     model: "auto:haiku"
-    max_tokens: 512
+    max_tokens: 1024
     batch_min_offers: 6
     batch_poll_seconds: 30
   letter:

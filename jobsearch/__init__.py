@@ -11,4 +11,4 @@ Une vérification de mise à jour fondée là-dessus annoncerait une version en
 retard même juste après une mise à jour.
 """
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
